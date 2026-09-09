@@ -1,0 +1,12 @@
+sequenceDiagram
+    participant Customer
+    participant OrderService
+    participant PaymentService
+    participant Inventory
+
+    Customer->>OrderService: Create order
+    OrderService->>Inventory: Reserve items
+    Inventory-->>OrderService: Reserved
+    OrderService->>PaymentService: Charge payment
+    PaymentService-->>OrderService: Payment confirmed
+    OrderService-->>Customer: Order confirmed

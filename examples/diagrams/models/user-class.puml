@@ -1,0 +1,14 @@
+@startuml
+title User Domain Model
+class User {
+  +id: int
+  +name: string
+  +email: string
+}
+class Order {
+  +id: int
+  +userId: int
+  +total: float
+}
+User "1" -- "many" Order : places
+@enduml

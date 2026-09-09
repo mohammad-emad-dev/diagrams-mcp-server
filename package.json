@@ -1,0 +1,53 @@
+{
+  "name": "diagrams-mcp-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Technical Preview (V1 Preview): local-first MCP server for managing, rendering, and checking PlantUML and Mermaid architecture diagrams alongside your codebase.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "diagrams-mcp-server": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*",
+    "!dist/**/*.test.js",
+    "README.md",
+    "RELEASE_NOTES.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test \"dist/**/*.test.js\"",
+    "lint": "eslint src --max-warnings 0",
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "prepack": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "plantuml",
+    "mermaid",
+    "architecture",
+    "diagrams",
+    "uml"
+  ],
+  "author": "Mohammad Emad",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.70.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

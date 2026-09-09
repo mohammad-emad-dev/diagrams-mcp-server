@@ -1,0 +1,52 @@
+<!--
+Evaluation questions for diagrams-mcp-server.
+
+Setup: run against the bundled example project.
+  PROJECT_ROOT=./examples DIAGRAMS_DIR=diagrams
+
+These questions are answerable using only read-only tool calls
+(diagrams_list, diagrams_get, diagrams_check_consistency) against the
+example diagrams and source in ./examples.
+-->
+<evaluation>
+  <qa_pair>
+    <question>How many diagram files exist in the project, and what are their relative paths?</question>
+    <answer>2: models/user-class.puml and models/order-flow.mmd</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>What is the extracted title of the diagram at models/user-class.puml?</question>
+    <answer>User Domain Model</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How many Mermaid diagrams exist in the project (using type_filter)?</question>
+    <answer>1</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>How many PlantUML diagrams exist in the project (using type_filter)?</question>
+    <answer>1</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the user-class diagram, what is the multiplicity of the relationship between User and Order?</question>
+    <answer>1 to many</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>List the field names defined on the Order class in the user-class diagram.</question>
+    <answer>id, userId, total</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Running a consistency check on models/user-class.puml against the example codebase, how many entities were extracted from the diagram in total?</question>
+    <answer>2</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Running a consistency check on models/user-class.puml, how many of the diagram's entities were matched in the codebase, and how many were unmatched?</question>
+    <answer>1 matched, 1 unmatched</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>Which entity name from models/user-class.puml was reported as unmatched by the consistency check?</question>
+    <answer>Order</answer>
+  </qa_pair>
+  <qa_pair>
+    <question>In the order-flow Mermaid sequence diagram, which participant does OrderService contact immediately after Customer creates an order?</question>
+    <answer>Inventory</answer>
+  </qa_pair>
+</evaluation>
