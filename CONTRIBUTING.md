@@ -14,7 +14,7 @@ CI builds and tests on Node 20.x and 22.x (see `.github/workflows/ci.yml`).
 ## Local setup
 
 ```bash
-git clone https://github.com/mohammad-emad-dev/mohammad-emad-dev-diagrams-mcp-server.git
+git clone https://github.com/mohammad-emad-dev/diagrams-mcp-server.git
 cd diagrams-mcp-server
 npm ci        # reproducible install from package-lock.json; prefer this over npm install
 npm run build # compiles src/ to dist/ with tsc

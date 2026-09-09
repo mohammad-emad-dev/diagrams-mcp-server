@@ -45,7 +45,7 @@ Pagination is explicit and opt-in — the server never pages or truncates on its
 ## Installation
 
 ```bash
-git clone https://github.com/mohammad-emad-dev/mohammad-emad-dev-diagrams-mcp-server.git
+git clone https://github.com/mohammad-emad-dev/diagrams-mcp-server.git
 cd diagrams-mcp-server
 npm install
 npm run build
