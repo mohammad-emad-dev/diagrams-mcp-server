@@ -60,6 +60,23 @@ npm install
 npm run build
 ```
 
+### Where the files live
+
+- Global install (`npm install -g diagrams-mcp-server`): the package lands in
+  the global `node_modules` (run `npm root -g` to find yours — e.g.
+  `C:\Users\<you>\AppData\Roaming\npm\node_modules` on Windows,
+  `/usr/local/lib/node_modules` on macOS/Linux) with launch shims on your
+  PATH, so `diagrams-mcp-server` runs from anywhere.
+- Project dependency (`npm install diagrams-mcp-server` inside a project):
+  the same payload under `<project>/node_modules/diagrams-mcp-server/`,
+  with the binary linked at `<project>/node_modules/.bin/diagrams-mcp-server`.
+- `npx diagrams-mcp-server`: uses the global install if present, else the
+  local one, else downloads and caches it — no manual file handling needed.
+
+All three run the same entry point (`dist/index.js`), so MCP clients can use
+whichever path fits: the global shim, the project's `.bin` binary, or
+`node <path>/dist/index.js` directly.
+
 ### Lint and formatting
 
 ```bash
@@ -99,7 +116,7 @@ in [Client setup](#client-setup).
 
 `diagrams-mcp-server` speaks plain stdio MCP, so it works with any MCP-compatible client. Setup instructions for each below.
 
-All examples assume you built the server at `/absolute/path/to/diagrams-mcp-server` and want it attached to a project at `/absolute/path/to/your/project`. Replace both paths with your own.
+All examples assume you built the server at `/absolute/path/to/diagrams-mcp-server` and want it attached to a project at `/absolute/path/to/your/project`. Replace both paths with your own. If you installed from the registry, use the global install path or your project's `node_modules/.bin/diagrams-mcp-server` instead of a build directory (see [Where the files live](#where-the-files-live)).
 
 ### Claude Desktop
 
