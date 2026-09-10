@@ -26,6 +26,7 @@ import { collectCodeFiles } from "./scanning.js";
 const MAX_FILES_SCANNED = 5000;
 const MAX_FILE_SIZE_BYTES = 1_000_000; // Skip oversized generated files.
 const MAX_EVIDENCE_MATCHED_FILES = 10; // Cap matched files per entity.
+const MAX_SCAN_CONCURRENCY = 32; // Bound concurrent file reads (EMFILE safety).
 
 const HEURISTIC_WARNING =
   "Heuristic text matching only: matching prefers declarations but falls back " +
@@ -95,6 +96,51 @@ function findMatchingFileIndexes(entity: string, scanned: ScannedFile[]): number
   return matched;
 }
 
+/** Read and analyze one file for the scan; null when unreadable or oversized. */
+async function readScannedFile(codeRootDir: string, file: string): Promise<ScannedFile | null> {
+  try {
+    const stat = await fs.stat(file);
+    if (stat.size > MAX_FILE_SIZE_BYTES) return null;
+    const raw = await fs.readFile(file, "utf-8");
+    const ext = path.extname(file).toLowerCase();
+    const family = familyForExtension(ext);
+    const stripped = stripCommentsAndStrings(raw, family);
+    return {
+      relativePath: toPosixPath(path.relative(codeRootDir, file)),
+      ext,
+      stripped,
+      normalized: ` ${stripped.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `,
+      declared: extractDeclaredIdentifiers(stripped, family),
+      moduleName: path.basename(file, ext),
+    };
+  } catch {
+    // unreadable file (permissions, race condition); skip it
+    return null;
+  }
+}
+
+/** Map inputs through an async worker with bounded concurrency, order-preserving. */
+async function mapWithConcurrency<T, R>(
+  inputs: T[],
+  concurrency: number,
+  worker: (input: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(inputs.length);
+  let next = 0;
+  const runners = Array.from(
+    { length: Math.min(Math.max(concurrency, 1), Math.max(inputs.length, 1)) },
+    async () => {
+      while (next < inputs.length) {
+        const index = next;
+        next += 1;
+        results[index] = await worker(inputs[index]);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+}
+
 export async function checkConsistency(
   diagramRelativePath: string,
   diagramSource: string,
@@ -104,27 +150,11 @@ export async function checkConsistency(
   const entities = extractEntities(diagramSource, diagramType);
   const { files: codeFiles, truncated } = await collectCodeFiles(codeRootDir, MAX_FILES_SCANNED);
 
-  const scanned: ScannedFile[] = [];
-  for (const file of codeFiles) {
-    try {
-      const stat = await fs.stat(file);
-      if (stat.size > MAX_FILE_SIZE_BYTES) continue;
-      const raw = await fs.readFile(file, "utf-8");
-      const ext = path.extname(file).toLowerCase();
-      const family = familyForExtension(ext);
-      const stripped = stripCommentsAndStrings(raw, family);
-      scanned.push({
-        relativePath: toPosixPath(path.relative(codeRootDir, file)),
-        ext,
-        stripped,
-        normalized: ` ${stripped.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `,
-        declared: extractDeclaredIdentifiers(stripped, family),
-        moduleName: path.basename(file, ext),
-      });
-    } catch {
-      // unreadable file (permissions, race condition); skip it
-    }
-  }
+  const scanned = (
+    await mapWithConcurrency(codeFiles, MAX_SCAN_CONCURRENCY, (file) =>
+      readScannedFile(codeRootDir, file),
+    )
+  ).filter((entry): entry is ScannedFile => entry !== null);
 
   const analyzers: AnalyzerBreakdown = {
     reliable: [],
