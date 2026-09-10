@@ -30,14 +30,36 @@ function cleanDiagramName(raw: string): string | null {
   return last.length > 0 ? last : null;
 }
 
-/** Candidate entity names from PlantUML source. */
-function extractEntitiesFromPlantUml(source: string): string[] {
+/** Shared name sink: dedupe set plus diagram-name cleaning adder. */
+function makeEntitySink(): {
+  names: Set<string>;
+  addClean: (raw: string | undefined) => void;
+} {
   const names = new Set<string>();
   const addClean = (raw: string | undefined): void => {
     if (!raw) return;
     const cleaned = cleanDiagramName(raw);
     if (cleaned) names.add(cleaned);
   };
+  return { names, addClean };
+}
+
+// Message calls like `charge(card)`; plain labels are ignored. Shared by both
+// dialects. Module-level /g regex, so lastIndex is reset on every call below.
+const MESSAGE_CALL_REGEX = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]{1,})\s*\(/g;
+
+/** Collect message-call entities from source into a shared sink. */
+function collectMessageCalls(source: string, addClean: (raw: string | undefined) => void): void {
+  MESSAGE_CALL_REGEX.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MESSAGE_CALL_REGEX.exec(source)) !== null) {
+    addClean(match[1]);
+  }
+}
+
+/** Candidate entity names from PlantUML source. */
+function extractEntitiesFromPlantUml(source: string): string[] {
+  const { names, addClean } = makeEntitySink();
   let match: RegExpExecArray | null;
 
   // Type declarations: class, interface, enum, record, struct, and friends.
@@ -78,23 +100,14 @@ function extractEntitiesFromPlantUml(source: string): string[] {
     if (match[2]) names.add(match[2]);
   }
 
-  // Message calls like `charge(card)`; plain labels are ignored.
-  const messageCallRegex = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]{1,})\s*\(/g;
-  while ((match = messageCallRegex.exec(source)) !== null) {
-    addClean(match[1]);
-  }
+  collectMessageCalls(source, addClean);
 
   return Array.from(names);
 }
 
 /** Candidate entity names from Mermaid source. */
 function extractEntitiesFromMermaid(source: string): string[] {
-  const names = new Set<string>();
-  const addClean = (raw: string | undefined): void => {
-    if (!raw) return;
-    const cleaned = cleanDiagramName(raw);
-    if (cleaned) names.add(cleaned);
-  };
+  const { names, addClean } = makeEntitySink();
   let match: RegExpExecArray | null;
 
   // Class declarations.
@@ -138,11 +151,7 @@ function extractEntitiesFromMermaid(source: string): string[] {
     addClean(match[3]);
   }
 
-  // Message calls like `charge(card)`; plain labels are ignored.
-  const messageCallRegex = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]{1,})\s*\(/g;
-  while ((match = messageCallRegex.exec(source)) !== null) {
-    addClean(match[1]);
-  }
+  collectMessageCalls(source, addClean);
 
   return Array.from(names);
 }

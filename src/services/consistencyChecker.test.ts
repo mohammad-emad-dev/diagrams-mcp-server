@@ -164,6 +164,100 @@ describe("extractEntities (mermaid)", () => {
   });
 });
 
+describe("extractEntities (shared collector edge cases)", () => {
+  it("returns nothing for empty and whitespace-only sources", () => {
+    assert.deepEqual(extractEntities("", "plantuml"), []);
+    assert.deepEqual(extractEntities("   \n  \n", "mermaid"), []);
+  });
+
+  it("cleans quoted and aliased PlantUML declarations through the shared sink", () => {
+    const source = `@startuml
+class "My Name" as Alias
+component [A]
+component "B" as C
+entity "Quoted Entity" as QE
+@enduml
+`;
+    assert.deepEqual(sorted(extractEntities(source, "plantuml")), [
+      "A",
+      "Alias",
+      "B",
+      "C",
+      "My",
+      "QE",
+      "Quoted",
+      "Quoted Entity",
+    ]);
+  });
+
+  it("collects message calls with arguments and ignores plain labels", () => {
+    const source = `@startuml
+X -> Y : render(item, count)
+A -> B : see (note) for details
+P -> Q : plain label without call
+@enduml
+`;
+    assert.deepEqual(sorted(extractEntities(source, "plantuml")), ["render", "see"]);
+  });
+
+  it("extracts PlantUML lifecycle participants", () => {
+    const source = `@startuml
+boundary Browser
+control FrontController
+database Store
+collections Items
+queue Jobs
+@enduml
+`;
+    assert.deepEqual(sorted(extractEntities(source, "plantuml")), [
+      "Browser",
+      "FrontController",
+      "Items",
+      "Jobs",
+      "Store",
+    ]);
+  });
+
+  it("extracts Mermaid C4 declarations and all subgraph spellings", () => {
+    const source = `C4Container
+Container(api, "API")
+Component([ui], "UI")
+Person(customer, "Customer")
+subgraph "Group One"
+subgraph [GroupTwo]
+subgraph bare_group
+@enduml
+`;
+    assert.deepEqual(sorted(extractEntities(source, "mermaid")), [
+      "Group One",
+      "GroupTwo",
+      "api",
+      "bare_group",
+      "customer",
+    ]);
+  });
+
+  it("extracts destroyed Mermaid participants and parenthesized message calls", () => {
+    const source = `sequenceDiagram
+  destroy participant Old
+  A->>B: buy(item)
+  A->>B: no parens here
+`;
+    assert.deepEqual(sorted(extractEntities(source, "mermaid")), ["Old", "buy"]);
+  });
+
+  it("returns identical results on repeated calls with the same input", () => {
+    const source = `@startuml
+Alice -> Bob : charge(card)
+@enduml
+`;
+    const first = sorted(extractEntities(source, "plantuml"));
+    const second = sorted(extractEntities(source, "plantuml"));
+    assert.deepEqual(first, ["charge"]);
+    assert.deepEqual(second, first);
+  });
+});
+
 describe("checkConsistency", () => {
   let tmpRoot: string;
 
