@@ -83,7 +83,7 @@ npx diagrams-mcp-server --help    # resolves the local install, exits 0
 ```
 
 This installs only the published payload (`dist/` runtime files, `README.md`,
-`RELEASE_NOTES.md`, `LICENSE`) — no tests, fixtures, or local configs — and
+`LICENSE`) — no tests, fixtures, or local configs — and
 changes nothing outside the consumer project (no global packages, no
 registry publish). Point any stdio MCP client at the installed binary
 (`node_modules/.bin/diagrams-mcp-server`) the same way as `dist/index.js`

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mohammad-emad-dev/diagrams-mcp-server",
+  "title": "Diagrams MCP Server",
+  "description": "Local-first MCP server for PlantUML and Mermaid diagrams with drift detection.",
+  "version": "0.1.0",
+  "websiteUrl": "https://github.com/mohammad-emad-dev/diagrams-mcp-server",
+  "repository": {
+    "source": "github",
+    "url": "https://github.com/mohammad-emad-dev/diagrams-mcp-server"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "diagrams-mcp-server",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "PROJECT_ROOT",
+          "description": "Project root to attach to (defaults to the working directory).",
+          "isRequired": false
+        },
+        {
+          "name": "DIAGRAMS_DIR",
+          "description": "Diagrams directory, relative to PROJECT_ROOT unless absolute (default: diagrams).",
+          "isRequired": false,
+          "default": "diagrams"
+        },
+        {
+          "name": "PLANTUML_SERVER_URL",
+          "description": "Override for the opt-in remote PlantUML fallback.",
+          "isRequired": false
+        },
+        {
+          "name": "ALLOW_REMOTE_PLANTUML",
+          "description": "Set to true to allow the remote PlantUML fallback when no local CLI is installed.",
+          "isRequired": false
+        },
+        {
+          "name": "DISABLE_REMOTE_PLANTUML",
+          "description": "Set to true to always disable the remote PlantUML fallback.",
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "name": "diagrams-mcp-server",
   "version": "0.1.0",
-  "private": true,
+  "mcpName": "io.github.mohammad-emad-dev/diagrams-mcp-server",
   "description": "Technical Preview (V1 Preview): local-first MCP server for managing, rendering, and checking PlantUML and Mermaid architecture diagrams alongside your codebase.",
   "type": "module",
   "main": "dist/index.js",
@@ -12,9 +12,19 @@
     "dist/**/*",
     "!dist/**/*.test.js",
     "README.md",
-    "RELEASE_NOTES.md",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohammad-emad-dev/diagrams-mcp-server.git"
+  },
+  "homepage": "https://github.com/mohammad-emad-dev/diagrams-mcp-server#readme",
+  "bugs": {
+    "url": "https://github.com/mohammad-emad-dev/diagrams-mcp-server/issues"
+  },
   "scripts": {
     "build": "tsc",
     "test":
