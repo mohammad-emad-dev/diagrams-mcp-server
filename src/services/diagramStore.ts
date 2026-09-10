@@ -60,9 +60,15 @@ export class DiagramStore {
     return this.root;
   }
 
-  /** Resolve a user-supplied relative path safely inside the root. */
+  /**
+   * Resolve a user-supplied relative path safely inside the root. Backslashes
+   * are normalized to forward slashes first so Windows-style separators
+   * behave identically on Linux (where `\` is otherwise a valid filename
+   * character) and Windows-style traversal (`..\`) is still rejected.
+   */
   private resolveSafe(relativePath: string): string {
-    const resolved = path.resolve(this.root, relativePath);
+    const normalized = relativePath.replace(/\\/g, "/");
+    const resolved = path.resolve(this.root, normalized);
     const rootWithSep = this.root.endsWith(path.sep) ? this.root : this.root + path.sep;
     if (resolved !== this.root && !resolved.startsWith(rootWithSep)) {
       throw new PathTraversalError(toPosixPath(relativePath));
