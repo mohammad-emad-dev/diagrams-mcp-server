@@ -4,6 +4,7 @@
 //     [--project-root <dir>] [--scope global|project] [--yes]
 
 import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -32,6 +33,37 @@ const CLIENT_LABELS: Record<SetupClient, string> = {
   opencode: "OpenCode (prints the command to run)",
   antigravity: "Antigravity (writes mcp_config.json)",
 };
+
+export interface PathLookupOptions {
+  platform?: NodeJS.Platform;
+  pathEnv?: string;
+  windowsExtensions?: string[];
+  exists?: (candidate: string) => boolean;
+}
+
+// Cross-platform PATH lookup without executing anything. Returns the
+// first matching candidate or undefined. Filesystem access goes through
+// the injectable exists check so tests can stub it.
+export function findOnPath(command: string, opts: PathLookupOptions = {}): string | undefined {
+  const platform = opts.platform ?? process.platform;
+  const exists = opts.exists ?? existsSync;
+  const pathEnv = opts.pathEnv ?? process.env.PATH ?? "";
+  const dirs = pathEnv.split(platform === "win32" ? ";" : ":").filter((d) => d.length > 0);
+  const suffixes =
+    platform === "win32"
+      ? [
+          "",
+          ...(opts.windowsExtensions ?? (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";")),
+        ]
+      : [""];
+  for (const dir of dirs) {
+    for (const suffix of suffixes) {
+      const candidate = path.join(dir, `${command}${suffix}`);
+      if (exists(candidate)) return candidate;
+    }
+  }
+  return undefined;
+}
 
 // Add-command for CLI-based clients. Project scope pins PROJECT_ROOT as
 // an explicit --env flag (supported by both CLIs); global scope leaves
@@ -216,6 +248,44 @@ async function ask(question: string, fallback: string): Promise<string> {
   }
 }
 
+export interface PathPromptDeps {
+  exists: (path: string) => boolean;
+  mkdir: (path: string) => Promise<void>;
+  confirm: (question: string) => Promise<boolean>;
+  reprompt: (question: string, fallback: string) => Promise<string>;
+}
+
+// Loop until root names an existing directory: offer to create a
+// missing one, otherwise re-ask. A failed mkdir falls back to
+// re-prompting so a permission error never strands the user.
+export async function ensureProjectRoot(root: string, deps: PathPromptDeps): Promise<string> {
+  let current = root;
+  for (;;) {
+    if (deps.exists(current)) return current;
+    console.log(`⚠ Directory does not exist: ${current}`);
+    if (await deps.confirm("Create this directory? [Y/n]: ")) {
+      try {
+        await deps.mkdir(current);
+        console.log(`✔ Created ${current}`);
+        return current;
+      } catch (err: unknown) {
+        console.log(`✖ Could not create directory: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    const next = (await deps.reprompt(`Project root [${current}]: `, current)).trim();
+    current = next.length > 0 ? next : current;
+  }
+}
+
+async function askConfirm(question: string): Promise<boolean> {
+  for (;;) {
+    const answer = (await ask(question, "y")).trim().toLowerCase();
+    if (answer === "" || answer === "y" || answer === "yes") return true;
+    if (answer === "n" || answer === "no") return false;
+    console.log("Enter y or n.");
+  }
+}
+
 async function pickClient(): Promise<SetupClient> {
   console.log("Which client should use diagrams-mcp-server?");
   SETUP_CLIENTS.forEach((client, index) => {
@@ -265,6 +335,8 @@ Usage:
     server attaches to the client's working directory.
   --scope project: bake PROJECT_ROOT into the config for one project.
 
+  Pre-flight checks verify the client CLI and project path automatically.
+
 Clients: ${SETUP_CLIENTS.join(", ")}
 
 Examples:
@@ -293,12 +365,23 @@ async function pickScope(): Promise<"global" | "project"> {
   }
 }
 
+function printSummary(client: string, scope: string, target: string, status: string): void {
+  console.log("");
+  console.log("◇ Summary");
+  console.log(`  Target client:       ${client}`);
+  console.log(`  Configuration scope: ${scope}`);
+  console.log(`  Touched:             ${target}`);
+  console.log(`  Status:              ${status}`);
+}
+
 export async function runSetup(args: string[]): Promise<void> {
   const opts = parseSetupArgs(args);
   if (opts.help) {
     printSetupHelp();
     return;
   }
+  console.log("◇ diagrams-mcp-server setup");
+  console.log("");
   let client = opts.client;
   if (client === undefined) {
     if (!process.stdin.isTTY || opts.yes) {
@@ -315,27 +398,51 @@ export async function runSetup(args: string[]): Promise<void> {
   }
   if (interactive && opts.scope === "project") {
     console.log("Project root is the target project/repo: diagrams are stored and scanned there.");
-    opts.projectRoot = await ask(`Project root [${opts.projectRoot}]: `, opts.projectRoot);
+    const initial = await ask(`Project root [${opts.projectRoot}]: `, opts.projectRoot);
+    opts.projectRoot = await ensureProjectRoot(initial, {
+      exists: existsSync,
+      mkdir: async (p) => {
+        await fs.mkdir(p, { recursive: true });
+      },
+      confirm: askConfirm,
+      reprompt: (question, fallback) => ask(question, fallback),
+    });
   }
   const projectRoot = shouldBakeProjectRoot(opts) ? opts.projectRoot : undefined;
+  if (!interactive && projectRoot !== undefined && !existsSync(projectRoot)) {
+    console.log(`⚠ Warning: ${projectRoot} does not exist; continuing with it anyway.`);
+  }
   if (FILE_CLIENTS.has(client)) {
     const file = await writeFileClientConfig(client as FileSetupClient, opts, projectRoot);
-    console.log(`Wrote the diagrams entry to ${file}. Restart ${client} to load it.`);
+    console.log(`✔ Wrote the diagrams entry to ${file}.`);
+    printSummary(client, opts.scope, file, `✔ Restart ${client} to load it.`);
     return;
   }
   if (client === "claude-code" || client === "codex") {
-    try {
-      await runAddCommand(client, projectRoot);
-    } catch {
-      const display = cliAddCommand(client, projectRoot).map(shellQuote).join(" ");
-      console.log(`Could not run the ${client} CLI. Run this instead:`);
+    const bin = client === "codex" ? "codex" : "claude";
+    const display = cliAddCommand(client, projectRoot).map(shellQuote).join(" ");
+    if (findOnPath(bin) === undefined) {
+      console.log(`⚠ ${bin} CLI not detected in PATH.`);
+      console.log("Run this instead:");
       console.log(`  ${display}`);
+      printSummary(client, opts.scope, "manual command (see above)", "⚠ Manual step required.");
       return;
     }
-    console.log(`Registered diagrams with ${client}.`);
+    try {
+      await runAddCommand(client, projectRoot);
+    } catch (err: unknown) {
+      console.log(`✖ Could not run the ${bin} CLI: ${err instanceof Error ? err.message : err}`);
+      console.log("Run this instead:");
+      console.log(`  ${display}`);
+      printSummary(client, opts.scope, "manual command (see above)", "⚠ Manual step required.");
+      return;
+    }
+    console.log(`✔ Registered diagrams with ${client}.`);
+    printSummary(client, opts.scope, `${bin} CLI configuration`, "✔ Ready to use.");
     return;
   }
   console.log("Run this in your terminal:");
   console.log("  opencode mcp add");
   console.log("Choose Local, then enter: npx -y diagrams-mcp-server");
+  printSummary(client, opts.scope, "manual command (see above)", "⚠ Manual step required.");
 }

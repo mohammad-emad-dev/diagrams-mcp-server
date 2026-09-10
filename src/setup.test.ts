@@ -4,6 +4,8 @@ import path from "node:path";
 import {
   cliAddCommand,
   diagramsServerEntry,
+  ensureProjectRoot,
+  findOnPath,
   isSetupClient,
   mergeServerConfig,
   parseSetupArgs,
@@ -134,6 +136,119 @@ describe("shouldBakeProjectRoot", () => {
 
   it("honors an explicit --project-root even under global scope", () => {
     assert.equal(shouldBakeProjectRoot(parseSetupArgs(["--project-root", "/p"])), true);
+  });
+});
+
+describe("findOnPath", () => {
+  it("finds a Windows binary via PATHEXT, bare name first", () => {
+    const seen = new Set([path.join("C:\\tools", "codex.EXE")]);
+    const calls: string[] = [];
+    const found = findOnPath("codex", {
+      platform: "win32",
+      pathEnv: "C:\\tools;D:\\bin",
+      windowsExtensions: [".EXE"],
+      exists: (p) => {
+        calls.push(p);
+        return seen.has(p);
+      },
+    });
+    assert.equal(found, path.join("C:\\tools", "codex.EXE"));
+    assert.equal(calls[0], path.join("C:\\tools", "codex"));
+  });
+
+  it("returns undefined when the Windows binary is absent", () => {
+    const found = findOnPath("codex", {
+      platform: "win32",
+      pathEnv: "C:\\tools",
+      windowsExtensions: [".EXE"],
+      exists: () => false,
+    });
+    assert.equal(found, undefined);
+  });
+
+  it("finds a POSIX binary on PATH", () => {
+    const found = findOnPath("codex", {
+      platform: "linux",
+      pathEnv: "/usr/local/bin:/usr/bin",
+      exists: (p) => p === path.join("/usr/local/bin", "codex"),
+    });
+    assert.equal(found, path.join("/usr/local/bin", "codex"));
+  });
+
+  it("returns undefined when the POSIX binary is absent", () => {
+    const found = findOnPath("codex", {
+      platform: "linux",
+      pathEnv: "/usr/local/bin",
+      exists: () => false,
+    });
+    assert.equal(found, undefined);
+  });
+});
+
+describe("ensureProjectRoot", () => {
+  it("returns an existing directory without prompting", async () => {
+    let prompted = 0;
+    const out = await ensureProjectRoot("/proj", {
+      exists: () => true,
+      mkdir: async () => {
+        throw new Error("must not mkdir");
+      },
+      confirm: async () => {
+        prompted += 1;
+        return true;
+      },
+      reprompt: async () => {
+        prompted += 1;
+        return "/other";
+      },
+    });
+    assert.equal(out, "/proj");
+    assert.equal(prompted, 0);
+  });
+
+  it("creates a missing directory after confirmation", async () => {
+    const created: string[] = [];
+    const out = await ensureProjectRoot("/new", {
+      exists: () => false,
+      mkdir: async (p) => {
+        created.push(p);
+      },
+      confirm: async () => true,
+      reprompt: async () => {
+        throw new Error("must not reprompt");
+      },
+    });
+    assert.equal(out, "/new");
+    assert.deepEqual(created, ["/new"]);
+  });
+
+  it("re-prompts when creation is declined", async () => {
+    const out = await ensureProjectRoot("/missing", {
+      exists: (p) => p === "/valid",
+      mkdir: async () => {
+        throw new Error("must not mkdir");
+      },
+      confirm: async () => false,
+      reprompt: async () => "/valid",
+    });
+    assert.equal(out, "/valid");
+  });
+
+  it("re-prompts when creation fails", async () => {
+    const questions: string[] = [];
+    const out = await ensureProjectRoot("/denied", {
+      exists: (p) => p === "/fallback",
+      mkdir: async () => {
+        throw new Error("EACCES");
+      },
+      confirm: async () => true,
+      reprompt: async (q) => {
+        questions.push(q);
+        return "/fallback";
+      },
+    });
+    assert.equal(out, "/fallback");
+    assert.equal(questions.length, 1);
   });
 });
 
