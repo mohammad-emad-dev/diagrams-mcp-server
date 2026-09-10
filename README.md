@@ -1,6 +1,6 @@
 # diagrams-mcp-server
 
-> **Technical Preview (V1 Preview, v0.2.0)** — local-first MCP server for
+> **Technical Preview (V1 Preview, v0.3.0)** — local-first MCP server for
 > PlantUML and Mermaid diagrams with architecture drift detection.
 
 An MCP (Model Context Protocol) server that gives AI coding agents direct, structured access to your project's **PlantUML** and **Mermaid** architecture diagrams — list them, read them, create or update them, render them to images, and (uniquely) **check whether they still match your actual code**.
@@ -44,26 +44,64 @@ Pagination is explicit and opt-in — the server never pages or truncates on its
 
 ## Installation
 
-No git clone needed — install straight from the npm registry:
+You need **Node.js 18+** — that is the only requirement. No accounts, no
+API keys, no separate services.
+
+### 1. Get the package (pick one way)
+
+#### Option A — no install (fastest way to try it)
 
 ```bash
-npx diagrams-mcp-server --help    # run once, no install
-npm install -g diagrams-mcp-server   # or install globally
+npx diagrams-mcp-server --help
 ```
 
-### One-command setup
+`npx` fetches the package on first use and caches it. Nothing is
+installed permanently, so this is the simplest way to try the server. The
+trade-off: the first run needs internet access, and MCP clients start the
+server fresh on every session — for daily use, prefer Option B.
 
-Pick your client and let the server register itself — no hand-editing JSON:
+#### Option B — global install (recommended for daily use)
 
 ```bash
-npx diagrams-mcp-server setup            # interactive: choose a client
+npm install -g diagrams-mcp-server
+diagrams-mcp-server --help   # prints the help text and exits 0
+```
+
+This puts a `diagrams-mcp-server` command on your PATH so any MCP client
+can launch it. To update later, just rerun the same command.
+
+#### Option C — project dependency (pin a version per project)
+
+```bash
+cd /path/to/your/project
+npm install diagrams-mcp-server
+npx diagrams-mcp-server --help
+```
+
+Use this when different projects should use different server versions.
+
+### 2. Connect it to your client
+
+Installing the package alone is not enough: your MCP client also needs a
+`diagrams` entry telling it how to launch the server. The one-command
+setup writes that entry for you — no hand-editing JSON:
+
+```bash
+npx diagrams-mcp-server setup            # interactive: pick your client
 npx diagrams-mcp-server setup --client claude-desktop --yes   # non-interactive
 ```
 
-For file-based clients (Claude Desktop, Cursor, VS Code, Antigravity) this
-writes the `diagrams` entry into the client's config file. For Claude Code
-and Codex it runs their `mcp add` command; for OpenCode it prints the
-command to run. Restart file-based clients afterwards so they pick it up.
+For file-based clients (Claude Desktop, Cursor, VS Code, Antigravity)
+this merges the `diagrams` entry into the client's config file. For
+Claude Code and Codex it runs their `mcp add` command; for OpenCode it
+prints the command to run. Restart file-based clients afterwards so they
+pick it up.
+
+### 3. Verify it works
+
+Restart your client, then ask your agent: "List my diagrams." It should
+call `diagrams_list` — an empty list on a fresh project means everything
+is wired up correctly.
 
 ### From source (contributors)
 
@@ -108,14 +146,14 @@ line endings and the format check gives the same result on every platform.
 
 ### Local tarball install (no registry access)
 
-To install and run this Technical Preview (v0.2.0) without registry
+To install and run this Technical Preview (v0.3.0) without registry
 access, pack and install from a local tarball instead:
 
 ```bash
-npm pack   # runs the prepack build and writes diagrams-mcp-server-0.2.0.tgz
+npm pack   # runs the prepack build and writes diagrams-mcp-server-0.3.0.tgz
 cd /path/to/your/project
 npm init -y                       # if the consumer project has no package.json yet
-npm install /path/to/diagrams-mcp-server-0.2.0.tgz
+npm install /path/to/diagrams-mcp-server-0.3.0.tgz
 npx diagrams-mcp-server --help    # resolves the local install, exits 0
 ```
 
@@ -125,6 +163,44 @@ changes nothing outside the consumer project (no global packages, no
 registry publish). Point any stdio MCP client at the installed binary
 (`node_modules/.bin/diagrams-mcp-server`) the same way as `dist/index.js`
 in [Client setup](#client-setup).
+
+## Uninstallation
+
+Uninstalling has two independent parts: disconnecting the server from
+your client, and removing the package. Do either or both.
+
+### 1. Disconnect it from your client
+
+Delete the `diagrams` entry from your client's configuration and restart
+the client:
+
+| Client | What to remove |
+|---|---|
+| Claude Desktop | the `"diagrams"` block in `claude_desktop_config.json` |
+| Cursor | the `"diagrams"` block in `~/.cursor/mcp.json` or `.cursor/mcp.json` |
+| VS Code | the `"diagrams"` block in `.vscode/mcp.json` |
+| Antigravity | the `"diagrams"` block in `~/.gemini/config/mcp_config.json` (or `.agents/mcp_config.json`) |
+| Claude Code | run `claude mcp remove diagrams` |
+| Codex | the `[mcp_servers.diagrams]` section in `~/.codex/config.toml` |
+| OpenCode | the `"diagrams"` block in `opencode.jsonc` |
+
+### 2. Remove the package
+
+Match how you installed it:
+
+```bash
+npm uninstall -g diagrams-mcp-server   # global install (Option B)
+npm uninstall diagrams-mcp-server      # project dependency (Option C, run inside the project)
+```
+
+If you only ever used `npx` (Option A), there is nothing to uninstall —
+optionally clear the download cache with `npx clear-npx-cache`.
+
+### What stays behind
+
+Uninstalling never touches your diagram files: the `diagrams/` folder in
+your project is your own work and is left exactly as it is. Delete it
+manually only if you want the diagrams gone too.
 
 ## Client setup
 
