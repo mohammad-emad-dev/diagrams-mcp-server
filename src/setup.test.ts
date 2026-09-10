@@ -8,6 +8,7 @@ import {
   mergeServerConfig,
   parseSetupArgs,
   resolveConfigFile,
+  shouldBakeProjectRoot,
 } from "./setup.js";
 
 describe("parseSetupArgs", () => {
@@ -45,6 +46,22 @@ describe("parseSetupArgs", () => {
   it("rejects unknown flags and bad scopes", () => {
     assert.throws(() => parseSetupArgs(["--bogus"]), /Unknown setup flag/);
     assert.throws(() => parseSetupArgs(["--scope", "wide"]), /Invalid --scope/);
+  });
+
+  it("records whether scope and project root were explicit", () => {
+    const fresh = parseSetupArgs([]);
+    assert.equal(fresh.scopeExplicit, false);
+    assert.equal(fresh.projectRootExplicit, false);
+
+    const scoped = parseSetupArgs(["--scope", "project"]);
+    assert.equal(scoped.scope, "project");
+    assert.equal(scoped.scopeExplicit, true);
+    assert.equal(scoped.projectRootExplicit, false);
+
+    const rooted = parseSetupArgs(["--project-root=/p"]);
+    assert.equal(rooted.projectRoot, "/p");
+    assert.equal(rooted.projectRootExplicit, true);
+    assert.equal(rooted.scopeExplicit, false);
   });
 });
 
@@ -86,6 +103,36 @@ describe("cliAddCommand", () => {
       "-y",
       "diagrams-mcp-server",
     ]);
+  });
+
+  it("omits --env entirely for a clean global entry", () => {
+    for (const client of ["claude-code", "codex"] as const) {
+      const bin = client === "codex" ? "codex" : "claude";
+      assert.deepEqual(cliAddCommand(client), [
+        bin,
+        "mcp",
+        "add",
+        "diagrams",
+        "--",
+        "npx",
+        "-y",
+        "diagrams-mcp-server",
+      ]);
+    }
+  });
+});
+
+describe("shouldBakeProjectRoot", () => {
+  it("stays clean for the global default", () => {
+    assert.equal(shouldBakeProjectRoot(parseSetupArgs([])), false);
+  });
+
+  it("bakes PROJECT_ROOT for project scope", () => {
+    assert.equal(shouldBakeProjectRoot(parseSetupArgs(["--scope", "project"])), true);
+  });
+
+  it("honors an explicit --project-root even under global scope", () => {
+    assert.equal(shouldBakeProjectRoot(parseSetupArgs(["--project-root", "/p"])), true);
   });
 });
 
@@ -208,6 +255,13 @@ describe("diagramsServerEntry", () => {
       command: "npx",
       args: ["-y", "diagrams-mcp-server"],
       env: { PROJECT_ROOT: "/proj" },
+    });
+  });
+
+  it("omits env entirely for a clean global entry", () => {
+    assert.deepEqual(diagramsServerEntry(), {
+      command: "npx",
+      args: ["-y", "diagrams-mcp-server"],
     });
   });
 });

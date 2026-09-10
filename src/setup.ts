@@ -40,31 +40,25 @@ const CLIENT_LABELS: Record<SetupClient, string> = {
   antigravity: "Antigravity (writes mcp_config.json)",
 };
 
-// Add-command for CLI-based clients, built per project root. PROJECT_ROOT
-// travels as an explicit --env flag (supported by both CLIs) so the
-// registered server binds the chosen project no matter where the client
-// launches it from. Names are hardcoded literals, never user input, and
-// spawn without a shell.
-export function cliAddCommand(client: "claude-code" | "codex", projectRoot: string): string[] {
+// Add-command for CLI-based clients. Project scope pins PROJECT_ROOT as
+// an explicit --env flag (supported by both CLIs); global scope leaves
+// it out so the server follows the client's working directory. Names are
+// hardcoded literals, never user input, and spawn without a shell.
+export function cliAddCommand(client: "claude-code" | "codex", projectRoot?: string): string[] {
   const bin = client === "codex" ? "codex" : "claude";
-  return [
-    bin,
-    "mcp",
-    "add",
-    "diagrams",
-    "--env",
-    `PROJECT_ROOT=${projectRoot}`,
-    "--",
-    "npx",
-    "-y",
-    "diagrams-mcp-server",
-  ];
+  const argv = [bin, "mcp", "add", "diagrams"];
+  if (projectRoot !== undefined) {
+    argv.push("--env", `PROJECT_ROOT=${projectRoot}`);
+  }
+  return [...argv, "--", "npx", "-y", "diagrams-mcp-server"];
 }
 
 export interface SetupOptions {
   client?: string;
   projectRoot: string;
+  projectRootExplicit: boolean;
   scope: "global" | "project";
+  scopeExplicit: boolean;
   yes: boolean;
   help: boolean;
 }
@@ -72,7 +66,9 @@ export interface SetupOptions {
 export function parseSetupArgs(args: string[]): SetupOptions {
   const opts: SetupOptions = {
     projectRoot: process.cwd(),
+    projectRootExplicit: false,
     scope: "global",
+    scopeExplicit: false,
     yes: false,
     help: false,
   };
@@ -90,13 +86,17 @@ export function parseSetupArgs(args: string[]): SetupOptions {
     } else if (arg === "--project-root" && i + 1 < args.length) {
       i += 1;
       opts.projectRoot = args[i];
+      opts.projectRootExplicit = true;
     } else if (arg.startsWith("--project-root=")) {
       opts.projectRoot = arg.slice("--project-root=".length);
+      opts.projectRootExplicit = true;
     } else if (arg === "--scope" && i + 1 < args.length) {
       i += 1;
       opts.scope = parseScope(args[i]);
+      opts.scopeExplicit = true;
     } else if (arg.startsWith("--scope=")) {
       opts.scope = parseScope(arg.slice("--scope=".length));
+      opts.scopeExplicit = true;
     } else {
       throw new Error(`Unknown setup flag '${arg}'. Run with --help.`);
     }
@@ -166,17 +166,22 @@ export function resolveConfigFile(
 export interface ServerEntry {
   command: string;
   args: string[];
-  env: Record<string, string>;
+  env?: Record<string, string>;
 }
 
 // The config entry written for file-based clients: run via npx so no
-// local checkout is needed.
-export function diagramsServerEntry(projectRoot: string): ServerEntry {
-  return {
+// local checkout is needed. Global scope writes a clean entry without
+// env (the server then uses the client's working directory); project
+// scope pins one PROJECT_ROOT.
+export function diagramsServerEntry(projectRoot?: string): ServerEntry {
+  const entry: ServerEntry = {
     command: "npx",
     args: ["-y", "diagrams-mcp-server"],
-    env: { PROJECT_ROOT: projectRoot },
   };
+  if (projectRoot !== undefined) {
+    entry.env = { PROJECT_ROOT: projectRoot };
+  }
+  return entry;
 }
 
 // Merge one server entry into existing config JSON. Refuses non-object
@@ -209,6 +214,7 @@ function isErrno(err: unknown): err is NodeJS.ErrnoException {
 export async function writeFileClientConfig(
   client: FileSetupClient,
   opts: SetupOptions,
+  projectRoot: string | undefined,
 ): Promise<string> {
   const target = resolveConfigFile(
     client,
@@ -232,7 +238,7 @@ export async function writeFileClientConfig(
     existing,
     target.rootKey,
     "diagrams",
-    diagramsServerEntry(opts.projectRoot),
+    diagramsServerEntry(projectRoot),
   );
   await fs.mkdir(path.dirname(target.file), { recursive: true });
   await fs.writeFile(target.file, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
@@ -266,7 +272,10 @@ async function pickClient(): Promise<SetupClient> {
   }
 }
 
-function runAddCommand(client: "claude-code" | "codex", projectRoot: string): Promise<void> {
+function runAddCommand(
+  client: "claude-code" | "codex",
+  projectRoot: string | undefined,
+): Promise<void> {
   const argv = cliAddCommand(client, projectRoot);
   return new Promise<void>((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), { stdio: "inherit" });
@@ -293,6 +302,10 @@ Usage:
   diagrams-mcp-server setup [--client <name>] [--project-root <dir>]
                             [--scope global|project] [--yes]
 
+  --scope global (default): clean config without PROJECT_ROOT; the
+    server attaches to the client's working directory.
+  --scope project: bake PROJECT_ROOT into the config for one project.
+
 Clients: ${SETUP_CLIENTS.join(", ")}
 
 Examples:
@@ -300,6 +313,25 @@ Examples:
   diagrams-mcp-server setup --client claude-desktop --yes
   diagrams-mcp-server setup --client cursor --scope project
 `);
+}
+
+// Global scope writes a clean config and follows the working directory;
+// project scope pins one PROJECT_ROOT. An explicit --project-root always
+// wins over the global default.
+export function shouldBakeProjectRoot(opts: SetupOptions): boolean {
+  return opts.scope === "project" || opts.projectRootExplicit;
+}
+
+async function pickScope(): Promise<"global" | "project"> {
+  console.log("Setup scope:");
+  console.log("  1. Global (Recommended) — clean config, follows the working directory");
+  console.log("  2. Project-specific — pins PROJECT_ROOT for this project");
+  for (;;) {
+    const answer = await ask("Choose 1-2 [1]: ", "1");
+    if (answer === "1") return "global";
+    if (answer === "2") return "project";
+    console.log("Enter 1 or 2.");
+  }
 }
 
 export async function runSetup(args: string[]): Promise<void> {
@@ -318,20 +350,25 @@ export async function runSetup(args: string[]): Promise<void> {
   if (!isSetupClient(client)) {
     throw new Error(`Unknown client '${client}'. Expected one of: ${SETUP_CLIENTS.join(", ")}.`);
   }
-  if (!opts.yes && process.stdin.isTTY) {
+  const interactive = process.stdin.isTTY && !opts.yes;
+  if (interactive && !opts.scopeExplicit) {
+    opts.scope = await pickScope();
+  }
+  if (interactive && opts.scope === "project") {
     console.log("Project root is the target project/repo: diagrams are stored and scanned there.");
     opts.projectRoot = await ask(`Project root [${opts.projectRoot}]: `, opts.projectRoot);
   }
+  const projectRoot = shouldBakeProjectRoot(opts) ? opts.projectRoot : undefined;
   if (FILE_CLIENTS.has(client)) {
-    const file = await writeFileClientConfig(client as FileSetupClient, opts);
+    const file = await writeFileClientConfig(client as FileSetupClient, opts, projectRoot);
     console.log(`Wrote the diagrams entry to ${file}. Restart ${client} to load it.`);
     return;
   }
   if (client === "claude-code" || client === "codex") {
     try {
-      await runAddCommand(client, opts.projectRoot);
+      await runAddCommand(client, projectRoot);
     } catch {
-      const display = cliAddCommand(client, opts.projectRoot).map(shellQuote).join(" ");
+      const display = cliAddCommand(client, projectRoot).map(shellQuote).join(" ");
       console.log(`Could not run the ${client} CLI. Run this instead:`);
       console.log(`  ${display}`);
       return;

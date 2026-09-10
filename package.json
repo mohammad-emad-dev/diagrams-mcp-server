@@ -1,6 +1,6 @@
 {
   "name": "diagrams-mcp-server",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "mcpName": "io.github.mohammad-emad-dev/diagrams-mcp-server",
   "description": "Technical Preview (V1 Preview): local-first MCP server for managing, rendering, and checking PlantUML and Mermaid architecture diagrams alongside your codebase.",
   "type": "module",
