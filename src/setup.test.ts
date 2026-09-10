@@ -3,26 +3,28 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import {
   box,
-  cliAddCommand,
   confirmNext,
-  diagramsServerEntry,
-  ensureProjectRoot,
-  findOnPath,
   frameTransition,
   frozenLine,
-  isSetupClient,
-  mergeServerConfig,
   normalizeKey,
   paint,
-  parseSetupArgs,
   renderBanner,
   renderConfirm,
   renderSelect,
-  resolveConfigFile,
   selectNext,
-  shouldBakeProjectRoot,
   visibleWidth,
-} from "./setup.js";
+} from "./setup/terminal.js";
+import {
+  cliAddCommand,
+  diagramsServerEntry,
+  ensureProjectRoot,
+  findOnPath,
+  isSetupClient,
+  mergeServerConfig,
+  parseSetupArgs,
+  resolveConfigFile,
+  shouldBakeProjectRoot,
+} from "./setup/clients.js";
 
 describe("parseSetupArgs", () => {
   it("defaults to cwd, global scope, and interactive mode", () => {

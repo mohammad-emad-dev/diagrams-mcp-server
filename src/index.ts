@@ -12,7 +12,7 @@ import { registerDiagramsUpdate } from "./tools/diagramsUpdate.js";
 import { registerDiagramsDelete } from "./tools/diagramsDelete.js";
 import { registerDiagramsRender } from "./tools/diagramsRender.js";
 import { registerDiagramsCheckConsistency } from "./tools/diagramsCheckConsistency.js";
-import { runSetup } from "./setup.js";
+import { runSetup } from "./setup/index.js";
 
 function printHelp(): void {
   console.log(`diagrams-mcp-server
