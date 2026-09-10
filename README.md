@@ -1,6 +1,6 @@
 # diagrams-mcp-server
 
-> **Technical Preview (V1 Preview, v0.4.0)** — local-first MCP server for
+> **Technical Preview (V1 Preview, v0.5.0)** — local-first MCP server for
 > PlantUML and Mermaid diagrams with architecture drift detection.
 
 An MCP (Model Context Protocol) server that gives AI coding agents direct, structured access to your project's **PlantUML** and **Mermaid** architecture diagrams — list them, read them, create or update them, render them to images, and (uniquely) **check whether they still match your actual code**.
@@ -113,6 +113,8 @@ Setup runs pre-flight checks automatically: it warns when the `claude`
 or `codex` CLI is missing (printing the manual command instead),
 validates a project-scoped path (offering to create it), and ends with
 a summary of the client, scope, touched config, and status.
+Interactive prompts use arrow-key pickers (`↑↓` + `Enter`, `Esc`
+cancels); every prompt is skipped when the matching flag is passed.
 
 ### 3. Verify it works
 
@@ -163,14 +165,14 @@ line endings and the format check gives the same result on every platform.
 
 ### Local tarball install (no registry access)
 
-To install and run this Technical Preview (v0.4.0) without registry
+To install and run this Technical Preview (v0.5.0) without registry
 access, pack and install from a local tarball instead:
 
 ```bash
-npm pack   # runs the prepack build and writes diagrams-mcp-server-0.4.0.tgz
+npm pack   # runs the prepack build and writes diagrams-mcp-server-0.5.0.tgz
 cd /path/to/your/project
 npm init -y                       # if the consumer project has no package.json yet
-npm install /path/to/diagrams-mcp-server-0.4.0.tgz
+npm install /path/to/diagrams-mcp-server-0.5.0.tgz
 npx diagrams-mcp-server --help    # resolves the local install, exits 0
 ```
 

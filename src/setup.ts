@@ -10,6 +10,316 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
+const SETUP_VERSION = "0.5.0"; // Keep in sync with package.json (checked at release).
+
+// Wrap text in an ANSI style in capable terminals only: piped output and
+// NO_COLOR stay plain so logs and scripts never see escape codes.
+export function paint(code: string, text: string): string {
+  if (process.env.NO_COLOR !== undefined) return text;
+  if (process.stdout.isTTY !== true) return text;
+  return `\x1b[${code}m${text}\x1b[0m`;
+}
+
+// Visible cell width: strip ANSI escapes, count pictographs as double.
+export function visibleWidth(text: string): number {
+  const plain = text.replace(/\x1b\[[0-9;]*m/g, "");
+  let width = 0;
+  for (const ch of plain) {
+    width += /\p{Extended_Pictographic}/u.test(ch) ? 2 : 1;
+  }
+  return width;
+}
+
+function padCenter(text: string, width: number): string {
+  const pad = Math.max(0, width - visibleWidth(text));
+  const left = Math.floor(pad / 2);
+  return `${" ".repeat(left)}${text}${" ".repeat(pad - left)}`;
+}
+
+// Double-lined terminal card. Width fits the widest line plus padding.
+export function box(lines: string[], title?: string): string {
+  const inner = Math.max(
+    0,
+    ...lines.map(visibleWidth),
+    title === undefined ? 0 : visibleWidth(title) + 4,
+  );
+  const width = inner + 4;
+  const top =
+    title === undefined
+      ? `╔${"═".repeat(width)}╗`
+      : `╔═ ${title} ${"═".repeat(Math.max(0, width - visibleWidth(title) - 3))}╗`;
+  const body = lines.map(
+    (line) => `║  ${line}${" ".repeat(Math.max(0, width - visibleWidth(line) - 2))}║`,
+  );
+  return [top, ...body, `╚${"═".repeat(width)}╝`].join("\n");
+}
+
+export function renderBanner(title: string, version: string): string {
+  return box([padCenter(`${title}  v${version}`, 40)]);
+}
+
+export interface SelectOption {
+  label: string;
+  hint?: string;
+}
+
+export function renderSelect(message: string, options: SelectOption[], active: number): string {
+  const lines = [paint("36", `◇ ${message}`)];
+  options.forEach((option, index) => {
+    const hint = option.hint === undefined ? "" : paint("2", `  ${option.hint}`);
+    if (index === active) {
+      lines.push(`❯ ${paint("1;36", option.label)}${hint}`);
+    } else {
+      lines.push(`  ${paint("2", option.label)}${hint}`);
+    }
+  });
+  lines.push(paint("2", "↑↓ to move · Enter to confirm · 1-9 jumps · Esc cancels"));
+  return lines.join("\n");
+}
+
+export function renderConfirm(message: string, yesActive: boolean): string {
+  const yes = yesActive ? `❯ ${paint("1;36", "[ Yes ]")}` : `  ${paint("2", "[ Yes ]")}`;
+  const no = yesActive ? `  ${paint("2", "[ No ]")}` : `❯ ${paint("1;36", "[ No ]")}`;
+  return [
+    `${paint("36", "◇")} ${message}`,
+    `${yes}   ${no}`,
+    paint("2", "←/→ to toggle · y/n · Enter to confirm"),
+  ].join("\n");
+}
+
+export type PromptKey =
+  | { kind: "up" }
+  | { kind: "down" }
+  | { kind: "left" }
+  | { kind: "right" }
+  | { kind: "submit" }
+  | { kind: "cancel" }
+  | { kind: "digit"; value: number }
+  | { kind: "yes" }
+  | { kind: "no" }
+  | { kind: "other" };
+
+export interface Keypress {
+  name?: string;
+  ctrl?: boolean;
+}
+
+export function normalizeKey(key: Keypress): PromptKey {
+  if (key.ctrl === true && key.name === "c") return { kind: "cancel" };
+  switch (key.name) {
+    case "up":
+      return { kind: "up" };
+    case "down":
+      return { kind: "down" };
+    case "left":
+      return { kind: "left" };
+    case "right":
+      return { kind: "right" };
+    case "return":
+    case "enter":
+      return { kind: "submit" };
+    case "escape":
+      return { kind: "cancel" };
+    case "y":
+      return { kind: "yes" };
+    case "n":
+      return { kind: "no" };
+    default:
+      break;
+  }
+  if (key.name !== undefined && /^[1-9]$/.test(key.name)) {
+    return { kind: "digit", value: Number(key.name) };
+  }
+  return { kind: "other" };
+}
+
+export interface SelectResult {
+  active: number;
+  done: boolean;
+  cancelled: boolean;
+}
+
+export function selectNext(count: number, active: number, key: PromptKey): SelectResult {
+  switch (key.kind) {
+    case "up":
+      return { active: (active - 1 + count) % count, done: false, cancelled: false };
+    case "down":
+      return { active: (active + 1) % count, done: false, cancelled: false };
+    case "submit":
+      return { active, done: true, cancelled: false };
+    case "cancel":
+      return { active, done: false, cancelled: true };
+    case "digit":
+      if (key.value >= 1 && key.value <= count) {
+        return { active: key.value - 1, done: true, cancelled: false };
+      }
+      return { active, done: false, cancelled: false };
+    default:
+      return { active, done: false, cancelled: false };
+  }
+}
+
+export interface ConfirmResult {
+  yes: boolean;
+  done: boolean;
+  cancelled: boolean;
+}
+
+export function confirmNext(yes: boolean, key: PromptKey): ConfirmResult {
+  switch (key.kind) {
+    case "left":
+    case "right":
+      return { yes: !yes, done: false, cancelled: false };
+    case "yes":
+      return { yes: true, done: true, cancelled: false };
+    case "no":
+      return { yes: false, done: true, cancelled: false };
+    case "submit":
+      return { yes, done: true, cancelled: false };
+    case "cancel":
+      return { yes, done: false, cancelled: true };
+    default:
+      return { yes, done: false, cancelled: false };
+  }
+}
+
+function setRawModeSafe(mode: boolean): boolean {
+  const stdin = process.stdin as unknown as { setRawMode?: (mode: boolean) => void };
+  if (typeof stdin.setRawMode !== "function") return false;
+  try {
+    stdin.setRawMode(mode);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+let keypressEventsEnabled = false;
+
+function rewriteFrame(lineCount: number, lines: string[]): void {
+  process.stdout.write(`\x1b[${lineCount}A`);
+  for (const line of lines) {
+    process.stdout.write(`\r\x1b[2K${line}\n`);
+  }
+}
+
+async function selectPromptLegacy(
+  message: string,
+  options: SelectOption[],
+  initial: number,
+): Promise<number> {
+  console.log(message);
+  options.forEach((option, index) => {
+    console.log(`  ${index + 1}. ${option.label}`);
+  });
+  for (;;) {
+    const answer = await ask(`Choose 1-${options.length} [${initial + 1}]: `, String(initial + 1));
+    const choice = Number(answer);
+    if (Number.isInteger(choice) && choice >= 1 && choice <= options.length) {
+      return choice - 1;
+    }
+    console.log(`Enter a number between 1 and ${options.length}.`);
+  }
+}
+
+async function selectPrompt(
+  message: string,
+  options: SelectOption[],
+  initial = 0,
+): Promise<number | undefined> {
+  if (process.stdin.isTTY !== true || !setRawModeSafe(true)) {
+    return selectPromptLegacy(message, options, initial);
+  }
+  if (!keypressEventsEnabled) {
+    readline.emitKeypressEvents(process.stdin);
+    keypressEventsEnabled = true;
+  }
+  process.stdin.resume();
+  process.stdout.write("\x1b[?25l");
+  let active = initial;
+  const lineCount = renderSelect(message, options, active).split("\n").length;
+  process.stdout.write(`${renderSelect(message, options, active)}\n`);
+  try {
+    return await new Promise<number | undefined>((resolve) => {
+      const onKey = (_chunk: unknown, key: Keypress): void => {
+        const next = selectNext(options.length, active, normalizeKey(key));
+        active = next.active;
+        if (next.cancelled || next.done) {
+          process.stdin.removeListener("keypress", onKey);
+          if (next.done) {
+            rewriteFrame(lineCount, [`${paint("36", "◇")} ${message}: ${options[active].label}`]);
+          }
+          resolve(next.done ? active : undefined);
+          return;
+        }
+        rewriteFrame(lineCount, renderSelect(message, options, active).split("\n"));
+      };
+      process.stdin.on("keypress", onKey);
+    });
+  } finally {
+    setRawModeSafe(false);
+    process.stdin.pause();
+    process.stdout.write("\x1b[?25h");
+  }
+}
+
+async function askConfirmLegacy(question: string, initialYes: boolean): Promise<boolean> {
+  const fallback = initialYes ? "y" : "n";
+  for (;;) {
+    const answer = (await ask(`${question} [${initialYes ? "Y/n" : "y/N"}]: `, fallback))
+      .trim()
+      .toLowerCase();
+    if (answer === "" || answer === "y" || answer === "yes") return true;
+    if (answer === "n" || answer === "no") return false;
+    console.log("Enter y or n.");
+  }
+}
+
+async function confirmPrompt(question: string, initialYes = true): Promise<boolean> {
+  if (process.stdin.isTTY !== true || !setRawModeSafe(true)) {
+    return askConfirmLegacy(question, initialYes);
+  }
+  if (!keypressEventsEnabled) {
+    readline.emitKeypressEvents(process.stdin);
+    keypressEventsEnabled = true;
+  }
+  process.stdin.resume();
+  process.stdout.write("\x1b[?25l");
+  let yes = initialYes;
+  const lineCount = renderConfirm(question, yes).split("\n").length;
+  process.stdout.write(`${renderConfirm(question, yes)}\n`);
+  try {
+    return await new Promise<boolean>((resolve) => {
+      const onKey = (_chunk: unknown, key: Keypress): void => {
+        const next = confirmNext(yes, normalizeKey(key));
+        yes = next.yes;
+        if (next.cancelled) {
+          process.stdin.removeListener("keypress", onKey);
+          resolve(false);
+          return;
+        }
+        if (next.done) {
+          process.stdin.removeListener("keypress", onKey);
+          rewriteFrame(lineCount, [`${paint("36", "◇")} ${question}: ${yes ? "Yes" : "No"}`]);
+          resolve(yes);
+          return;
+        }
+        rewriteFrame(lineCount, renderConfirm(question, yes).split("\n"));
+      };
+      process.stdin.on("keypress", onKey);
+    });
+  } finally {
+    setRawModeSafe(false);
+    process.stdin.pause();
+    process.stdout.write("\x1b[?25h");
+  }
+}
+
+function abortSetup(): never {
+  console.log(paint("31", "✖ Setup cancelled."));
+  process.exit(1);
+}
+
 export const SETUP_CLIENTS = [
   "claude-code",
   "codex",
@@ -262,14 +572,16 @@ export async function ensureProjectRoot(root: string, deps: PathPromptDeps): Pro
   let current = root;
   for (;;) {
     if (deps.exists(current)) return current;
-    console.log(`⚠ Directory does not exist: ${current}`);
-    if (await deps.confirm("Create this directory? [Y/n]: ")) {
+    console.log(paint("33", `⚠ Directory does not exist: ${current}`));
+    if (await deps.confirm("Create this directory?")) {
       try {
         await deps.mkdir(current);
-        console.log(`✔ Created ${current}`);
+        console.log(paint("32", `✔ Created ${current}`));
         return current;
       } catch (err: unknown) {
-        console.log(`✖ Could not create directory: ${err instanceof Error ? err.message : err}`);
+        console.log(
+          paint("31", `✖ Could not create directory: ${err instanceof Error ? err.message : err}`),
+        );
       }
     }
     const next = (await deps.reprompt(`Project root [${current}]: `, current)).trim();
@@ -277,28 +589,13 @@ export async function ensureProjectRoot(root: string, deps: PathPromptDeps): Pro
   }
 }
 
-async function askConfirm(question: string): Promise<boolean> {
-  for (;;) {
-    const answer = (await ask(question, "y")).trim().toLowerCase();
-    if (answer === "" || answer === "y" || answer === "yes") return true;
-    if (answer === "n" || answer === "no") return false;
-    console.log("Enter y or n.");
-  }
-}
-
 async function pickClient(): Promise<SetupClient> {
-  console.log("Which client should use diagrams-mcp-server?");
-  SETUP_CLIENTS.forEach((client, index) => {
-    console.log(`  ${index + 1}. ${CLIENT_LABELS[client]}`);
-  });
-  for (;;) {
-    const answer = await ask(`Choose 1-${SETUP_CLIENTS.length}: `, "");
-    const choice = Number(answer);
-    if (Number.isInteger(choice) && choice >= 1 && choice <= SETUP_CLIENTS.length) {
-      return SETUP_CLIENTS[choice - 1];
-    }
-    console.log(`Enter a number between 1 and ${SETUP_CLIENTS.length}.`);
-  }
+  const index =
+    (await selectPrompt(
+      "Which client should use diagrams-mcp-server?",
+      SETUP_CLIENTS.map((client) => ({ label: CLIENT_LABELS[client] })),
+    )) ?? abortSetup();
+  return SETUP_CLIENTS[index];
 }
 
 function runAddCommand(
@@ -354,20 +651,17 @@ export function shouldBakeProjectRoot(opts: SetupOptions): boolean {
 }
 
 async function pickScope(): Promise<"global" | "project"> {
-  console.log("Setup scope:");
-  console.log("  1. Global (Recommended) — clean config, follows the working directory");
-  console.log("  2. Project-specific — pins PROJECT_ROOT for this project");
-  for (;;) {
-    const answer = await ask("Choose 1-2 [1]: ", "1");
-    if (answer === "1") return "global";
-    if (answer === "2") return "project";
-    console.log("Enter 1 or 2.");
-  }
+  const index =
+    (await selectPrompt("Setup scope:", [
+      { label: "Global (Recommended)", hint: "clean config, follows the working directory" },
+      { label: "Project-specific", hint: "pins PROJECT_ROOT for this project" },
+    ])) ?? abortSetup();
+  return index === 0 ? "global" : "project";
 }
 
 function printSummary(client: string, scope: string, target: string, status: string): void {
   console.log("");
-  console.log("◇ Summary");
+  console.log(paint("36", "◇ Summary"));
   console.log(`  Target client:       ${client}`);
   console.log(`  Configuration scope: ${scope}`);
   console.log(`  Touched:             ${target}`);
@@ -380,7 +674,7 @@ export async function runSetup(args: string[]): Promise<void> {
     printSetupHelp();
     return;
   }
-  console.log("◇ diagrams-mcp-server setup");
+  console.log(renderBanner("📐 DIAGRAMS MCP SERVER", SETUP_VERSION));
   console.log("");
   let client = opts.client;
   if (client === undefined) {
@@ -404,45 +698,65 @@ export async function runSetup(args: string[]): Promise<void> {
       mkdir: async (p) => {
         await fs.mkdir(p, { recursive: true });
       },
-      confirm: askConfirm,
+      confirm: (question) => confirmPrompt(question, true),
       reprompt: (question, fallback) => ask(question, fallback),
     });
   }
   const projectRoot = shouldBakeProjectRoot(opts) ? opts.projectRoot : undefined;
   if (!interactive && projectRoot !== undefined && !existsSync(projectRoot)) {
-    console.log(`⚠ Warning: ${projectRoot} does not exist; continuing with it anyway.`);
+    console.log(
+      paint("33", `⚠ Warning: ${projectRoot} does not exist; continuing with it anyway.`),
+    );
   }
   if (FILE_CLIENTS.has(client)) {
     const file = await writeFileClientConfig(client as FileSetupClient, opts, projectRoot);
-    console.log(`✔ Wrote the diagrams entry to ${file}.`);
-    printSummary(client, opts.scope, file, `✔ Restart ${client} to load it.`);
+    console.log(paint("32", `✔ Wrote the diagrams entry to ${file}.`));
+    printSummary(client, opts.scope, file, paint("32", `✔ Restart ${client} to load it.`));
     return;
   }
   if (client === "claude-code" || client === "codex") {
     const bin = client === "codex" ? "codex" : "claude";
     const display = cliAddCommand(client, projectRoot).map(shellQuote).join(" ");
     if (findOnPath(bin) === undefined) {
-      console.log(`⚠ ${bin} CLI not detected in PATH.`);
-      console.log("Run this instead:");
-      console.log(`  ${display}`);
-      printSummary(client, opts.scope, "manual command (see above)", "⚠ Manual step required.");
+      console.log(paint("33", `⚠ ${bin} CLI not detected in PATH.`));
+      console.log(box([display], "Manual setup"));
+      printSummary(
+        client,
+        opts.scope,
+        "manual command (see above)",
+        paint("33", "⚠ Manual step required."),
+      );
       return;
     }
     try {
       await runAddCommand(client, projectRoot);
     } catch (err: unknown) {
-      console.log(`✖ Could not run the ${bin} CLI: ${err instanceof Error ? err.message : err}`);
-      console.log("Run this instead:");
-      console.log(`  ${display}`);
-      printSummary(client, opts.scope, "manual command (see above)", "⚠ Manual step required.");
+      console.log(
+        paint("31", `✖ Could not run the ${bin} CLI: ${err instanceof Error ? err.message : err}`),
+      );
+      console.log(box([display], "Manual setup"));
+      printSummary(
+        client,
+        opts.scope,
+        "manual command (see above)",
+        paint("33", "⚠ Manual step required."),
+      );
       return;
     }
-    console.log(`✔ Registered diagrams with ${client}.`);
-    printSummary(client, opts.scope, `${bin} CLI configuration`, "✔ Ready to use.");
+    console.log(paint("32", `✔ Registered diagrams with ${client}.`));
+    printSummary(client, opts.scope, `${bin} CLI configuration`, paint("32", "✔ Ready to use."));
     return;
   }
-  console.log("Run this in your terminal:");
-  console.log("  opencode mcp add");
-  console.log("Choose Local, then enter: npx -y diagrams-mcp-server");
-  printSummary(client, opts.scope, "manual command (see above)", "⚠ Manual step required.");
+  console.log(
+    box(
+      ["opencode mcp add", "Choose Local, then enter:", "  npx -y diagrams-mcp-server"],
+      "Manual setup",
+    ),
+  );
+  printSummary(
+    client,
+    opts.scope,
+    "manual command (see above)",
+    paint("33", "⚠ Manual step required."),
+  );
 }

@@ -2,15 +2,24 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import {
+  box,
   cliAddCommand,
+  confirmNext,
   diagramsServerEntry,
   ensureProjectRoot,
   findOnPath,
   isSetupClient,
   mergeServerConfig,
+  normalizeKey,
+  paint,
   parseSetupArgs,
+  renderBanner,
+  renderConfirm,
+  renderSelect,
   resolveConfigFile,
+  selectNext,
   shouldBakeProjectRoot,
+  visibleWidth,
 } from "./setup.js";
 
 describe("parseSetupArgs", () => {
@@ -136,6 +145,193 @@ describe("shouldBakeProjectRoot", () => {
 
   it("honors an explicit --project-root even under global scope", () => {
     assert.equal(shouldBakeProjectRoot(parseSetupArgs(["--project-root", "/p"])), true);
+  });
+});
+
+describe("paint", () => {
+  it("stays plain when NO_COLOR is set", () => {
+    const previous = process.env.NO_COLOR;
+    process.env.NO_COLOR = "1";
+    try {
+      assert.equal(paint("32", "✔ done"), "✔ done");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.NO_COLOR;
+      } else {
+        process.env.NO_COLOR = previous;
+      }
+    }
+  });
+
+  it("stays plain on piped output", () => {
+    if (process.stdout.isTTY === true) return;
+    assert.equal(paint("32", "✔ done"), "✔ done");
+  });
+});
+
+describe("visibleWidth", () => {
+  it("counts plain text by characters", () => {
+    assert.equal(visibleWidth("hello"), 5);
+  });
+
+  it("ignores ANSI escapes and counts pictographs double", () => {
+    assert.equal(visibleWidth("a\x1b[36mb\x1b[0m"), 2);
+    assert.equal(visibleWidth("📐ab"), 4);
+  });
+});
+
+describe("box", () => {
+  it("frames content in double lines with a title", () => {
+    const out = box(["opencode mcp add", "second line"], "Manual setup");
+    const lines = out.split("\n");
+    assert.ok(lines[0].startsWith("╔═ Manual setup "));
+    assert.ok(lines[0].endsWith("╗"));
+    assert.ok(lines[lines.length - 1].startsWith("╚"));
+    assert.ok(lines[lines.length - 1].endsWith("╝"));
+    assert.ok(lines.some((line) => line.includes("opencode mcp add")));
+    const widths = new Set(lines.map(visibleWidth));
+    assert.equal(widths.size, 1);
+  });
+
+  it("works without a title", () => {
+    const out = box(["only"]);
+    const lines = out.split("\n");
+    assert.equal(lines.length, 3);
+    assert.ok(lines[0].startsWith("╔"));
+    const widths = new Set(lines.map(visibleWidth));
+    assert.equal(widths.size, 1);
+  });
+});
+
+describe("renderBanner", () => {
+  it("centers the title and version in a uniform box", () => {
+    const out = renderBanner("📐 DIAGRAMS MCP SERVER", "0.5.0");
+    assert.ok(out.includes("📐 DIAGRAMS MCP SERVER"));
+    assert.ok(out.includes("v0.5.0"));
+    const lines = out.split("\n");
+    const widths = new Set(lines.map(visibleWidth));
+    assert.equal(widths.size, 1);
+  });
+});
+
+describe("renderSelect", () => {
+  const options = [
+    { label: "Global (Recommended)", hint: "clean config" },
+    { label: "Project-specific", hint: "pins root" },
+  ];
+
+  it("marks the active option and shows hints", () => {
+    const lines = renderSelect("Setup scope:", options, 1).split("\n");
+    assert.ok(lines[0].includes("Setup scope:"));
+    assert.ok(lines[1].startsWith("  "));
+    assert.ok(lines[1].includes("Global (Recommended)"));
+    assert.ok(lines[2].startsWith("❯"));
+    assert.ok(lines[2].includes("Project-specific"));
+    assert.ok(lines[2].includes("pins root"));
+  });
+});
+
+describe("renderConfirm", () => {
+  it("toggles the focus marker between Yes and No", () => {
+    const yes = renderConfirm("Create this directory?", true).split("\n");
+    assert.ok(yes[1].includes("❯") && yes[1].indexOf("❯") < yes[1].indexOf("[ No ]"));
+    const no = renderConfirm("Create this directory?", false).split("\n");
+    assert.ok(no[1].includes("❯") && no[1].indexOf("❯") > no[1].indexOf("[ Yes ]"));
+  });
+});
+
+describe("normalizeKey", () => {
+  it("maps navigation, submit, cancel, digits, and shortcuts", () => {
+    assert.deepEqual(normalizeKey({ name: "up" }), { kind: "up" });
+    assert.deepEqual(normalizeKey({ name: "down" }), { kind: "down" });
+    assert.deepEqual(normalizeKey({ name: "left" }), { kind: "left" });
+    assert.deepEqual(normalizeKey({ name: "right" }), { kind: "right" });
+    assert.deepEqual(normalizeKey({ name: "return" }), { kind: "submit" });
+    assert.deepEqual(normalizeKey({ name: "escape" }), { kind: "cancel" });
+    assert.deepEqual(normalizeKey({ name: "c", ctrl: true }), { kind: "cancel" });
+    assert.deepEqual(normalizeKey({ name: "3" }), { kind: "digit", value: 3 });
+    assert.deepEqual(normalizeKey({ name: "y" }), { kind: "yes" });
+    assert.deepEqual(normalizeKey({ name: "n" }), { kind: "no" });
+    assert.deepEqual(normalizeKey({ name: "q" }), { kind: "other" });
+    assert.deepEqual(normalizeKey({}), { kind: "other" });
+  });
+});
+
+describe("selectNext", () => {
+  it("moves with wraparound and submits", () => {
+    assert.deepEqual(selectNext(3, 0, { kind: "up" }), {
+      active: 2,
+      done: false,
+      cancelled: false,
+    });
+    assert.deepEqual(selectNext(3, 2, { kind: "down" }), {
+      active: 0,
+      done: false,
+      cancelled: false,
+    });
+    assert.deepEqual(selectNext(3, 1, { kind: "submit" }), {
+      active: 1,
+      done: true,
+      cancelled: false,
+    });
+    assert.deepEqual(selectNext(3, 1, { kind: "cancel" }), {
+      active: 1,
+      done: false,
+      cancelled: true,
+    });
+  });
+
+  it("jumps on in-range digits and ignores the rest", () => {
+    assert.deepEqual(selectNext(3, 0, { kind: "digit", value: 2 }), {
+      active: 1,
+      done: true,
+      cancelled: false,
+    });
+    assert.deepEqual(selectNext(3, 0, { kind: "digit", value: 9 }), {
+      active: 0,
+      done: false,
+      cancelled: false,
+    });
+    assert.deepEqual(selectNext(3, 0, { kind: "other" }), {
+      active: 0,
+      done: false,
+      cancelled: false,
+    });
+  });
+});
+
+describe("confirmNext", () => {
+  it("toggles, shortcuts, submits, and cancels", () => {
+    assert.deepEqual(confirmNext(true, { kind: "right" }), {
+      yes: false,
+      done: false,
+      cancelled: false,
+    });
+    assert.deepEqual(confirmNext(false, { kind: "left" }), {
+      yes: true,
+      done: false,
+      cancelled: false,
+    });
+    assert.deepEqual(confirmNext(false, { kind: "yes" }), {
+      yes: true,
+      done: true,
+      cancelled: false,
+    });
+    assert.deepEqual(confirmNext(true, { kind: "no" }), {
+      yes: false,
+      done: true,
+      cancelled: false,
+    });
+    assert.deepEqual(confirmNext(true, { kind: "submit" }), {
+      yes: true,
+      done: true,
+      cancelled: false,
+    });
+    assert.deepEqual(confirmNext(true, { kind: "cancel" }), {
+      yes: true,
+      done: false,
+      cancelled: true,
+    });
   });
 });
 
