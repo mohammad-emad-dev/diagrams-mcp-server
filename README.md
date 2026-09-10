@@ -1,11 +1,11 @@
 # diagrams-mcp-server
 
-> **Technical Preview (V1 Preview, v0.5.1)** — local-first MCP server for
+> **Technical Preview (V1 Preview, v0.5.2)** — local-first MCP server for
 > PlantUML and Mermaid diagrams with architecture drift detection.
 
 An MCP (Model Context Protocol) server that gives AI coding agents direct, structured access to your project's **PlantUML** and **Mermaid** architecture diagrams — list them, read them, create or update them, render them to images, and (uniquely) **check whether they still match your actual code**.
 
-Works with **any MCP-compatible client** over stdio: Claude Desktop, Claude Code, Codex (Desktop & CLI), Antigravity (IDE, 2.0 & CLI), OpenCode (Desktop & CLI), Cursor, and VS Code. See [Client setup](#client-setup) below.
+Works with **any MCP-compatible client** over stdio: Claude Code, Codex (Desktop & CLI), Antigravity (IDE, 2.0 & CLI), OpenCode (Desktop & CLI), Cursor, and VS Code. See [Client setup](#client-setup) below.
 
 ## Why this exists
 
@@ -169,14 +169,14 @@ line endings and the format check gives the same result on every platform.
 
 ### Local tarball install (no registry access)
 
-To install and run this Technical Preview (v0.5.1) without registry
+To install and run this Technical Preview (v0.5.2) without registry
 access, pack and install from a local tarball instead:
 
 ```bash
-npm pack   # runs the prepack build and writes diagrams-mcp-server-0.5.1.tgz
+npm pack   # runs the prepack build and writes diagrams-mcp-server-0.5.2.tgz
 cd /path/to/your/project
 npm init -y                       # if the consumer project has no package.json yet
-npm install /path/to/diagrams-mcp-server-0.5.1.tgz
+npm install /path/to/diagrams-mcp-server-0.5.2.tgz
 npx diagrams-mcp-server --help    # resolves the local install, exits 0
 ```
 
@@ -199,7 +199,6 @@ the client:
 
 | Client | What to remove |
 |---|---|
-| Claude Desktop | the `"diagrams"` block in `claude_desktop_config.json` |
 | Cursor | the `"diagrams"` block in `~/.cursor/mcp.json` or `.cursor/mcp.json` |
 | VS Code | the `"diagrams"` block in `.vscode/mcp.json` |
 | Antigravity | the `"diagrams"` block in `~/.gemini/config/mcp_config.json` (or `.agents/mcp_config.json`) |
@@ -230,25 +229,6 @@ manually only if you want the diagrams gone too.
 `diagrams-mcp-server` speaks plain stdio MCP, so it works with any MCP-compatible client. Setup instructions for each below.
 
 All examples assume you built the server at `/absolute/path/to/diagrams-mcp-server` and want it attached to a project at `/absolute/path/to/your/project`. Replace both paths with your own. If you installed from the registry, use the global install path or your project's `node_modules/.bin/diagrams-mcp-server` instead of a build directory (see [Where the files live](#where-the-files-live)).
-
-### Claude Desktop
-
-The setup wizard does not cover Claude Desktop — add the entry below to
-`claude_desktop_config.json` by hand:
-
-```json
-{
-  "mcpServers": {
-    "diagrams": {
-      "command": "node",
-      "args": ["/absolute/path/to/diagrams-mcp-server/dist/index.js"],
-      "env": {
-        "PROJECT_ROOT": "/absolute/path/to/your/project"
-      }
-    }
-  }
-}
-```
 
 ### Claude Code
 

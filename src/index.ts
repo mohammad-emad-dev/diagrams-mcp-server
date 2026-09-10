@@ -43,7 +43,7 @@ Environment variables:
                   even when ALLOW_REMOTE_PLANTUML is set
                   (default: unset)
 
-See README.md for setup instructions with Claude Desktop and Claude Code.
+See README.md for setup instructions with Claude Code and other MCP clients.
 `);
 }
 
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: "diagrams-mcp-server",
-    version: "0.5.1",
+    version: "0.5.2",
   });
 
   registerDiagramsList(server, ctx);

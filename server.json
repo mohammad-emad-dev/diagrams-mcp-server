@@ -3,7 +3,7 @@
   "name": "io.github.mohammad-emad-dev/diagrams-mcp-server",
   "title": "Diagrams MCP Server",
   "description": "Local-first MCP server for PlantUML and Mermaid diagrams with drift detection.",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "websiteUrl": "https://github.com/mohammad-emad-dev/diagrams-mcp-server",
   "repository": {
     "source": "github",
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "diagrams-mcp-server",
-      "version": "0.5.1",
+      "version": "0.5.2",
       "runtimeHint": "npx",
       "transport": {
         "type": "stdio"

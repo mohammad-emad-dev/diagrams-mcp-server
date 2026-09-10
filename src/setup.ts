@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
-const SETUP_VERSION = "0.5.1"; // Keep in sync with package.json (checked at release).
+const SETUP_VERSION = "0.5.2"; // Keep in sync with package.json (checked at release).
 
 // Wrap text in an ANSI style in capable terminals only: piped output and
 // NO_COLOR stay plain so logs and scripts never see escape codes.
@@ -131,6 +131,14 @@ export function normalizeKey(key: Keypress): PromptKey {
     return { kind: "digit", value: Number(key.name) };
   }
   return { kind: "other" };
+}
+
+// Frozen confirmation line after a prompt resolves. Messages already
+// ending in : or ? keep their punctuation instead of gaining another.
+export function frozenLine(message: string, value: string): string {
+  const head = paint("36", "◇");
+  if (/[?:]$/.test(message)) return `${head} ${message} ${value}`;
+  return `${head} ${message}: ${value}`;
 }
 
 export interface SelectResult {
@@ -258,7 +266,7 @@ async function selectPrompt(
         if (next.cancelled || next.done) {
           process.stdin.removeListener("keypress", onKey);
           if (next.done) {
-            rewriteFrame(lineCount, [`${paint("36", "◇")} ${message}: ${options[active].label}`]);
+            rewriteFrame(lineCount, [frozenLine(message, options[active].label)]);
           }
           resolve(next.done ? active : undefined);
           return;
@@ -311,7 +319,7 @@ async function confirmPrompt(question: string, initialYes = true): Promise<boole
         }
         if (next.done) {
           process.stdin.removeListener("keypress", onKey);
-          rewriteFrame(lineCount, [`${paint("36", "◇")} ${question}: ${yes ? "Yes" : "No"}`]);
+          rewriteFrame(lineCount, [frozenLine(question, yes ? "Yes" : "No")]);
           resolve(yes);
           return;
         }

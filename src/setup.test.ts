@@ -9,6 +9,7 @@ import {
   ensureProjectRoot,
   findOnPath,
   frameTransition,
+  frozenLine,
   isSetupClient,
   mergeServerConfig,
   normalizeKey,
@@ -298,6 +299,18 @@ describe("selectNext", () => {
       done: false,
       cancelled: false,
     });
+  });
+});
+
+describe("frozenLine", () => {
+  it("never doubles trailing punctuation", () => {
+    assert.equal(frozenLine("Setup scope:", "Project-specific"), "◇ Setup scope: Project-specific");
+    assert.equal(
+      frozenLine("Which client should use diagrams-mcp-server?", "Cursor"),
+      "◇ Which client should use diagrams-mcp-server? Cursor",
+    );
+    assert.equal(frozenLine("Create this directory?", "Yes"), "◇ Create this directory? Yes");
+    assert.equal(frozenLine("Pick one", "A"), "◇ Pick one: A");
   });
 });
 
