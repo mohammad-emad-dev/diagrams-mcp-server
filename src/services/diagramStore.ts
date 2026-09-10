@@ -1,10 +1,5 @@
-/**
- * diagramStore: safe, filesystem-backed CRUD for diagram files.
- *
- * All paths are resolved relative to a configured root directory
- * (DIAGRAMS_ROOT). Path traversal outside that root is rejected to avoid
- * an agent accidentally (or maliciously) reading/writing arbitrary files.
- */
+// Filesystem CRUD for diagram files, rooted at one directory.
+// Paths escaping that root are rejected.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -60,12 +55,8 @@ export class DiagramStore {
     return this.root;
   }
 
-  /**
-   * Resolve a user-supplied relative path safely inside the root. Backslashes
-   * are normalized to forward slashes first so Windows-style separators
-   * behave identically on Linux (where `\` is otherwise a valid filename
-   * character) and Windows-style traversal (`..\`) is still rejected.
-   */
+  // Resolve a user path inside the root. Backslashes count as
+  // separators so Windows-style paths work on every platform.
   private resolveSafe(relativePath: string): string {
     const normalized = relativePath.replace(/\\/g, "/");
     const resolved = path.resolve(this.root, normalized);
@@ -76,14 +67,8 @@ export class DiagramStore {
     return resolved;
   }
 
-  /**
-   * Reject any resolved path where the target or one of its ancestor
-   * directories inside the root is a symlink. The lexical check in
-   * resolveSafe() cannot see through links, so without this a symlink
-   * inside the root pointing outside would let read/write/delete follow
-   * it to an external file. Missing path segments end the walk: there is
-   * nothing left that could be a link.
-   */
+  // Reject paths that pass through a symlink inside the root.
+  // A link pointing outside would otherwise bypass the root check.
   private async assertNoSymlinkEscape(absolutePath: string): Promise<void> {
     const relative = path.relative(this.root, absolutePath);
     const segments = relative
@@ -112,7 +97,7 @@ export class DiagramStore {
     return EXTENSION_TO_TYPE[ext] ?? null;
   }
 
-  /** Best-effort title extraction for PlantUML/Mermaid content. */
+  // Best-effort title from the diagram content.
   private extractTitle(content: string, type: DiagramType): string | null {
     if (type === "plantuml") {
       const match = content.match(/^\s*title\s+(.+)$/m);
@@ -142,8 +127,7 @@ export class DiagramStore {
         if (entry.isDirectory()) {
           await walk(fullPath);
         } else if (entry.isSymbolicLink()) {
-          // Symlinked diagram paths are rejected by policy (see
-          // assertNoSymlinkEscape), so listing skips them as well.
+          // Skip symlinks; reads and writes reject them too.
           continue;
         } else if (entry.isFile()) {
           const type = this.detectType(entry.name);
@@ -207,9 +191,7 @@ export class DiagramStore {
     if (!type) {
       throw new UnsupportedDiagramExtensionError(toPosixPath(relativePath));
     }
-    // Basic, dependency-free syntax check before any filesystem mutation, so
-    // invalid content neither creates nor overwrites a file. This is not a
-    // full parser: rendering remains the authoritative syntax check.
+    // Validate before touching disk; invalid content writes nothing.
     validateDiagramSource(content, type);
     if (!options.overwrite && (await this.exists(relativePath))) {
       throw new DiagramExistsError(toPosixPath(relativePath));

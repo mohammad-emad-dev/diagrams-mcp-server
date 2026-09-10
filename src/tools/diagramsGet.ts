@@ -34,7 +34,7 @@ const InputSchema = z
 
 type Input = z.infer<typeof InputSchema>;
 
-/** Shared range check so direct handler calls fail the same way Zod-checked MCP calls do. */
+/** Range check shared by MCP calls and direct handler calls. */
 function windowError(offset: unknown, maxChars: unknown): string | null {
   if (
     offset !== undefined &&

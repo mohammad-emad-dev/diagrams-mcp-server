@@ -1,12 +1,6 @@
 #!/usr/bin/env node
-/**
- * diagrams-mcp-server: an MCP server exposing PlantUML and Mermaid
- * architecture diagrams to LLM agents — list, read, create, update,
- * delete, render, and check consistency against the codebase.
- *
- * Transport: stdio only (designed for local use with Claude Desktop,
- * Claude Code, or any other stdio-based MCP client).
- */
+// MCP server for PlantUML and Mermaid diagrams, over stdio.
+// Exposes list, read, create, update, delete, render, and consistency tools.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";

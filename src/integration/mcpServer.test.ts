@@ -6,15 +6,9 @@ import path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-/**
- * Persistent MCP integration coverage: drives the compiled `dist/index.js`
- * server over real stdio with the real SDK client against a temporary
- * PROJECT_ROOT. No renderers, no network, no per-language toolchain.
- *
- * Exercises diagrams_create/list/get/update/check_consistency/delete and
- * verifies discovery of all 7 tools (diagrams_render is discovery-only so
- * the suite never needs mmdc, PlantUML, or remote rendering).
- */
+// Full-stack coverage over real stdio: drives the compiled dist/index.js
+// with the real SDK client. Renderers stay out; diagrams_render is
+// discovery-only here.
 
 const EXPECTED_TOOLS = [
   "diagrams_check_consistency",
@@ -92,8 +86,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
     env.PROJECT_ROOT = projectRoot;
     env.DIAGRAMS_DIR = "diagrams";
-    // Never touch the network from integration coverage; render is
-    // discovery-only here, so this is belt-and-braces.
+    // Belt-and-braces: render is discovery-only here, never networked.
     env.DISABLE_REMOTE_PLANTUML = "true";
 
     const transport = new StdioClientTransport({

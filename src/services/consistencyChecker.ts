@@ -1,50 +1,7 @@
-/**
- * consistencyChecker: best-effort, text-based comparison between the
- * entity names mentioned in a diagram (classes, components, interfaces)
- * and identifiers that actually exist in the codebase.
- *
- * This is intentionally NOT a full AST/semantic analysis. It is a fast,
- * dependency-free heuristic: extract candidate names from the diagram,
- * then look for matching declarations in the codebase. This catches the
- * most common drift (renamed/removed/never-implemented entities) without
- * requiring a language-specific parser per stack.
- *
- * What it can recognize:
- * - Diagram side (PlantUML): class/interface/enum/record/struct/annotation/
- *   entity declarations (with abstract, generics, and `as` aliases),
- *   namespace/package/module blocks, component `[..]`/`".."`/bare names
- *   (with aliases), sequence participant/actor/boundary/control/database
- *   declarations (with aliases), and sequence message calls (`name(...)`).
- * - Diagram side (Mermaid): class declarations, `<<annotation>>` names,
- *   namespace blocks, sequence participant/actor declarations (with `as`
- *   aliases and create/destroy), C4 Container/Component/System/Person keys,
- *   subgraph identifiers, and message calls (`name(...)`).
- * - Code side, reliable V1 languages: JavaScript/TypeScript
- *   (.js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts) classes, interfaces, enums,
- *   type aliases, functions, const/let/var bindings, export forms, React
- *   components (same declaration forms in JSX/TSX), and module basenames;
- *   Python (.py) classes and functions plus module basenames; PHP (.php)
- *   classes, interfaces, traits, enums, functions, and the last segment of
- *   namespaces; Java (.java) classes, interfaces, enums, records,
- *   annotations (@interface), and the last segment of packages.
- * - Other scanned extensions use a generic whole-word heuristic only.
- *   The experimental V1 languages (C#/.cs, Go/.go, Ruby/.rb, Kotlin/.kt,
- *   Rust/.rs) stay on this generic path: no per-language declaration
- *   patterns, just whole-word/normalized/basename matching after comment
- *   and string stripping. Ruby additionally strips `#` line comments;
- *   Ruby `=begin`/`=end` blocks and heredocs are not specially handled.
- *
- * What remains heuristic:
- * - Matching prefers real declarations but still falls back to a
- *   whole-word occurrence, a case/separator-insensitive comparison, and a
- *   file-basename (module) comparison, so an incidental reference can
- *   count as a match. Results are evidence, not a semantic verdict.
- * - Comments and quoted strings are stripped before matching, but template
- *   literal interpolations (`${...}`) are treated as string content and PHP
- *   heredoc/nowdoc blocks are not specially handled.
- * - Mermaid flowchart node ids and bare message labels without parentheses
- *   are not treated as entities (too noisy).
- */
+// Compares entity names in a diagram (classes, components, interfaces)
+// against identifiers in the codebase. A fast text heuristic, not a
+// parser: it prefers real declarations but also accepts whole-word,
+// case-insensitive, and filename matches. Results are evidence, not proof.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -96,11 +53,10 @@ const CODE_EXTENSIONS = new Set([
 ]);
 
 const MAX_FILES_SCANNED = 5000;
-const MAX_FILE_SIZE_BYTES = 1_000_000; // skip unusually large files (generated/minified)
-// Cap per-entity matched files in structured output so evidence stays bounded.
-const MAX_EVIDENCE_MATCHED_FILES = 10;
+const MAX_FILE_SIZE_BYTES = 1_000_000; // Skip oversized generated files.
+const MAX_EVIDENCE_MATCHED_FILES = 10; // Cap matched files per entity.
 
-// Extensions with per-language declaration patterns (see module docstring).
+// Extensions with per-language declaration patterns.
 const RELIABLE_ANALYZER_EXTENSIONS = new Set([
   ".ts",
   ".tsx",
@@ -115,8 +71,7 @@ const RELIABLE_ANALYZER_EXTENSIONS = new Set([
   ".java",
 ]);
 
-// Extensions on the generic whole-word heuristic path that are covered by
-// experimental smoke tests (must not be presented as reliable).
+// Extensions on the generic heuristic path with smoke-test coverage.
 const EXPERIMENTAL_ANALYZER_EXTENSIONS = new Set([".cs", ".go", ".rb", ".kt", ".rs"]);
 
 function analyzerTierForExtension(ext: string): AnalyzerTier {
@@ -139,7 +94,7 @@ const SCAN_TRUNCATED_WARNING =
   "Scan reached the 5,000-file limit and stopped early; unmatched results may be incomplete. " +
   "Narrow the scanned directory or split the check to complete verification.";
 
-/** Clean a raw diagram name: unquote, drop generics, keep the last qualified segment. */
+/** Reduce a raw diagram name to its plain identifier. */
 function cleanDiagramName(raw: string): string | null {
   let name = raw.trim();
   if (name.length === 0) return null;
@@ -168,12 +123,12 @@ function cleanDiagramName(raw: string): string | null {
   return last.length > 0 ? last : null;
 }
 
-/** Case/separator-insensitive form used as a secondary (heuristic) comparison. */
+/** Lowercase, separator-free form for lenient matching. */
 function normalizeForMatch(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
-/** Extract plausible entity names (classes, interfaces, components) from PlantUML. */
+/** Candidate entity names from PlantUML source. */
 function extractEntitiesFromPlantUml(source: string): string[] {
   const names = new Set<string>();
   const addClean = (raw: string | undefined): void => {
@@ -183,27 +138,27 @@ function extractEntitiesFromPlantUml(source: string): string[] {
   };
   let match: RegExpExecArray | null;
 
-  // class Foo, interface Foo, abstract class Foo, enum Foo, record Foo
+  // Type declarations: class, interface, enum, record, struct, and friends.
   const declRegex =
     /^\s*(?:abstract\s+)?(?:class|interface|enum|record|struct|annotation|entity)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?/gm;
   while ((match = declRegex.exec(source)) !== null) {
     names.add(match[1]);
   }
 
-  // class "Spaced Name" as Alias (and other declaration aliases)
+  // Aliased declarations (`class "Name" as Alias`).
   const aliasRegex =
     /^\s*(?:abstract\s+)?(?:class|interface|enum|record|struct|annotation|entity)\b[^\n{]*?\bas\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
   while ((match = aliasRegex.exec(source)) !== null) {
     names.add(match[1]);
   }
 
-  // namespace App.Models / package shop / module billing
+  // Namespace/package/module blocks.
   const blockRegex = /^\s*(?:namespace|package|module)\s+([A-Za-z_][\w.\\/]*)/gm;
   while ((match = blockRegex.exec(source)) !== null) {
     addClean(match[1]);
   }
 
-  // component [Foo], component "Foo", component Foo (+ optional `as Alias`)
+  // Components, with optional aliases.
   const componentRegex =
     /^\s*component\s+(?:\[([^\]]+)\]|"([^"]+)"|([A-Za-z_][\w.\\/]*))(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
   while ((match = componentRegex.exec(source)) !== null) {
@@ -213,7 +168,7 @@ function extractEntitiesFromPlantUml(source: string): string[] {
     if (match[4]) names.add(match[4]);
   }
 
-  // participant Foo / actor "Old Name" as NewName (sequence diagrams)
+  // Sequence participants and actors, with optional aliases.
   const participantRegex =
     /^\s*(?:participant|actor|boundary|control|entity|database|collections|queue)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
   while ((match = participantRegex.exec(source)) !== null) {
@@ -221,7 +176,7 @@ function extractEntitiesFromPlantUml(source: string): string[] {
     if (match[2]) names.add(match[2]);
   }
 
-  // Sequence message calls: `Alice -> Bob : charge(card)` (ignores plain labels)
+  // Message calls like `charge(card)`; plain labels are ignored.
   const messageCallRegex = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]{1,})\s*\(/g;
   while ((match = messageCallRegex.exec(source)) !== null) {
     addClean(match[1]);
@@ -230,7 +185,7 @@ function extractEntitiesFromPlantUml(source: string): string[] {
   return Array.from(names);
 }
 
-/** Extract plausible entity names from Mermaid class/flow/component-ish diagrams. */
+/** Candidate entity names from Mermaid source. */
 function extractEntitiesFromMermaid(source: string): string[] {
   const names = new Set<string>();
   const addClean = (raw: string | undefined): void => {
@@ -240,25 +195,25 @@ function extractEntitiesFromMermaid(source: string): string[] {
   };
   let match: RegExpExecArray | null;
 
-  // classDiagram: "class Foo {" or "class Foo"
+  // Class declarations.
   const classRegex = /^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
   while ((match = classRegex.exec(source)) !== null) {
     names.add(match[1]);
   }
 
-  // classDiagram annotations: "<<interface>> Foo"
+  // Annotations like `<<interface>> Name`.
   const annotationRegex = /<<\s*[^<>]*?>>\s*([A-Za-z_][A-Za-z0-9_]*)/gm;
   while ((match = annotationRegex.exec(source)) !== null) {
     names.add(match[1]);
   }
 
-  // classDiagram namespaces: "namespace shop {"
+  // Namespace blocks.
   const namespaceRegex = /^\s*namespace\s+([A-Za-z_][\w.]*)/gm;
   while ((match = namespaceRegex.exec(source)) !== null) {
     addClean(match[1]);
   }
 
-  // sequenceDiagram: "participant Foo", "actor Bar", "A as Alice", "create participant C"
+  // Sequence participants and actors, with optional aliases.
   const participantRegex =
     /^\s*(?:create\s+|destroy\s+)?(?:participant|actor)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
   while ((match = participantRegex.exec(source)) !== null) {
@@ -266,14 +221,14 @@ function extractEntitiesFromMermaid(source: string): string[] {
     if (match[2]) names.add(match[2]);
   }
 
-  // C4 diagrams: Container(api, ...) / Component(list, ...) / Person(user, ...)
+  // C4 containers, components, systems, and people.
   const c4Regex =
     /\b(?:Container|Component|System|ExternalSystem|Person)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)/g;
   while ((match = c4Regex.exec(source)) !== null) {
     names.add(match[1]);
   }
 
-  // Flowchart groupings: "subgraph Billing"
+  // Subgraph groupings.
   const subgraphRegex = /^\s*subgraph\s+(?:"([^"]+)"|\[([^\]]+)\]|([A-Za-z_][\w-]*))/gm;
   while ((match = subgraphRegex.exec(source)) !== null) {
     addClean(match[1]);
@@ -281,7 +236,7 @@ function extractEntitiesFromMermaid(source: string): string[] {
     addClean(match[3]);
   }
 
-  // Sequence message calls: "A->>B: charge(card)" (ignores plain labels)
+  // Message calls like `charge(card)`; plain labels are ignored.
   const messageCallRegex = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]{1,})\s*\(/g;
   while ((match = messageCallRegex.exec(source)) !== null) {
     addClean(match[1]);
@@ -329,8 +284,7 @@ const C_LIKE_STRIP_SOURCE =
   "|'(?:\\\\.|[^'\\\\\\n])*'" +
   "|`(?:\\\\.|[^`\\\\])*`";
 const PHP_STRIP_SOURCE = `${C_LIKE_STRIP_SOURCE}|#[^\\n]*`;
-// Ruby: C-like comments/strings plus `#` line comments (mirrors the PHP approach).
-const RUBY_STRIP_SOURCE = `${C_LIKE_STRIP_SOURCE}|#[^\\n]*`;
+const RUBY_STRIP_SOURCE = `${C_LIKE_STRIP_SOURCE}|#[^\\n]*`; // Same `#` comments as PHP.
 const PYTHON_STRIP_SOURCE =
   "'''[\\s\\S]*?'''" +
   '|"""[\\s\\S]*?"""' +
@@ -358,7 +312,7 @@ function collectPatternMatches(target: Set<string>, stripped: string, pattern: R
     for (let group = 1; group < match.length; group += 1) {
       const name = match[group];
       if (name) {
-        // `export { A as B }` / `module.exports = { A, B }` lists: keep each identifier.
+        // Keep each identifier in comma lists like `export { A as B }`.
         for (const part of name.split(",")) {
           const alias =
             part
@@ -386,7 +340,7 @@ function collectPatternMatches(target: Set<string>, stripped: string, pattern: R
   }
 }
 
-/** Declaration-like identifiers per language family (heuristic regexes, no parser). */
+/** Declared identifiers per language family, found with plain patterns. */
 function extractDeclaredIdentifiers(stripped: string, family: LanguageFamily): Set<string> {
   const declared = new Set<string>();
   if (family === "js") {
@@ -498,19 +452,17 @@ async function collectCodeFiles(
   return { files, truncated };
 }
 
-/** Build a regex that matches common "declaration-like" usages of a name. */
+/** Whole-word pattern for one name, plus its declaration-like usages. */
 function buildDeclarationPattern(name: string): RegExp {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  // Matches: class Name / interface Name / def Name / struct Name / type Name
-  // or the bare identifier as a whole word (fallback, catches functions,
-  // records, data classes, etc. across languages without per-language parsing).
+  // Bare identifier as a whole word.
   return new RegExp(`\\b${escaped}\\b`);
 }
 
 interface ScannedFile {
-  /** POSIX path relative to the searched directory (evidence only, never contents). */
+  /** POSIX path relative to the searched directory. */
   relativePath: string;
-  /** Lowercase file extension, used for analyzer-tier classification. */
+  /** Lowercase file extension. */
   ext: string;
   stripped: string;
   normalized: string;
@@ -518,11 +470,7 @@ interface ScannedFile {
   moduleName: string;
 }
 
-/**
- * Indexes into `scanned` whose file matches `entity`. The predicate is the
- * unchanged V1 matching logic; returning indexes instead of a boolean only
- * lets callers report *which* files matched as evidence.
- */
+/** Indexes of scanned files matching one entity name. */
 function findMatchingFileIndexes(entity: string, scanned: ScannedFile[]): number[] {
   const normalizedEntity = normalizeForMatch(entity);
   const pattern = buildDeclarationPattern(entity);

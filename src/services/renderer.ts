@@ -1,26 +1,7 @@
-/**
- * renderer: converts diagram source text into an image.
- *
- * - Mermaid: uses the local `mmdc` CLI (@mermaid-js/mermaid-cli) if
- *   installed; otherwise returns actionable guidance. Mermaid rendering is
- *   always local-only; there is no remote fallback.
- * - PlantUML: uses a local `plantuml` CLI/jar if available; otherwise
- *   falls back to the public PlantUML rendering server over HTTPS, but
- *   only when remote rendering is explicitly enabled.
- *
- * Privacy control: remote PlantUML rendering is opt-in and disabled by
- * default. Set ALLOW_REMOTE_PLANTUML=true to allow the remote fallback
- * (only the exact value "true" enables it; unset, "false", or any other
- * value keeps remote rendering disabled). DISABLE_REMOTE_PLANTUML=true
- * always disables remote rendering and takes precedence over the allow
- * flag. When remote rendering is disabled and no local `plantuml` CLI is
- * available, rendering fails with an actionable error instead of sending
- * diagram source to a remote server.
- *
- * Rendering is intentionally best-effort: if no renderer is available,
- * tools should surface a clear, actionable error rather than failing
- * silently.
- */
+// Turns diagram source into images via local CLIs.
+// Mermaid uses a local `mmdc` install. PlantUML prefers a local install
+// and only falls back to the public render server when explicitly enabled
+// with ALLOW_REMOTE_PLANTUML=true. DISABLE_REMOTE_PLANTUML=true always wins.
 
 import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
@@ -39,18 +20,15 @@ export class RenderError extends Error {
   }
 }
 
-/** Minimal shape of a remote render response (kept narrow for testability). */
+// Minimal remote-render response shape, kept narrow for tests.
 export interface RemoteRenderResponse {
   ok: boolean;
   status: number;
   arrayBuffer: () => Promise<ArrayBuffer>;
 }
 
-/**
- * Test seam for the renderer's process/network boundaries. Every field is
- * optional; omitted fields use the real implementation. Production callers
- * (including the MCP tool) pass nothing.
- */
+// Seams for the process/network edges. Omitted fields use the real
+// implementation; callers in production pass nothing.
 export interface RendererDeps {
   commandExists?: (cmd: string) => Promise<boolean>;
   runCommand?: (
@@ -61,16 +39,9 @@ export interface RendererDeps {
   fetchRemote?: (url: string) => Promise<RemoteRenderResponse>;
 }
 
-/**
- * Whether the remote PlantUML fallback is disabled. Remote rendering is
- * opt-in: it is enabled only when ALLOW_REMOTE_PLANTUML is exactly "true",
- * and DISABLE_REMOTE_PLANTUML=true always disables it (taking precedence
- * over the allow flag). Unset, "false", or any other value on either flag
- * leaves remote rendering disabled, so diagram source is never sent
- * remotely unless the operator explicitly opted in. Read per call so
- * concurrent renders each observe the current setting and no shared state
- * is involved.
- */
+// Remote rendering is opt-in: enabled only by ALLOW_REMOTE_PLANTUML=true,
+// and always off when DISABLE_REMOTE_PLANTUML=true. Read per call so
+// concurrent renders never share the setting.
 export function isRemotePlantUmlDisabled(): boolean {
   if (process.env.DISABLE_REMOTE_PLANTUML === "true") return true;
   return process.env.ALLOW_REMOTE_PLANTUML !== "true";
@@ -84,25 +55,14 @@ async function commandExists(cmd: string): Promise<boolean> {
   });
 }
 
-/**
- * Ordered executable candidates for a CLI name. The bare name is probed
- * first; Windows-style executable extensions follow so npm command shims
- * (e.g. `mmdc.cmd`) resolve when the bare name cannot be spawned. (A
- * `.ps1` shim is deliberately excluded: it is not directly spawnable.)
- * On non-Windows the extra probes simply miss, leaving behavior there
- * unchanged.
- *
- * Detection and execution always use the same resolved candidate:
- * callers probe with `commandExists` in this order and spawn exactly
- * the candidate that was found. No `shell: true` is used anywhere, and
- * the command names passed here are hardcoded literals, never user
- * input.
- */
+// Candidate names for one CLI. The bare name comes first, then Windows
+// executable extensions so npm shims (e.g. `mmdc.cmd`) resolve. Detection
+// and execution always use the same candidate that was found.
 function resolveCandidates(cmd: string): string[] {
   return [cmd, `${cmd}.cmd`, `${cmd}.exe`, `${cmd}.bat`];
 }
 
-/** Whether `err` is a launch failure (the executable could not be started). */
+// True when the executable itself could not be started.
 function isLaunchFailure(err: unknown): boolean {
   if (err instanceof Error) {
     const code = (err as { code?: unknown }).code;
@@ -114,14 +74,8 @@ function isLaunchFailure(err: unknown): boolean {
 
 type LocalCommandOutcome = "ok" | "missing" | "unlaunchable";
 
-/**
- * Runs a local CLI with the first candidate that `commandExists`
- * resolves, spawning exactly that candidate. If a resolved candidate
- * cannot be spawned (ENOENT — e.g. an unlaunchable shim on Windows),
- * the next resolving candidate is tried. Returns "missing" when no
- * candidate resolves and "unlaunchable" when at least one resolved but
- * none could be spawned. Non-spawn failures propagate untouched.
- */
+// Run a local CLI using the first candidate that resolves. Falls through
+// to the next candidate on launch failures; other errors propagate.
 async function runLocalCommand(
   cmd: string,
   args: string[],
@@ -141,12 +95,7 @@ async function runLocalCommand(
   return detected ? "unlaunchable" : "missing";
 }
 
-/**
- * Quotes one argv element for the Windows command interpreter. Command
- * lines here are built only from hardcoded CLI names, fixed flags, and
- * server-generated temp paths — never from user input — so quoting only
- * needs to survive spaces in temp directory paths.
- */
+// Quote one argv element for the Windows command interpreter.
 function quoteWindowsArg(arg: string): string {
   if (!/[\s"]/.test(arg)) return arg;
   return `"${arg.replace(/"/g, '""')}"`;
@@ -157,16 +106,8 @@ export interface SpawnTarget {
   args: string[];
 }
 
-/**
- * Computes the actual spawn target for a resolved CLI candidate. Batch
- * shims (`.cmd`/`.bat`) cannot be spawned directly — Node/libuv rejects
- * them with EINVAL — so on Windows they run via the command interpreter
- * (`cmd.exe /d /s /c "<quoted line>"`). This is not `shell: true` with
- * untrusted input: the command name is a hardcoded literal resolved by
- * `runLocalCommand`, and argv elements are quoted, never parsed as
- * shell grammar. Non-Windows platforms and non-shim candidates return
- * the input unchanged.
- */
+// Batch shims (`.cmd`/`.bat`) cannot spawn directly, so on Windows they
+// run through the command interpreter. Everything else spawns unchanged.
 export function resolveSpawnTarget(
   cmd: string,
   args: string[],
@@ -182,31 +123,12 @@ export function resolveSpawnTarget(
   };
 }
 
-/**
- * Runs a local renderer CLI and collects its stdout/stderr, each capped at
- * MAX_RENDER_OUTPUT_CHARS characters. The bound is enforced while
- * collecting, not after: once either stream exceeds the cap, further bytes
- * are discarded, the stdio pipes are destroyed, and the child is killed,
- * so a runaway renderer cannot grow memory without bound. Overflow rejects
- * with an actionable RenderError whose message never includes captured
- * output (renderer output may echo diagram source, paths, or environment
- * values).
- *
- * Timeout is enforced by an explicit timer rather than the spawn `timeout`
- * option: the option kills the direct child but `close` still waits for
- * pipe EOF, so a descendant that inherited stdout/stderr could delay error
- * delivery indefinitely. The timer instead destroys our ends of the pipes
- * and kills the child, then rejects with an explicit timeout RenderError
- * whose message carries only the timeout budget (never captured output,
- * paths, source, or environment values). A killed renderer's orphaned
- * descendants may survive this; the MCP error no longer waits on them.
- *
- * Windows shim handling, temp-dir cleanup (by callers), and the non-zero
- * exit contract are unchanged: a non-zero exit rejects with a plain Error
- * carrying the bounded stderr text. No `shell: true` is used; see
- * resolveSpawnTarget. Exported so tests can exercise the real collector
- * hermetically (the RendererDeps seam keeps renderDiagram itself stubbed).
- */
+// Run a renderer CLI and collect stdout/stderr, each capped at
+// MAX_RENDER_OUTPUT_CHARS. Over-limit output stops the child and rejects
+// with a RenderError that never includes captured output. Timeouts are
+// enforced by a timer (not the spawn option) so a lingering descendant
+// holding the pipes cannot delay the error. A non-zero exit rejects with
+// the bounded stderr text.
 export function runCommand(
   cmd: string,
   args: string[],

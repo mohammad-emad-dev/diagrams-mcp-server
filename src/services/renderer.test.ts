@@ -54,7 +54,7 @@ function setAllow(value: string | undefined): void {
   }
 }
 
-/** Deps with no local CLIs; remote calls the given stub (never the network). */
+/** No local CLIs; remote uses the given stub, never the network. */
 function offlineDeps(fetchRemote?: RendererDeps["fetchRemote"]): Required<RendererDeps> {
   return {
     commandExists: () => Promise.resolve(false),
@@ -63,7 +63,7 @@ function offlineDeps(fetchRemote?: RendererDeps["fetchRemote"]): Required<Render
   };
 }
 
-/** Deps where a local `plantuml` CLI succeeds and writes `image`. */
+/** Local `plantuml` stub that succeeds and writes `image`. */
 function localPlantUmlDeps(image: Buffer): {
   deps: RendererDeps;
   calls: Array<{ cmd: string; args: string[] }>;
@@ -84,7 +84,7 @@ function localPlantUmlDeps(image: Buffer): {
   };
 }
 
-/** Deps where a local `mmdc` CLI succeeds and writes `image` to `-o`. */
+/** Local `mmdc` stub that succeeds and writes `image` to `-o`. */
 function localMermaidDeps(image: Buffer): RendererDeps {
   return {
     commandExists: (cmd) => Promise.resolve(cmd === "mmdc"),
@@ -106,7 +106,7 @@ async function snapshotRenderDirs(): Promise<Set<string>> {
   return new Set(entries.filter((entry) => entry.startsWith("diagrams-mcp-")));
 }
 
-/** Signal-0 existence probe for a process this suite spawned. */
+/** Signal-0 liveness check for a spawned process. */
 async function isProcessAlive(pid: number): Promise<boolean> {
   try {
     process.kill(pid, 0);
@@ -673,8 +673,7 @@ describe("renderer bounded child-process output", () => {
   });
 
   it("delivers the timeout error promptly when a descendant holds the pipe open", async () => {
-    // The child spawns a grandchild that inherits stdout/stderr and outlives
-    // the timeout. Error delivery must not wait for those pipes to close.
+    // The grandchild inherits the pipes and outlives the timeout.
     const started = Date.now();
     let message = "";
     try {
@@ -704,12 +703,8 @@ describe("renderer bounded child-process output", () => {
         t.skip("Windows shim chains (cmd.exe wrappers) do not exist on this platform");
         return;
       }
-      // Regression for the release-verification delay: Windows npm shims run
-      // via `cmd.exe /d /s /c <renderer>`, so the timeout kill stops the
-      // wrapper while its grandchild (the real renderer process) keeps the
-      // inherited stdout/stderr handles open. Delivery must not wait for
-      // those pipes to close; the pre-fix code only rejected with
-      // "Command exited with code null" once the descendant released them.
+      // Windows shims run through cmd.exe, so killing the wrapper leaves
+      // a descendant holding the pipes; delivery must not wait for it.
       const started = Date.now();
       let message = "";
       try {
@@ -745,8 +740,7 @@ describe("renderer bounded child-process output", () => {
         ),
         (err: unknown) => err instanceof RenderError,
       );
-      // The child writes its own pid before hanging, so the handle to the
-      // killed process can be checked directly instead of inferred.
+      // The child records its own pid first so the test can poll it directly.
       let pid = 0;
       for (let i = 0; i < 20 && pid === 0; i += 1) {
         try {
@@ -756,8 +750,7 @@ describe("renderer bounded child-process output", () => {
         }
       }
       assert.ok(Number.isInteger(pid) && pid > 0);
-      // The killed child's handle is released shortly after the stop; poll
-      // briefly so the check is deterministic without waiting on pid reuse.
+      // Poll briefly; pid reuse makes a long wait unreliable.
       let stopped = false;
       for (let i = 0; i < 20 && !stopped; i += 1) {
         stopped = !(await isProcessAlive(pid));
@@ -864,8 +857,7 @@ describe("diagrams_render MCP error behavior", () => {
       overwrite: false,
     });
 
-    // Probe with real deps: if a local plantuml CLI exists the MCP handler
-    // would succeed instead of hitting the disabled-remote error.
+    // Probe with real deps: skip when a local plantuml CLI is installed.
     try {
       await renderDiagram(SECRET_SOURCE, "plantuml", "svg");
       t.skip("local plantuml CLI is installed; disabled-remote MCP path not reachable here");

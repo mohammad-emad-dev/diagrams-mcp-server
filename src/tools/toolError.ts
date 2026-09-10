@@ -1,25 +1,7 @@
-/**
- * toolError: shared MCP tool error normalization.
- *
- * Every tool distinguishes two cases:
- * - Expected domain errors (missing diagram, unsafe path, invalid source,
- *   unsupported extension, existing file, missing/broken renderer, invalid
- *   pagination/window): returned with `isError: true` and the original
- *   actionable message. These messages never contain source content,
- *   secrets, environment values, or absolute paths by construction.
- * - Unexpected programming/runtime errors (bugs, permission/IO failures):
- *   logged safely to stderr for local debugging and returned with
- *   `isError: true` plus a generic message. The user-facing text and the
- *   stderr log never include stack traces, diagram/code source, secrets,
- *   environment values, or absolute local paths.
- *
- * Handlers must never `catch (err)` with `instanceof Error` as the expected
- * branch: that hides programming bugs behind domain-error messages. Use
- * handleToolError() (typed domain set only) or handleRenderError() for the
- * diagrams_render render step, where a plain Error means a child-process
- * failure (timeout / non-zero exit / unreadable output / output limit)
- * by contract.
- */
+// Shared error handling for MCP tools. Expected domain errors pass
+// through with their message; everything else becomes a generic error
+// plus a safe stderr log. User-facing text never carries source,
+// secrets, or absolute paths.
 
 import {
   DiagramExistsError,
@@ -60,7 +42,7 @@ function sanitizeForStderrLog(value: string): string {
   return `${singleLine.slice(0, MAX_LOGGED_MESSAGE_CHARS)}...`;
 }
 
-/** True for builtin programming-error subclasses (bugs), never domain errors. */
+/** True for builtin programming-error subclasses, never domain errors. */
 export function isProgrammingError(err: unknown): boolean {
   return (
     err instanceof TypeError ||
@@ -72,7 +54,7 @@ export function isProgrammingError(err: unknown): boolean {
   );
 }
 
-/** True only for the typed domain errors each tool documents as expected. */
+/** True only for the documented, expected domain errors. */
 export function isExpectedToolError(err: unknown): err is Error {
   return (
     err instanceof DiagramNotFoundError ||
@@ -84,14 +66,8 @@ export function isExpectedToolError(err: unknown): err is Error {
   );
 }
 
-/**
- * Render-step classification for diagrams_render. After a successful diagram
- * read, any plain Error from renderDiagram() is a child-process failure
- * (renderer timeout, non-zero exit, unreadable output, output limit) and
- * stays expected
- * with its message. Programming-error subclasses and non-Error throws stay
- * unexpected so renderer bugs are never reported as render failures.
- */
+// Render-step errors for diagrams_render. After a successful read, any
+// plain Error is a child-process failure and stays expected.
 export function isExpectedRenderError(err: unknown): err is Error {
   if (err instanceof RenderError) {
     return true;
@@ -123,18 +99,14 @@ export function toUnexpectedToolErrorResult(toolName: string): ToolErrorResult {
   };
 }
 
-/**
- * Log an unexpected failure to stderr for local debugging. Logs only the
- * tool name and the error class: never call arguments (they may carry
- * diagram source), messages (they may carry secrets, code, environment
- * values, or absolute paths), stacks, or environment values.
- */
+// Log an unexpected failure to stderr. Only the tool and error names;
+// never arguments, messages, stacks, or environment values.
 export function logUnexpectedToolError(toolName: string, err: unknown): void {
   const name = err instanceof Error ? err.name : typeof err;
   console.error(`[${toolName}] unexpected error (${sanitizeForStderrLog(name)})`);
 }
 
-/** Normalize any caught failure: expected errors pass through, the rest get logged + generic. */
+/** Expected errors pass through; the rest get logged and generalized. */
 export function handleToolError(toolName: string, err: unknown): ToolErrorResult {
   if (isExpectedToolError(err)) {
     return toExpectedToolErrorResult(err);
@@ -143,7 +115,7 @@ export function handleToolError(toolName: string, err: unknown): ToolErrorResult
   return toUnexpectedToolErrorResult(toolName);
 }
 
-/** Normalize render-step failures for diagrams_render (see isExpectedRenderError). */
+/** Same as above, for the diagrams_render render step. */
 export function handleRenderError(toolName: string, err: unknown): ToolErrorResult {
   if (isExpectedRenderError(err) && err instanceof Error) {
     return toExpectedToolErrorResult(err);

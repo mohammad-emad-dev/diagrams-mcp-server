@@ -1,17 +1,15 @@
-/**
- * Shared TypeScript type definitions for the diagrams-mcp-server.
- */
+// Shared types for diagrams, tools, and consistency results.
 
 export type DiagramType = "plantuml" | "mermaid";
 
 export interface DiagramFile {
-  /** Path relative to the configured diagrams root, e.g. "system/order-flow.puml" */
+  /** Path relative to the diagrams root. */
   relativePath: string;
-  /** Absolute path on disk */
+  /** Absolute path on disk. */
   absolutePath: string;
-  /** Detected diagram type based on file extension */
+  /** Diagram type by file extension. */
   type: DiagramType;
-  /** Best-effort title extracted from the diagram content, if any */
+  /** Best-effort title from the content, if any. */
   title: string | null;
   /** File size in bytes */
   sizeBytes: number;
@@ -20,42 +18,35 @@ export interface DiagramFile {
 }
 
 export interface ConsistencyIssue {
-  /** The name mentioned in the diagram (class, component, module, etc.) */
+  /** Name from the diagram that found no match. */
   name: string;
-  /** Human-readable description of the mismatch */
+  /** What the mismatch means. */
   issue: string;
-  /** Severity for the agent/human to prioritize */
+  /** Priority hint for the reader. */
   severity: "warning" | "info";
 }
 
-/**
- * Which analyzer tier a scanned source file belongs to. Reliable tiers use
- * per-language declaration patterns; experimental and generic tiers use the
- * whole-word heuristic path only.
- */
+/** Which matching strategy a scanned file falls under. */
 export type AnalyzerTier = "reliable" | "experimental" | "generic";
 
-/** File extensions scanned under each analyzer tier (lowercase, with dot). */
+/** Scanned file extensions per tier (lowercase, with dot). */
 export interface AnalyzerBreakdown {
   reliable: string[];
   experimental: string[];
   generic: string[];
 }
 
-/** Per-entity match evidence for a single diagram entity name. */
+/** Match evidence for one diagram entity. */
 export interface ConsistencyEntityEvidence {
-  /** Entity name extracted from the diagram. */
+  /** Entity name from the diagram. */
   name: string;
-  /** Whether the name was found in the scanned codebase. */
+  /** Whether it was found in the codebase. */
   matched: boolean;
-  /** Analyzer tiers of the scanned files that matched (empty when unmatched). */
+  /** Tiers of the files that matched. */
   analyzers: AnalyzerTier[];
-  /**
-   * POSIX paths (relative to the searched directory) of scanned files that
-   * matched, capped at a small bound; see matchedFileCount for the true total.
-   */
+  /** Matching files, relative POSIX paths, capped. See matchedFileCount. */
   matchedFiles: string[];
-  /** Total number of scanned files that matched, even when matchedFiles is capped. */
+  /** Total matches, even past the matchedFiles cap. */
   matchedFileCount: number;
 }
 
@@ -67,24 +58,24 @@ export interface ConsistencyCheckResult {
   issues: ConsistencyIssue[];
   searchedDirectory: string;
   filesScanned: number;
-  /** True when the file scan reached the configured cap; unmatched results may be incomplete. */
+  /** True when the scan hit the file cap; unmatched may be incomplete. */
   truncated: boolean;
-  /** Maximum number of source files collected during the scan. */
+  /** Max source files collected per scan. */
   scanLimit: number;
-  /** Human-readable warning when truncated is true, otherwise null. Paths and source are never included. */
+  /** Warning when truncated, otherwise null. Never includes paths or source. */
   scanWarning: string | null;
-  /** Entity names extracted from the diagram, in extraction order. */
+  /** Entity names from the diagram, in order. */
   entities: string[];
-  /** Extracted entities found in the scanned codebase. */
+  /** Entities found in the codebase. */
   matchedEntities: string[];
-  /** Extracted entities NOT found in the scanned codebase. */
+  /** Entities not found in the codebase. */
   unmatchedEntities: string[];
-  /** File extensions actually scanned under each analyzer tier. */
+  /** Extensions actually scanned per tier. */
   analyzers: AnalyzerBreakdown;
-  /** Always "heuristic": results are evidence, never a definitive verdict. */
+  /** Always "heuristic": evidence, not proof. */
   confidence: "heuristic";
-  /** Human-readable warning describing the heuristic limits of the result. */
+  /** What the heuristic can and cannot tell you. */
   heuristicWarning: string;
-  /** Per-entity evidence, in the same order as entities. */
+  /** Per-entity evidence, same order as entities. */
   evidence: ConsistencyEntityEvidence[];
 }

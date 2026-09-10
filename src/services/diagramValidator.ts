@@ -1,28 +1,6 @@
-/**
- * diagramValidator: dependency-free, best-effort syntax checks for diagram
- * source written via diagrams_create / diagrams_update.
- *
- * What it CAN recognize:
- * - PlantUML: requires both `@startuml` and `@enduml` boundaries, in order.
- *   This catches empty sources and prose pasted with a PlantUML extension.
- * - Mermaid: requires a leading diagram declaration starting with a known
- *   diagram keyword (graph/flowchart, sequenceDiagram, classDiagram,
- *   stateDiagram, erDiagram, gantt, pie, journey, gitGraph, mindmap,
- *   timeline, quadrantChart, requirementDiagram, C4 variants, sankey,
- *   xychart, block, packet, architecture, kanban, radar, info). Leading
- *   blank lines, `%%` comments, `%%{init}%%` directives, and a leading YAML
- *   frontmatter block (`--- ... ---`) are skipped before the check.
- *
- * What remains HEURISTIC (explicitly NOT claimed):
- * - This is not a full Mermaid or PlantUML parser and performs no rendering.
- * - It does not verify arrow syntax, indentation, closing braces, attribute
- *   types, or whether referenced entities exist. Semantically broken but
- *   structurally plausible sources pass; only clearly invalid or empty
- *   sources are rejected.
- * - Rendering (`diagrams_render`) remains the authoritative syntax check and
- *   still requires mmdc / PlantUML; create/update never invoke renderers,
- *   Java, or the network.
- */
+// Best-effort syntax checks for diagram source on create/update.
+// PlantUML needs both @startuml/@enduml boundaries; Mermaid needs a known
+// leading diagram keyword. Anything deeper is left to the renderer.
 
 import type { DiagramType } from "../types.js";
 
@@ -43,11 +21,8 @@ export class DiagramValidationError extends Error {
 const PLANTUML_START = "@startuml";
 const PLANTUML_END = "@enduml";
 
-/**
- * Lowercase Mermaid diagram starters accepted as the first meaningful line.
- * Compared case-insensitively; version suffixes such as `-v2` or `-beta`
- * are accepted via a `-`/`_`/`:`/`;` boundary after the base keyword.
- */
+// Accepted Mermaid openers, lowercase. Version suffixes after - _ : ;
+// (e.g. `graph-beta`) are allowed.
 const MERMAID_STARTERS = [
   "graph",
   "flowchart",
@@ -200,10 +175,7 @@ function validateMermaid(content: string): void {
   }
 }
 
-/**
- * Validate diagram source for the given type. Throws DiagramValidationError
- * with a format-specific, actionable reason. Never includes source content.
- */
+// Validate source for its type. Throws without ever including the source.
 export function validateDiagramSource(content: string, type: DiagramType): void {
   if (typeof content !== "string" || content.trim().length === 0) {
     throw new DiagramValidationError(

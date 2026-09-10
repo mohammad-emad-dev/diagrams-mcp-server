@@ -8,11 +8,8 @@ import { DiagramStore, PathTraversalError } from "./diagramStore.js";
 const OUTSIDE_CONTENT = "external secret content 7f3a9c";
 const DIAGRAM_CONTENT = "@startuml\nclass LocalWidget\n@enduml\n";
 
-/**
- * Symlink creation needs elevated privileges on some platforms (notably
- * Windows without Developer Mode). Probe once per test: if the platform
- * refuses, skip explicitly so the gap is reported, never silently passed.
- */
+// Symlinks need privileges on some platforms (Windows without Developer
+// Mode). Skip openly when refused so the gap stays visible.
 async function symlinkSupported(probeDir: string): Promise<boolean> {
   const target = path.join(probeDir, "probe-target.txt");
   const link = path.join(probeDir, "probe-link.txt");
