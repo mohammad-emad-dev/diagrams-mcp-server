@@ -174,9 +174,12 @@ semantic or AST analysis:
 
 Results below are from the final verification session — rerun `npm run build`
 and `npm test` to re-verify. The official test command is `npm test`
-(`node --test "dist/**/*.test.js"`); running `node --test src/**/*.test.ts`
-is unsupported because the source tests use compiled `.js` ESM specifiers
-that only resolve in `dist/` after `tsc`.
+(`node --test` over the explicit list of compiled `dist/**/*.test.js` files
+declared in package.json — no shell globbing, so it behaves identically on
+Windows and Linux, works on every supported Node version, and never executes
+`dist/index.js`); adding a test file means adding it to that list. Running
+`node --test src/**/*.test.ts` is unsupported because the source tests use
+compiled `.js` ESM specifiers that only resolve in `dist/` after `tsc`.
 
 - `npm ci` from removed `node_modules/` and `dist/`: passed,
   0 vulnerabilities.

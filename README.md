@@ -62,7 +62,9 @@ Both run in CI (`.github/workflows/ci.yml`, Node 20.x/22.x matrix) before the bu
 source and test files under `src/` only — `dist/`, `node_modules/`,
 `graphify-out/`, and packed tarballs are excluded via `eslint.config.mjs`
 and `.prettierignore`. These two commands require the development toolchain
-(Node >=20.19); the server runtime itself still supports Node >=18.
+(Node >=20.19); the server runtime itself still supports Node >=18. `.gitattributes`
+pins all text files to LF, so Windows and Linux checkouts produce identical
+line endings and the format check gives the same result on every platform.
 
 ### Local tarball install (npm/npx, no registry)
 

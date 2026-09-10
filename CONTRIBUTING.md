@@ -36,7 +36,7 @@ Run all four, in this order:
 npm run lint          # ESLint over src/, zero warnings allowed
 npm run format:check  # Prettier check over src/
 npm run build         # tsc, must exit 0
-npm test              # node --test over dist/**/*.test.js (build first: tests run from dist/)
+npm test              # node --test over the compiled test files listed in package.json (build first: tests run from dist/; add new test files to that list)
 ```
 
 Lint applies the TypeScript recommended rules to everything under `src/`. The format check enforces the Prettier style (100 columns, double quotes, semicolons). The build type-checks and emits `dist/`, and the tests run against that compiled output, so a stale `dist/` gives stale results — always rebuild before testing. CI runs the same four steps.
