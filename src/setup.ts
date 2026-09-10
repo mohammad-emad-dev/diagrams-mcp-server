@@ -10,7 +10,6 @@ import path from "node:path";
 import readline from "node:readline";
 
 export const SETUP_CLIENTS = [
-  "claude-desktop",
   "claude-code",
   "codex",
   "cursor",
@@ -21,17 +20,11 @@ export const SETUP_CLIENTS = [
 
 export type SetupClient = (typeof SETUP_CLIENTS)[number];
 
-type FileSetupClient = "claude-desktop" | "cursor" | "vscode" | "antigravity";
+type FileSetupClient = "cursor" | "vscode" | "antigravity";
 
-const FILE_CLIENTS: ReadonlySet<string> = new Set([
-  "claude-desktop",
-  "cursor",
-  "vscode",
-  "antigravity",
-]);
+const FILE_CLIENTS: ReadonlySet<string> = new Set(["cursor", "vscode", "antigravity"]);
 
 const CLIENT_LABELS: Record<SetupClient, string> = {
-  "claude-desktop": "Claude Desktop (writes claude_desktop_config.json)",
   "claude-code": "Claude Code (runs claude mcp add)",
   codex: "Codex (runs codex mcp add)",
   cursor: "Cursor (writes mcp.json)",
@@ -113,41 +106,14 @@ export function isSetupClient(value: string): value is SetupClient {
   return (SETUP_CLIENTS as ReadonlyArray<string>).includes(value);
 }
 
-// Config file and root key per file-based client. Platform, home,
-// appData, and cwd are parameters so tests can cover every OS.
+// Config file and root key per file-based client. Home and cwd are
+// parameters so tests can cover every OS.
 export function resolveConfigFile(
   client: FileSetupClient,
   scope: "global" | "project",
-  platform: NodeJS.Platform = process.platform,
   home: string = os.homedir(),
-  appData: string | undefined = undefined,
   cwd: string = process.cwd(),
 ): { file: string; rootKey: "mcpServers" | "servers" } {
-  if (client === "claude-desktop") {
-    if (platform === "win32") {
-      const base = appData ?? path.join(home, "AppData", "Roaming");
-      return {
-        file: path.join(base, "Claude", "claude_desktop_config.json"),
-        rootKey: "mcpServers",
-      };
-    }
-    if (platform === "darwin") {
-      return {
-        file: path.join(
-          home,
-          "Library",
-          "Application Support",
-          "Claude",
-          "claude_desktop_config.json",
-        ),
-        rootKey: "mcpServers",
-      };
-    }
-    return {
-      file: path.join(home, ".config", "Claude", "claude_desktop_config.json"),
-      rootKey: "mcpServers",
-    };
-  }
   if (client === "cursor") {
     if (scope === "project") {
       return { file: path.join(cwd, ".cursor", "mcp.json"), rootKey: "mcpServers" };
@@ -216,14 +182,7 @@ export async function writeFileClientConfig(
   opts: SetupOptions,
   projectRoot: string | undefined,
 ): Promise<string> {
-  const target = resolveConfigFile(
-    client,
-    opts.scope,
-    process.platform,
-    os.homedir(),
-    process.env.APPDATA,
-    process.cwd(),
-  );
+  const target = resolveConfigFile(client, opts.scope);
   let existing: unknown;
   try {
     existing = JSON.parse(await fs.readFile(target.file, "utf-8"));
@@ -310,7 +269,7 @@ Clients: ${SETUP_CLIENTS.join(", ")}
 
 Examples:
   diagrams-mcp-server setup
-  diagrams-mcp-server setup --client claude-desktop --yes
+  diagrams-mcp-server setup --client codex --yes
   diagrams-mcp-server setup --client cursor --scope project
 `);
 }

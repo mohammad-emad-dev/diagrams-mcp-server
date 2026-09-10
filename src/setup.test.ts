@@ -67,8 +67,9 @@ describe("parseSetupArgs", () => {
 
 describe("isSetupClient", () => {
   it("accepts known clients and rejects the rest", () => {
-    assert.equal(isSetupClient("claude-desktop"), true);
+    assert.equal(isSetupClient("claude-code"), true);
     assert.equal(isSetupClient("opencode"), true);
+    assert.equal(isSetupClient("claude-desktop"), false);
     assert.equal(isSetupClient("not-a-client"), false);
     assert.equal(isSetupClient(""), false);
   });
@@ -137,113 +138,22 @@ describe("shouldBakeProjectRoot", () => {
 });
 
 describe("resolveConfigFile", () => {
-  it("locates Claude Desktop per OS", () => {
-    const win = resolveConfigFile(
-      "claude-desktop",
-      "global",
-      "win32",
-      "C:\\Users\\u",
-      "C:\\Users\\u\\AppData\\Roaming",
-      "/cwd",
-    );
-    assert.equal(
-      win.file,
-      path.join("C:\\Users\\u\\AppData\\Roaming", "Claude", "claude_desktop_config.json"),
-    );
-    assert.equal(win.rootKey, "mcpServers");
-
-    const mac = resolveConfigFile(
-      "claude-desktop",
-      "global",
-      "darwin",
-      "/Users/u",
-      undefined,
-      "/cwd",
-    );
-    assert.equal(
-      mac.file,
-      path.join(
-        "/Users/u",
-        "Library",
-        "Application Support",
-        "Claude",
-        "claude_desktop_config.json",
-      ),
-    );
-
-    const linux = resolveConfigFile(
-      "claude-desktop",
-      "global",
-      "linux",
-      "/home/u",
-      undefined,
-      "/cwd",
-    );
-    assert.equal(
-      linux.file,
-      path.join("/home/u", ".config", "Claude", "claude_desktop_config.json"),
-    );
-  });
-
-  it("falls back to a Roaming path when APPDATA is missing on Windows", () => {
-    const target = resolveConfigFile(
-      "claude-desktop",
-      "global",
-      "win32",
-      "C:\\Users\\u",
-      undefined,
-      "/cwd",
-    );
-    assert.equal(
-      target.file,
-      path.join("C:\\Users\\u", "AppData", "Roaming", "Claude", "claude_desktop_config.json"),
-    );
-  });
-
   it("separates global and project scopes for cursor and antigravity", () => {
-    const cursorGlobal = resolveConfigFile(
-      "cursor",
-      "global",
-      "linux",
-      "/home/u",
-      undefined,
-      "/proj",
-    );
+    const cursorGlobal = resolveConfigFile("cursor", "global", "/home/u", "/proj");
     assert.equal(cursorGlobal.file, path.join("/home/u", ".cursor", "mcp.json"));
 
-    const cursorProject = resolveConfigFile(
-      "cursor",
-      "project",
-      "linux",
-      "/home/u",
-      undefined,
-      "/proj",
-    );
+    const cursorProject = resolveConfigFile("cursor", "project", "/home/u", "/proj");
     assert.equal(cursorProject.file, path.join("/proj", ".cursor", "mcp.json"));
 
-    const gravityProject = resolveConfigFile(
-      "antigravity",
-      "project",
-      "linux",
-      "/home/u",
-      undefined,
-      "/proj",
-    );
+    const gravityProject = resolveConfigFile("antigravity", "project", "/home/u", "/proj");
     assert.equal(gravityProject.file, path.join("/proj", ".agents", "mcp_config.json"));
 
-    const gravityGlobal = resolveConfigFile(
-      "antigravity",
-      "global",
-      "linux",
-      "/home/u",
-      undefined,
-      "/proj",
-    );
+    const gravityGlobal = resolveConfigFile("antigravity", "global", "/home/u", "/proj");
     assert.equal(gravityGlobal.file, path.join("/home/u", ".gemini", "config", "mcp_config.json"));
   });
 
   it("always uses the project .vscode file with the servers key", () => {
-    const target = resolveConfigFile("vscode", "global", "linux", "/home/u", undefined, "/proj");
+    const target = resolveConfigFile("vscode", "global", "/home/u", "/proj");
     assert.equal(target.file, path.join("/proj", ".vscode", "mcp.json"));
     assert.equal(target.rootKey, "servers");
   });
