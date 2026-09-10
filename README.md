@@ -1,6 +1,6 @@
 # diagrams-mcp-server
 
-> **Technical Preview (V1 Preview, v0.1.0)** — local-first MCP server for
+> **Technical Preview (V1 Preview, v0.2.0)** — local-first MCP server for
 > PlantUML and Mermaid diagrams with architecture drift detection.
 
 An MCP (Model Context Protocol) server that gives AI coding agents direct, structured access to your project's **PlantUML** and **Mermaid** architecture diagrams — list them, read them, create or update them, render them to images, and (uniquely) **check whether they still match your actual code**.
@@ -44,6 +44,15 @@ Pagination is explicit and opt-in — the server never pages or truncates on its
 
 ## Installation
 
+No git clone needed — install straight from the npm registry:
+
+```bash
+npx diagrams-mcp-server --help    # run once, no install
+npm install -g diagrams-mcp-server   # or install globally
+```
+
+### From source (contributors)
+
 ```bash
 git clone https://github.com/mohammad-emad-dev/diagrams-mcp-server.git
 cd diagrams-mcp-server
@@ -66,19 +75,16 @@ and `.prettierignore`. These two commands require the development toolchain
 pins all text files to LF, so Windows and Linux checkouts produce identical
 line endings and the format check gives the same result on every platform.
 
-### Local tarball install (npm/npx, no registry)
+### Local tarball install (no registry access)
 
-The package has **not** been published to the npm registry. To install and
-run this Technical Preview (v0.1.0) locally via npm/npx, pack and install
-from a local tarball instead. `package.json` sets `"private": true`, so an
-accidental `npm publish` is refused while `npm pack` and tarball installs
-keep working:
+To install and run this Technical Preview (v0.2.0) without registry
+access, pack and install from a local tarball instead:
 
 ```bash
-npm pack   # runs the prepack build and writes diagrams-mcp-server-0.1.0.tgz
+npm pack   # runs the prepack build and writes diagrams-mcp-server-0.2.0.tgz
 cd /path/to/your/project
 npm init -y                       # if the consumer project has no package.json yet
-npm install /path/to/diagrams-mcp-server-0.1.0.tgz
+npm install /path/to/diagrams-mcp-server-0.2.0.tgz
 npx diagrams-mcp-server --help    # resolves the local install, exits 0
 ```
 
@@ -277,7 +283,7 @@ src/
 
 ## Security notes
 
-- All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected.
+-   All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected. Windows-style `\` separators work as path separators on every platform, so `..\..` traversal is rejected on Linux too.
 - `diagrams_check_consistency` only *reads* your codebase — it never modifies code or diagrams.
 - No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
 - Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
