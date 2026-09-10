@@ -109,12 +109,16 @@ setup prints the exact command to run yourself. For OpenCode it prints
 the command to run. Restart file-based clients afterwards so they pick
 it up.
 
-Setup runs pre-flight checks automatically: it warns when the `claude`
-or `codex` CLI is missing (printing the manual command instead),
-validates a project-scoped path (offering to create it), and ends with
-a summary of the client, scope, touched config, and status.
+Setup opens with a version banner and runs pre-flight checks
+automatically: it warns when the `claude` or `codex` CLI is missing
+(printing the manual command instead), validates a project-scoped path
+(offering to create it), and ends with a summary of the client, scope,
+touched config, and status.
 Interactive prompts use arrow-key pickers (`↑↓` + `Enter`, `Esc`
-cancels); every prompt is skipped when the matching flag is passed.
+cancels) and `Yes`/`No` toggles; manual commands appear in boxed
+cards, and status output is color-highlighted (plain text when piped
+or when `NO_COLOR` is set). Every prompt is skipped when the matching
+flag is passed.
 
 ### 3. Verify it works
 
