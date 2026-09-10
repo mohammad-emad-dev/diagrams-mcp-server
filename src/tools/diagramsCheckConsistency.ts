@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { toPosixPath } from "../constants.js";
-import { checkConsistency } from "../services/consistencyChecker.js";
+import { checkConsistency } from "../services/consistencyChecker/index.js";
 import { handleToolError } from "./toolError.js";
 
 const InputSchema = z

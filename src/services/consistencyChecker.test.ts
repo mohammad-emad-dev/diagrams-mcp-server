@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { checkConsistency, extractEntities } from "./consistencyChecker.js";
+import { checkConsistency } from "./consistencyChecker/index.js";
+import { extractEntities } from "./consistencyChecker/entities.js";
 
 const USER_CLASS_PUML = `@startuml
 title User Domain Model
