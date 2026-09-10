@@ -12,6 +12,7 @@ import { registerDiagramsUpdate } from "./tools/diagramsUpdate.js";
 import { registerDiagramsDelete } from "./tools/diagramsDelete.js";
 import { registerDiagramsRender } from "./tools/diagramsRender.js";
 import { registerDiagramsCheckConsistency } from "./tools/diagramsCheckConsistency.js";
+import { runSetup } from "./setup.js";
 
 function printHelp(): void {
   console.log(`diagrams-mcp-server
@@ -21,6 +22,9 @@ architecture diagrams alongside your codebase.
 
 Usage (as an MCP server, launched by an MCP client via stdio):
   diagrams-mcp-server
+
+Usage (one-command client setup):
+  diagrams-mcp-server setup [--client <name>] [--yes]
 
 Environment variables:
   PROJECT_ROOT   Root directory of the project (default: current working directory)
@@ -44,6 +48,16 @@ See README.md for setup instructions with Claude Desktop and Claude Code.
 }
 
 async function main(): Promise<void> {
+  if (process.argv[2] === "setup") {
+    try {
+      await runSetup(process.argv.slice(3));
+    } catch (err: unknown) {
+      console.error(`Setup failed: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
+    }
+    return;
+  }
+
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
     printHelp();
     return;
@@ -54,7 +68,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: "diagrams-mcp-server",
-    version: "0.1.0",
+    version: "0.3.0",
   });
 
   registerDiagramsList(server, ctx);

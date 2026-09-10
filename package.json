@@ -1,6 +1,6 @@
 {
   "name": "diagrams-mcp-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "mcpName": "io.github.mohammad-emad-dev/diagrams-mcp-server",
   "description": "Technical Preview (V1 Preview): local-first MCP server for managing, rendering, and checking PlantUML and Mermaid architecture diagrams alongside your codebase.",
   "type": "module",
@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsc",
     "test":
-      "node --test dist/constants.test.js dist/integration/mcpServer.test.js dist/services/consistencyChecker.test.js dist/services/diagramStore.test.js dist/services/diagramValidator.test.js dist/services/renderer.test.js dist/tools/diagramsCreateUpdateValidation.test.js dist/tools/diagramsDelete.test.js dist/tools/diagramsPagination.test.js dist/tools/toolError.test.js dist/tools/toolOutput.test.js",
+      "node --test dist/constants.test.js dist/integration/mcpServer.test.js dist/services/consistencyChecker.test.js dist/services/diagramStore.test.js dist/services/diagramValidator.test.js dist/services/renderer.test.js dist/setup.test.js dist/tools/diagramsCreateUpdateValidation.test.js dist/tools/diagramsDelete.test.js dist/tools/diagramsPagination.test.js dist/tools/toolError.test.js dist/tools/toolOutput.test.js",
     "lint": "eslint src --max-warnings 0",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "prepack": "npm run build",

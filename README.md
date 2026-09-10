@@ -51,6 +51,20 @@ npx diagrams-mcp-server --help    # run once, no install
 npm install -g diagrams-mcp-server   # or install globally
 ```
 
+### One-command setup
+
+Pick your client and let the server register itself — no hand-editing JSON:
+
+```bash
+npx diagrams-mcp-server setup            # interactive: choose a client
+npx diagrams-mcp-server setup --client claude-desktop --yes   # non-interactive
+```
+
+For file-based clients (Claude Desktop, Cursor, VS Code, Antigravity) this
+writes the `diagrams` entry into the client's config file. For Claude Code
+and Codex it runs their `mcp add` command; for OpenCode it prints the
+command to run. Restart file-based clients afterwards so they pick it up.
+
 ### From source (contributors)
 
 ```bash
