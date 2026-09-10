@@ -392,8 +392,10 @@ src/
 ├── context.ts                     # Resolves PROJECT_ROOT / DIAGRAMS_DIR once at startup
 ├── constants.ts                   # Shared constants
 ├── types.ts                       # Shared TypeScript types
+├── setup.ts                       # Guided client-setup wizard (scopes, pre-flight checks)
 ├── services/
 │   ├── diagramStore.ts            # Safe filesystem CRUD (path-traversal protected)
+│   ├── diagramValidator.ts        # PlantUML/Mermaid syntax checks
 │   ├── renderer.ts                # Mermaid/PlantUML -> SVG/PNG rendering
 │   └── consistencyChecker.ts      # Diagram <-> code drift detection
 └── tools/
@@ -403,7 +405,8 @@ src/
     ├── diagramsUpdate.ts
     ├── diagramsDelete.ts
     ├── diagramsRender.ts
-    └── diagramsCheckConsistency.ts
+    ├── diagramsCheckConsistency.ts
+    └── toolError.ts
 ```
 
 ## Security notes
