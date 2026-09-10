@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import {
+  cliAddCommand,
   diagramsServerEntry,
   isSetupClient,
   mergeServerConfig,
@@ -53,6 +54,38 @@ describe("isSetupClient", () => {
     assert.equal(isSetupClient("opencode"), true);
     assert.equal(isSetupClient("not-a-client"), false);
     assert.equal(isSetupClient(""), false);
+  });
+});
+
+describe("cliAddCommand", () => {
+  it("carries PROJECT_ROOT as an explicit --env flag for claude-code", () => {
+    assert.deepEqual(cliAddCommand("claude-code", "C:\\proj"), [
+      "claude",
+      "mcp",
+      "add",
+      "diagrams",
+      "--env",
+      "PROJECT_ROOT=C:\\proj",
+      "--",
+      "npx",
+      "-y",
+      "diagrams-mcp-server",
+    ]);
+  });
+
+  it("carries PROJECT_ROOT as an explicit --env flag for codex", () => {
+    assert.deepEqual(cliAddCommand("codex", "/home/u/proj"), [
+      "codex",
+      "mcp",
+      "add",
+      "diagrams",
+      "--env",
+      "PROJECT_ROOT=/home/u/proj",
+      "--",
+      "npx",
+      "-y",
+      "diagrams-mcp-server",
+    ]);
   });
 });
 

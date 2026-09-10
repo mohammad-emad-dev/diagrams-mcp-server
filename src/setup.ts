@@ -40,12 +40,26 @@ const CLIENT_LABELS: Record<SetupClient, string> = {
   antigravity: "Antigravity (writes mcp_config.json)",
 };
 
-// Fixed add-commands for CLI-based clients. Names are hardcoded literals,
-// never user input, and spawn without a shell.
-const CLI_ADD_COMMANDS: Record<string, string[]> = {
-  "claude-code": ["claude", "mcp", "add", "diagrams", "--", "npx", "-y", "diagrams-mcp-server"],
-  codex: ["codex", "mcp", "add", "diagrams", "--", "npx", "-y", "diagrams-mcp-server"],
-};
+// Add-command for CLI-based clients, built per project root. PROJECT_ROOT
+// travels as an explicit --env flag (supported by both CLIs) so the
+// registered server binds the chosen project no matter where the client
+// launches it from. Names are hardcoded literals, never user input, and
+// spawn without a shell.
+export function cliAddCommand(client: "claude-code" | "codex", projectRoot: string): string[] {
+  const bin = client === "codex" ? "codex" : "claude";
+  return [
+    bin,
+    "mcp",
+    "add",
+    "diagrams",
+    "--env",
+    `PROJECT_ROOT=${projectRoot}`,
+    "--",
+    "npx",
+    "-y",
+    "diagrams-mcp-server",
+  ];
+}
 
 export interface SetupOptions {
   client?: string;
@@ -252,8 +266,8 @@ async function pickClient(): Promise<SetupClient> {
   }
 }
 
-function runAddCommand(client: "claude-code" | "codex"): Promise<void> {
-  const argv = CLI_ADD_COMMANDS[client];
+function runAddCommand(client: "claude-code" | "codex", projectRoot: string): Promise<void> {
+  const argv = cliAddCommand(client, projectRoot);
   return new Promise<void>((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), { stdio: "inherit" });
     child.on("error", reject);
@@ -262,6 +276,12 @@ function runAddCommand(client: "claude-code" | "codex"): Promise<void> {
       else reject(new Error(`${argv[0]} exited with code ${code}`));
     });
   });
+}
+
+// Quote one argv element for copy-paste display only; spawn itself
+// never uses a shell.
+function shellQuote(arg: string): string {
+  return /\s/.test(arg) ? `"${arg}"` : arg;
 }
 
 function printSetupHelp(): void {
@@ -299,6 +319,7 @@ export async function runSetup(args: string[]): Promise<void> {
     throw new Error(`Unknown client '${client}'. Expected one of: ${SETUP_CLIENTS.join(", ")}.`);
   }
   if (!opts.yes && process.stdin.isTTY) {
+    console.log("Project root is the target project/repo: diagrams are stored and scanned there.");
     opts.projectRoot = await ask(`Project root [${opts.projectRoot}]: `, opts.projectRoot);
   }
   if (FILE_CLIENTS.has(client)) {
@@ -308,10 +329,11 @@ export async function runSetup(args: string[]): Promise<void> {
   }
   if (client === "claude-code" || client === "codex") {
     try {
-      await runAddCommand(client);
+      await runAddCommand(client, opts.projectRoot);
     } catch {
+      const display = cliAddCommand(client, opts.projectRoot).map(shellQuote).join(" ");
       console.log(`Could not run the ${client} CLI. Run this instead:`);
-      console.log(`  ${CLI_ADD_COMMANDS[client].join(" ")}`);
+      console.log(`  ${display}`);
       return;
     }
     console.log(`Registered diagrams with ${client}.`);

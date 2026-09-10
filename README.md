@@ -1,6 +1,6 @@
 # diagrams-mcp-server
 
-> **Technical Preview (V1 Preview, v0.3.0)** — local-first MCP server for
+> **Technical Preview (V1 Preview, v0.3.1)** — local-first MCP server for
 > PlantUML and Mermaid diagrams with architecture drift detection.
 
 An MCP (Model Context Protocol) server that gives AI coding agents direct, structured access to your project's **PlantUML** and **Mermaid** architecture diagrams — list them, read them, create or update them, render them to images, and (uniquely) **check whether they still match your actual code**.
@@ -93,9 +93,11 @@ npx diagrams-mcp-server setup --client claude-desktop --yes   # non-interactive
 
 For file-based clients (Claude Desktop, Cursor, VS Code, Antigravity)
 this merges the `diagrams` entry into the client's config file. For
-Claude Code and Codex it runs their `mcp add` command; for OpenCode it
-prints the command to run. Restart file-based clients afterwards so they
-pick it up.
+Claude Code and Codex it runs their `mcp add` command with PROJECT_ROOT
+as an explicit `--env` flag; if that CLI is not installed, setup prints
+the exact command (including PROJECT_ROOT) to run yourself. For OpenCode
+it prints the command to run. Restart file-based clients afterwards so
+they pick it up.
 
 ### 3. Verify it works
 
@@ -146,14 +148,14 @@ line endings and the format check gives the same result on every platform.
 
 ### Local tarball install (no registry access)
 
-To install and run this Technical Preview (v0.3.0) without registry
+To install and run this Technical Preview (v0.3.1) without registry
 access, pack and install from a local tarball instead:
 
 ```bash
-npm pack   # runs the prepack build and writes diagrams-mcp-server-0.3.0.tgz
+npm pack   # runs the prepack build and writes diagrams-mcp-server-0.3.1.tgz
 cd /path/to/your/project
 npm init -y                       # if the consumer project has no package.json yet
-npm install /path/to/diagrams-mcp-server-0.3.0.tgz
+npm install /path/to/diagrams-mcp-server-0.3.1.tgz
 npx diagrams-mcp-server --help    # resolves the local install, exits 0
 ```
 
