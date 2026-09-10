@@ -8,6 +8,7 @@ import {
   diagramsServerEntry,
   ensureProjectRoot,
   findOnPath,
+  frameTransition,
   isSetupClient,
   mergeServerConfig,
   normalizeKey,
@@ -297,6 +298,35 @@ describe("selectNext", () => {
       done: false,
       cancelled: false,
     });
+  });
+});
+
+describe("frameTransition", () => {
+  const clears = (out: string): number => out.match(/\x1b\[2K/g)?.length ?? 0;
+
+  it("clears every owned line on full rewrites", () => {
+    const out = frameTransition(4, ["a", "b", "c", "d"]);
+    assert.ok(out.startsWith("\x1b[4A"));
+    assert.equal(clears(out), 4);
+    assert.ok(out.includes("a") && out.includes("d"));
+    assert.ok(out.endsWith("\n"));
+  });
+
+  it("clears stale lines when a short frame replaces a tall one", () => {
+    const frame = renderSelect(
+      "Setup scope:",
+      [{ label: "Global (Recommended)" }, { label: "Project-specific" }],
+      0,
+    ).split("\n");
+    assert.ok(frame.length > 2);
+    const out = frameTransition(frame.length, ["◇ Setup scope: Global (Recommended)"]);
+    assert.equal(clears(out), frame.length);
+  });
+
+  it("leaves the cursor below the cleared block", () => {
+    const out = frameTransition(3, ["only"]);
+    assert.equal(clears(out), 3);
+    assert.equal(out.split("\n").length, 4);
   });
 });
 

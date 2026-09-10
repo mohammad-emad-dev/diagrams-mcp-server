@@ -10,7 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
-const SETUP_VERSION = "0.5.0"; // Keep in sync with package.json (checked at release).
+const SETUP_VERSION = "0.5.1"; // Keep in sync with package.json (checked at release).
 
 // Wrap text in an ANSI style in capable terminals only: piped output and
 // NO_COLOR stay plain so logs and scripts never see escape codes.
@@ -196,11 +196,22 @@ function setRawModeSafe(mode: boolean): boolean {
 
 let keypressEventsEnabled = false;
 
-function rewriteFrame(lineCount: number, lines: string[]): void {
-  process.stdout.write(`\x1b[${lineCount}A`);
-  for (const line of lines) {
-    process.stdout.write(`\r\x1b[2K${line}\n`);
+// Byte stream for a frame transition: move up over every owned line and
+// explicitly clear each one before writing. Padding short replacements
+// with blank clears is what prevents ghost text: finalizing a selection
+// redraws one frozen line over an N-line frame, and without the padding
+// the other N-1 stale lines would survive underneath the next output.
+export function frameTransition(lineCount: number, lines: string[]): string {
+  let out = `\x1b[${lineCount}A`;
+  for (let index = 0; index < lineCount; index += 1) {
+    const line = index < lines.length ? lines[index] : "";
+    out += `\r\x1b[2K${line}\n`;
   }
+  return out;
+}
+
+function rewriteFrame(lineCount: number, lines: string[]): void {
+  process.stdout.write(frameTransition(lineCount, lines));
 }
 
 async function selectPromptLegacy(
