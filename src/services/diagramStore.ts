@@ -175,8 +175,13 @@ export class DiagramStore {
     try {
       await fs.access(absolutePath);
       return true;
-    } catch {
-      return false;
+    } catch (err: unknown) {
+      // Only "missing" means absent; anything else (permissions, I/O)
+      // is a real failure the caller must see.
+      if (isNodeError(err) && err.code === "ENOENT") {
+        return false;
+      }
+      throw err;
     }
   }
 
@@ -193,11 +198,25 @@ export class DiagramStore {
     }
     // Validate before touching disk; invalid content writes nothing.
     validateDiagramSource(content, type);
-    if (!options.overwrite && (await this.exists(relativePath))) {
-      throw new DiagramExistsError(toPosixPath(relativePath));
-    }
     await fs.mkdir(path.dirname(absolutePath), { recursive: true });
-    await fs.writeFile(absolutePath, content, "utf-8");
+    try {
+      // "wx" creates atomically: a concurrent writer loses with EEXIST
+      // instead of slipping through a check-then-write race. A directory
+      // at the target fails with EISDIR and keeps the same contract.
+      await fs.writeFile(absolutePath, content, {
+        encoding: "utf-8",
+        flag: options.overwrite ? "w" : "wx",
+      });
+    } catch (err: unknown) {
+      if (
+        !options.overwrite &&
+        isNodeError(err) &&
+        (err.code === "EEXIST" || err.code === "EISDIR")
+      ) {
+        throw new DiagramExistsError(toPosixPath(relativePath));
+      }
+      throw err;
+    }
   }
 
   async delete(relativePath: string): Promise<void> {

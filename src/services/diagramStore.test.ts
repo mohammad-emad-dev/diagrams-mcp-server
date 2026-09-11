@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { DiagramStore, PathTraversalError } from "./diagramStore.js";
+import { DiagramExistsError, DiagramStore, PathTraversalError } from "./diagramStore.js";
 
 const OUTSIDE_CONTENT = "external secret content 7f3a9c";
 const DIAGRAM_CONTENT = "@startuml\nclass LocalWidget\n@enduml\n";
@@ -112,5 +112,61 @@ describe("DiagramStore symlink safety", () => {
     );
 
     assert.equal(await fs.readFile(outsideFile, "utf-8"), OUTSIDE_CONTENT);
+  });
+});
+
+describe("DiagramStore atomic create", () => {
+  let diagramsRoot: string;
+  let store: DiagramStore;
+
+  beforeEach(async () => {
+    diagramsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-race-"));
+    store = new DiagramStore(diagramsRoot);
+  });
+
+  afterEach(async () => {
+    await fs.rm(diagramsRoot, { recursive: true, force: true });
+  });
+
+  it("lets exactly one concurrent create win; the loser gets DiagramExistsError", async () => {
+    const first = "@startuml\nclass First\n@enduml\n";
+    const second = "@startuml\nclass Second\n@enduml\n";
+    const outcomes = await Promise.allSettled([
+      store.write("models/race.puml", first, { overwrite: false }),
+      store.write("models/race.puml", second, { overwrite: false }),
+    ]);
+    const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled");
+    const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 1);
+    const loser = rejected[0];
+    assert.ok(loser.status === "rejected" && loser.reason instanceof DiagramExistsError);
+    const { content } = await store.read("models/race.puml");
+    assert.ok(content === first || content === second);
+  });
+
+  it("exists() throws on non-ENOENT failures instead of reporting absent", async (t) => {
+    // A regular file as a parent makes access fail with ENOTDIR on
+    // POSIX; Windows maps the same path to ENOENT, so probe openly and
+    // skip where the distinction is unobservable (same pattern as the
+    // symlink tests above — Linux CI still proves the narrowing).
+    await fs.writeFile(path.join(diagramsRoot, "blocker"), "x", "utf-8");
+    let probe: string | null = null;
+    try {
+      await fs.access(path.join(diagramsRoot, "blocker", "child.puml"));
+    } catch (err: unknown) {
+      if (isErrno(err)) probe = err.code ?? null;
+    }
+    if (probe !== "ENOTDIR") {
+      t.skip(
+        `non-ENOENT access failures are unobservable here (got ${probe}); ` +
+          "exists() narrowing coverage was NOT verified on this platform",
+      );
+      return;
+    }
+    await assert.rejects(
+      store.exists("blocker/child.puml"),
+      (err: unknown) => isErrno(err) && err.code === "ENOTDIR",
+    );
   });
 });
