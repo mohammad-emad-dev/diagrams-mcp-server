@@ -25,7 +25,7 @@ I built this after running into the same problem while using AI to work on softw
 | `diagrams_render` | Render a diagram to SVG/PNG |
 | `diagrams_check_consistency` | **Compare class/interface/component names in a diagram against your actual codebase** and flag anything that looks outdated |
 
-`diagrams_check_consistency` is a fast, dependency-free heuristic (not a full semantic/AST analysis): it extracts entity names from `class`/`interface`/`enum`/`component` declarations in the diagram and searches your source files for a matching identifier. It won't catch everything a real static analyzer would, but it catches the most common and costly form of drift: a class that was renamed or deleted, or a component that was designed but never built — for free, with no per-language parser required. Structured output includes the extracted/matched/unmatched entity names, per-entity evidence with matched files, the analyzer tiers involved (reliable vs experimental/generic heuristic), and an explicit heuristic confidence warning. Codebase scans are capped at 5,000 source files; the result reports `truncated`, `scan_limit`, `files_scanned`, and `scan_warning` so a capped scan is never mistaken for a complete one — when `truncated` is true, unmatched results may be incomplete.
+`diagrams_check_consistency` is a fast, dependency-free heuristic (not a full semantic/AST analysis): it reads entity names from `class`/`interface`/`enum`/`component` declarations — plus aliases, namespaces and packages, sequence participants, message calls like `charge(card)`, C4 blocks, and subgraph groupings — and searches your source files for a matching identifier, using per-language declaration patterns where they exist (JavaScript/TypeScript, Python, PHP, Java) and whole-word matching elsewhere. It won't catch everything a real static analyzer would, but it catches the most common and costly form of drift: a class that was renamed or deleted, or a component that was designed but never built — for free, with no per-language parser required. Structured output includes the extracted/matched/unmatched entity names, per-entity evidence with matched files, the analyzer tiers involved (reliable vs experimental/generic heuristic), and an explicit heuristic confidence warning. The scan limits behind it are listed under [Consistency scan limits](#consistency-scan-limits).
 
 ## Pagination and source windows
 
@@ -92,7 +92,7 @@ npx diagrams-mcp-server setup --client codex --yes   # non-interactive
 npx diagrams-mcp-server setup --client cursor --scope project --yes   # pin this project
 ```
 
-Setup asks for a scope first (or takes it from `--scope`):
+Setup asks for the client first, then the scope (each skippable with a flag):
 
 - **Global (Recommended):** writes a clean entry with no `PROJECT_ROOT`
   — the server attaches to whatever directory the client launches it
@@ -349,6 +349,17 @@ Or via the command palette: **MCP: Add Server → Command (stdio)**, then enter 
 | `ALLOW_REMOTE_PLANTUML` | unset (remote fallback disabled) | Set to exactly `true` to allow the remote PlantUML server fallback when no local `plantuml` CLI is installed. Any other value keeps remote rendering disabled. Mermaid is always local-only and unaffected |
 | `DISABLE_REMOTE_PLANTUML` | unset | Set to exactly `true` to never use the remote PlantUML server, even when `ALLOW_REMOTE_PLANTUML=true` is set. PlantUML rendering then requires a local `plantuml` CLI. Mermaid is always local-only and unaffected |
 
+### Consistency scan limits
+
+Every `diagrams_check_consistency` run observes these caps:
+
+| Limit | Value | How you see it |
+|---|---|---|
+| Files scanned | 5,000 source files | the result reports `truncated`, `scan_limit`, `files_scanned`, and `scan_warning` so a capped scan is never mistaken for a complete one — when `truncated` is true, unmatched results may be incomplete |
+| Per-file size | 1,000,000 bytes | larger files (usually generated bundles) are skipped silently |
+| Evidence per entity | 10 matched files | `matched_files` is capped; `matched_file_count` still reports the full count |
+| Concurrent file reads | 32 | bounds open handles while the scan runs |
+
 ## Example
 
 ```
@@ -378,22 +389,28 @@ src/
 ├── context.ts                     # Resolves PROJECT_ROOT / DIAGRAMS_DIR once at startup
 ├── constants.ts                   # Shared constants
 ├── types.ts                       # Shared TypeScript types
-├── setup.ts                       # Guided client-setup wizard (scopes, pre-flight checks)
+├── setup/                         # Guided client-setup wizard (scopes, pre-flight checks)
+│   ├── index.ts                   # runSetup orchestrator
+│   ├── clients.ts                 # Supported clients, arg parsing, config writers
+│   ├── prompts.ts                 # Interactive pickers and confirmations
+│   └── terminal.ts                # Banner, boxes, color
 ├── services/
 │   ├── diagramStore.ts            # Safe filesystem CRUD (path-traversal protected)
 │   ├── diagramValidator.ts        # PlantUML/Mermaid syntax checks
 │   ├── renderer.ts                # Mermaid/PlantUML -> SVG/PNG rendering
-│   └── consistencyChecker.ts      # Diagram <-> code drift detection
-└── tools/
-    ├── diagramsList.ts
-    ├── diagramsGet.ts
-    ├── diagramsCreate.ts
-    ├── diagramsUpdate.ts
-    ├── diagramsDelete.ts
-    ├── diagramsRender.ts
-    ├── diagramsCheckConsistency.ts
-    └── toolError.ts
+│   └── consistencyChecker/        # Diagram <-> code drift detection
+│       ├── index.ts               # checkConsistency orchestration (scan, match, report)
+│       ├── entities.ts            # Entity names from diagram source
+│       ├── codeAnalysis.ts        # Per-language declaration patterns
+│       └── scanning.ts            # Filesystem walk with scan limits
+├── tools/                         # One MCP tool adapter per file (diagramsList, diagramsGet, …)
+└── integration/
+    └── mcpServer.test.ts          # End-to-end server surface tests
 ```
+
+Tests live next to the source they cover (`*.test.ts`), compile to `dist/`,
+and run from there — `npm test` uses the file list in `package.json`, so new
+test files need adding there.
 
 ## Security notes
 

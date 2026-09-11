@@ -1,6 +1,6 @@
 # Contributing to diagrams-mcp-server
 
-This is a personal project kept up by one maintainer, currently a Technical Preview (v0.1.0). Outside contributions are welcome, but the scope stays small on purpose: everything should serve the drift-detection loop of listing diagrams, reading source, checking consistency, reporting evidence, and updating only when asked. If an idea does not fit that loop, open an issue first before writing code.
+This is a personal project kept up by one maintainer, currently a Technical Preview (v0.5.2). Outside contributions are welcome, but the scope stays small on purpose: everything should serve the drift-detection loop of listing diagrams, reading source, checking consistency, reporting evidence, and updating only when asked. If an idea does not fit that loop, open an issue first before writing code.
 
 ## Requirements
 
@@ -43,7 +43,7 @@ Lint applies the TypeScript recommended rules to everything under `src/`. The fo
 
 ## Adding a language fixture
 
-Consistency checking scans code with per-extension analyzers in `src/services/consistencyChecker.ts`. Three tiers exist (`AnalyzerTier` in `src/types.ts`):
+Consistency checking scans code with per-extension analyzers in `src/services/consistencyChecker/` — declaration patterns and tiers live in `codeAnalysis.ts`, diagram-side extraction in `entities.ts`. Three tiers exist (`AnalyzerTier` in `src/types.ts`):
 
 - `reliable` — JavaScript/TypeScript (`.js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts`), Python, PHP, Java. These have per-language declaration patterns.
 - `experimental` — C#, Go, Ruby, Kotlin, Rust. Generic whole-word heuristic, covered by smoke tests.
@@ -51,9 +51,9 @@ Consistency checking scans code with per-extension analyzers in `src/services/co
 
 To touch language support:
 
-1. Add or extend the declaration patterns in `consistencyChecker.ts`, and move the extension between `RELIABLE_ANALYZER_EXTENSIONS` and `EXPERIMENTAL_ANALYZER_EXTENSIONS` if the tier changes.
+1. Add or extend the declaration patterns in `FAMILY_PATTERNS` in `codeAnalysis.ts`, and move the extension between `RELIABLE_ANALYZER_EXTENSIONS` and `EXPERIMENTAL_ANALYZER_EXTENSIONS` if the tier changes.
 2. Add fixture tests in `src/services/consistencyChecker.test.ts`. Fixtures are inline: the `writeFiles` helper writes source files into a fresh tmp dir, then `checkConsistency` runs against an inline diagram string. Cover the declaration forms being claimed, plus a missing entity, a name that only appears in a comment or string literal, and a file under an ignored directory (`node_modules/`, `dist/`, and the rest of `DEFAULT_IGNORED_DIRS`).
-3. Document what the analyzer recognizes and what stays heuristic in the module docstring at the top of `consistencyChecker.ts`.
+3. Document what the analyzer recognizes and what stays heuristic in the module comments at the top of `codeAnalysis.ts` and `entities.ts`.
 
 The bar for calling a language reliable is representative fixtures, documented limitations, predictable matching, and tests for every declaration form claimed. An experimental language must never be presented as reliable, and its results keep the heuristic warning in the structured output. Promoting a language from experimental to reliable needs fixtures and passing tests first.
 
@@ -84,6 +84,6 @@ This project is local-first: no telemetry, no accounts, no hosted storage. Diagr
 - [ ] Language changes include fixtures and documented limitations; no experimental language is presented as reliable
 - [ ] No secrets, tokens, full source dumps, or local paths in code, logs, tests, or error messages
 - [ ] The diff touches only what the change needs: no unrelated files, generated output, or config drift
-- [ ] The README or the V1 plan is updated if behavior or support claims changed
+- [ ] The README or RELEASE_NOTES.md is updated if behavior or support claims changed
 
 Small, focused pull requests get reviewed fastest. One change per request, with the verification output pasted in.
