@@ -259,6 +259,20 @@ describe("normalizeKey", () => {
     assert.deepEqual(normalizeKey({ name: "q" }), { kind: "other" });
     assert.deepEqual(normalizeKey({}), { kind: "other" });
   });
+
+  it("covers every branch of the key table exactly", () => {
+    assert.deepEqual(normalizeKey({ name: "enter" }), { kind: "submit" });
+    assert.deepEqual(normalizeKey({ name: "1" }), { kind: "digit", value: 1 });
+    assert.deepEqual(normalizeKey({ name: "9" }), { kind: "digit", value: 9 });
+    assert.deepEqual(normalizeKey({ name: "0" }), { kind: "other" });
+    assert.deepEqual(normalizeKey({ name: "10" }), { kind: "other" });
+    assert.deepEqual(normalizeKey({ name: "c" }), { kind: "other" });
+    assert.deepEqual(normalizeKey({ name: "C", ctrl: true }), { kind: "other" });
+    assert.deepEqual(normalizeKey({ name: "up", ctrl: true }), { kind: "up" });
+    assert.deepEqual(normalizeKey({ ctrl: true }), { kind: "other" });
+    assert.deepEqual(normalizeKey({ name: "RETURN" }), { kind: "other" });
+    assert.deepEqual(normalizeKey({ name: " " }), { kind: "other" });
+  });
 });
 
 describe("selectNext", () => {
@@ -495,21 +509,27 @@ describe("ensureProjectRoot", () => {
 
 describe("resolveConfigFile", () => {
   it("separates global and project scopes for cursor and antigravity", () => {
-    const cursorGlobal = resolveConfigFile("cursor", "global", "/home/u", "/proj");
+    const cursorGlobal = resolveConfigFile("cursor", "global", { home: "/home/u", cwd: "/proj" });
     assert.equal(cursorGlobal.file, path.join("/home/u", ".cursor", "mcp.json"));
 
-    const cursorProject = resolveConfigFile("cursor", "project", "/home/u", "/proj");
+    const cursorProject = resolveConfigFile("cursor", "project", { home: "/home/u", cwd: "/proj" });
     assert.equal(cursorProject.file, path.join("/proj", ".cursor", "mcp.json"));
 
-    const gravityProject = resolveConfigFile("antigravity", "project", "/home/u", "/proj");
+    const gravityProject = resolveConfigFile("antigravity", "project", {
+      home: "/home/u",
+      cwd: "/proj",
+    });
     assert.equal(gravityProject.file, path.join("/proj", ".agents", "mcp_config.json"));
 
-    const gravityGlobal = resolveConfigFile("antigravity", "global", "/home/u", "/proj");
+    const gravityGlobal = resolveConfigFile("antigravity", "global", {
+      home: "/home/u",
+      cwd: "/proj",
+    });
     assert.equal(gravityGlobal.file, path.join("/home/u", ".gemini", "config", "mcp_config.json"));
   });
 
   it("always uses the project .vscode file with the servers key", () => {
-    const target = resolveConfigFile("vscode", "global", "/home/u", "/proj");
+    const target = resolveConfigFile("vscode", "global", { home: "/home/u", cwd: "/proj" });
     assert.equal(target.file, path.join("/proj", ".vscode", "mcp.json"));
     assert.equal(target.rootKey, "servers");
   });
@@ -535,7 +555,11 @@ describe("diagramsServerEntry", () => {
 describe("mergeServerConfig", () => {
   it("creates the root key from scratch", () => {
     assert.deepEqual(
-      mergeServerConfig(undefined, "mcpServers", "diagrams", diagramsServerEntry("/p")),
+      mergeServerConfig(undefined, {
+        rootKey: "mcpServers",
+        name: "diagrams",
+        entry: diagramsServerEntry("/p"),
+      }),
       {
         mcpServers: { diagrams: diagramsServerEntry("/p") },
       },
@@ -544,7 +568,11 @@ describe("mergeServerConfig", () => {
 
   it("keeps existing servers and replaces the same name", () => {
     const existing = { mcpServers: { other: { command: "x" }, diagrams: { command: "old" } } };
-    const merged = mergeServerConfig(existing, "mcpServers", "diagrams", diagramsServerEntry("/p"));
+    const merged = mergeServerConfig(existing, {
+      rootKey: "mcpServers",
+      name: "diagrams",
+      entry: diagramsServerEntry("/p"),
+    });
     assert.deepEqual(merged, {
       mcpServers: { other: { command: "x" }, diagrams: diagramsServerEntry("/p") },
     });
@@ -552,20 +580,28 @@ describe("mergeServerConfig", () => {
 
   it("refuses non-object configs instead of overwriting them", () => {
     assert.throws(
-      () => mergeServerConfig([], "mcpServers", "diagrams", diagramsServerEntry("/p")),
+      () =>
+        mergeServerConfig([], {
+          rootKey: "mcpServers",
+          name: "diagrams",
+          entry: diagramsServerEntry("/p"),
+        }),
       /not a JSON object/,
     );
     assert.throws(
-      () => mergeServerConfig("text", "mcpServers", "diagrams", diagramsServerEntry("/p")),
+      () =>
+        mergeServerConfig("text", {
+          rootKey: "mcpServers",
+          name: "diagrams",
+          entry: diagramsServerEntry("/p"),
+        }),
       /not a JSON object/,
     );
     assert.throws(
       () =>
         mergeServerConfig(
           { mcpServers: ["x"] },
-          "mcpServers",
-          "diagrams",
-          diagramsServerEntry("/p"),
+          { rootKey: "mcpServers", name: "diagrams", entry: diagramsServerEntry("/p") },
         ),
       /not an object/,
     );

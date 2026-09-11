@@ -18,7 +18,7 @@ import {
   shouldBakeProjectRoot,
   writeFileClientConfig,
 } from "./clients.js";
-import type { FileSetupClient } from "./clients.js";
+import type { FileSetupClient, SetupOptions } from "./clients.js";
 import { ask, confirmPrompt, pickClient, pickScope } from "./prompts.js";
 import { box, paint, renderBanner } from "./terminal.js";
 
@@ -78,14 +78,7 @@ function printSummary(client: string, scope: string, target: string, status: str
   console.log(`  Status:              ${status}`);
 }
 
-export async function runSetup(args: string[]): Promise<void> {
-  const opts = parseSetupArgs(args);
-  if (opts.help) {
-    printSetupHelp();
-    return;
-  }
-  console.log(renderBanner("📐 DIAGRAMS MCP SERVER", SETUP_VERSION));
-  console.log("");
+async function resolveSetupClient(opts: SetupOptions): Promise<string> {
   let client = opts.client;
   if (client === undefined) {
     if (!process.stdin.isTTY || opts.yes) {
@@ -93,13 +86,19 @@ export async function runSetup(args: string[]): Promise<void> {
     }
     client = await pickClient();
   }
-  if (!isSetupClient(client)) {
-    throw new Error(`Unknown client '${client}'. Expected one of: ${SETUP_CLIENTS.join(", ")}.`);
-  }
-  const interactive = process.stdin.isTTY && !opts.yes;
+  return client;
+}
+
+async function applyInteractiveScope(opts: SetupOptions, interactive: boolean): Promise<void> {
   if (interactive && !opts.scopeExplicit) {
     opts.scope = await pickScope();
   }
+}
+
+async function applyInteractiveProjectRoot(
+  opts: SetupOptions,
+  interactive: boolean,
+): Promise<void> {
   if (interactive && opts.scope === "project") {
     console.log("Project root is the target project/repo: diagrams are stored and scanned there.");
     const initial = await ask(`Project root [${opts.projectRoot}]: `, opts.projectRoot);
@@ -112,61 +111,90 @@ export async function runSetup(args: string[]): Promise<void> {
       reprompt: (question, fallback) => ask(question, fallback),
     });
   }
-  const projectRoot = shouldBakeProjectRoot(opts) ? opts.projectRoot : undefined;
+}
+
+function warnMissingProjectRoot(interactive: boolean, projectRoot: string | undefined): void {
   if (!interactive && projectRoot !== undefined && !existsSync(projectRoot)) {
     console.log(
       paint("33", `⚠ Warning: ${projectRoot} does not exist; continuing with it anyway.`),
     );
   }
-  if (FILE_CLIENTS.has(client)) {
-    const file = await writeFileClientConfig(client as FileSetupClient, opts, projectRoot);
-    console.log(paint("32", `✔ Wrote the diagrams entry to ${file}.`));
-    printSummary(client, opts.scope, file, paint("32", `✔ Restart ${client} to load it.`));
+}
+
+async function completeFileClient(
+  client: FileSetupClient,
+  opts: SetupOptions,
+  projectRoot: string | undefined,
+): Promise<void> {
+  const file = await writeFileClientConfig(client, opts, projectRoot);
+  console.log(paint("32", `✔ Wrote the diagrams entry to ${file}.`));
+  printSummary(client, opts.scope, file, paint("32", `✔ Restart ${client} to load it.`));
+}
+
+function showManualFallback(display: string, client: string, scope: string): void {
+  console.log(box([display], "Manual setup"));
+  printSummary(client, scope, "manual command (see above)", paint("33", "⚠ Manual step required."));
+}
+
+async function completeCliClient(
+  client: "claude-code" | "codex",
+  projectRoot: string | undefined,
+  scope: string,
+): Promise<void> {
+  const bin = client === "codex" ? "codex" : "claude";
+  const display = cliAddCommand(client, projectRoot).map(shellQuote).join(" ");
+  if (findOnPath(bin) === undefined) {
+    console.log(paint("33", `⚠ ${bin} CLI not detected in PATH.`));
+    showManualFallback(display, client, scope);
     return;
   }
-  if (client === "claude-code" || client === "codex") {
-    const bin = client === "codex" ? "codex" : "claude";
-    const display = cliAddCommand(client, projectRoot).map(shellQuote).join(" ");
-    if (findOnPath(bin) === undefined) {
-      console.log(paint("33", `⚠ ${bin} CLI not detected in PATH.`));
-      console.log(box([display], "Manual setup"));
-      printSummary(
-        client,
-        opts.scope,
-        "manual command (see above)",
-        paint("33", "⚠ Manual step required."),
-      );
-      return;
-    }
-    try {
-      await runAddCommand(client, projectRoot);
-    } catch (err: unknown) {
-      console.log(
-        paint("31", `✖ Could not run the ${bin} CLI: ${err instanceof Error ? err.message : err}`),
-      );
-      console.log(box([display], "Manual setup"));
-      printSummary(
-        client,
-        opts.scope,
-        "manual command (see above)",
-        paint("33", "⚠ Manual step required."),
-      );
-      return;
-    }
-    console.log(paint("32", `✔ Registered diagrams with ${client}.`));
-    printSummary(client, opts.scope, `${bin} CLI configuration`, paint("32", "✔ Ready to use."));
+  try {
+    await runAddCommand(client, projectRoot);
+  } catch (err: unknown) {
+    console.log(
+      paint("31", `✖ Could not run the ${bin} CLI: ${err instanceof Error ? err.message : err}`),
+    );
+    showManualFallback(display, client, scope);
     return;
   }
+  console.log(paint("32", `✔ Registered diagrams with ${client}.`));
+  printSummary(client, scope, `${bin} CLI configuration`, paint("32", "✔ Ready to use."));
+}
+
+function completeManualClient(client: string, scope: string): void {
   console.log(
     box(
       ["opencode mcp add", "Choose Local, then enter:", "  npx -y diagrams-mcp-server"],
       "Manual setup",
     ),
   );
-  printSummary(
-    client,
-    opts.scope,
-    "manual command (see above)",
-    paint("33", "⚠ Manual step required."),
-  );
+  printSummary(client, scope, "manual command (see above)", paint("33", "⚠ Manual step required."));
+}
+
+export async function runSetup(args: string[]): Promise<void> {
+  const opts = parseSetupArgs(args);
+  if (opts.help) {
+    printSetupHelp();
+    return;
+  }
+  console.log(renderBanner("📐 DIAGRAMS MCP SERVER", SETUP_VERSION));
+  console.log("");
+  const client = await resolveSetupClient(opts);
+  if (!isSetupClient(client)) {
+    throw new Error(`Unknown client '${client}'. Expected one of: ${SETUP_CLIENTS.join(", ")}.`);
+  }
+  const interactive = process.stdin.isTTY && !opts.yes;
+  await applyInteractiveScope(opts, interactive);
+  await applyInteractiveProjectRoot(opts, interactive);
+  const projectRoot = shouldBakeProjectRoot(opts) ? opts.projectRoot : undefined;
+  warnMissingProjectRoot(interactive, projectRoot);
+  if (FILE_CLIENTS.has(client)) {
+    await completeFileClient(client as FileSetupClient, opts, projectRoot);
+    return;
+  }
+  if (client === "claude-code" || client === "codex") {
+    await completeCliClient(client, projectRoot, opts.scope);
+    return;
+  }
+  completeManualClient(client, opts.scope);
 }

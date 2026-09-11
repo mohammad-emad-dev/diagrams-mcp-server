@@ -86,6 +86,55 @@ export interface SetupOptions {
   help: boolean;
 }
 
+interface FlagSpec {
+  names: string[];
+  takesValue: boolean;
+  apply: (opts: SetupOptions, value: string) => void;
+}
+
+// One row per flag; both `--flag value` and `--flag=value` spellings flow
+// through the same row. A value-taking flag with no value and nothing
+// following falls through to the unknown-flag error, matching history.
+const FLAG_SPECS: FlagSpec[] = [
+  {
+    names: ["--help", "-h"],
+    takesValue: false,
+    apply: (opts) => {
+      opts.help = true;
+    },
+  },
+  {
+    names: ["--yes", "-y"],
+    takesValue: false,
+    apply: (opts) => {
+      opts.yes = true;
+    },
+  },
+  {
+    names: ["--client"],
+    takesValue: true,
+    apply: (opts, value) => {
+      opts.client = value;
+    },
+  },
+  {
+    names: ["--project-root"],
+    takesValue: true,
+    apply: (opts, value) => {
+      opts.projectRoot = value;
+      opts.projectRootExplicit = true;
+    },
+  },
+  {
+    names: ["--scope"],
+    takesValue: true,
+    apply: (opts, value) => {
+      opts.scope = parseScope(value);
+      opts.scopeExplicit = true;
+    },
+  },
+];
+
 export function parseSetupArgs(args: string[]): SetupOptions {
   const opts: SetupOptions = {
     projectRoot: process.cwd(),
@@ -97,32 +146,29 @@ export function parseSetupArgs(args: string[]): SetupOptions {
   };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
-    if (arg === "--help" || arg === "-h") {
-      opts.help = true;
-    } else if (arg === "--yes" || arg === "-y") {
-      opts.yes = true;
-    } else if (arg === "--client" && i + 1 < args.length) {
-      i += 1;
-      opts.client = args[i];
-    } else if (arg.startsWith("--client=")) {
-      opts.client = arg.slice("--client=".length);
-    } else if (arg === "--project-root" && i + 1 < args.length) {
-      i += 1;
-      opts.projectRoot = args[i];
-      opts.projectRootExplicit = true;
-    } else if (arg.startsWith("--project-root=")) {
-      opts.projectRoot = arg.slice("--project-root=".length);
-      opts.projectRootExplicit = true;
-    } else if (arg === "--scope" && i + 1 < args.length) {
-      i += 1;
-      opts.scope = parseScope(args[i]);
-      opts.scopeExplicit = true;
-    } else if (arg.startsWith("--scope=")) {
-      opts.scope = parseScope(arg.slice("--scope=".length));
-      opts.scopeExplicit = true;
-    } else {
+    const eq = arg.indexOf("=");
+    const name = eq < 0 ? arg : arg.slice(0, eq);
+    const inline = eq < 0 ? undefined : arg.slice(eq + 1);
+    const spec = FLAG_SPECS.find((entry) => entry.names.includes(name));
+    if (spec === undefined) {
       throw new Error(`Unknown setup flag '${arg}'. Run with --help.`);
     }
+    if (!spec.takesValue) {
+      if (inline !== undefined) {
+        throw new Error(`Unknown setup flag '${arg}'. Run with --help.`);
+      }
+      spec.apply(opts, "");
+      continue;
+    }
+    if (inline !== undefined) {
+      spec.apply(opts, inline);
+      continue;
+    }
+    if (i + 1 >= args.length) {
+      throw new Error(`Unknown setup flag '${arg}'. Run with --help.`);
+    }
+    i += 1;
+    spec.apply(opts, args[i]);
   }
   return opts;
 }
@@ -136,14 +182,14 @@ export function isSetupClient(value: string): value is SetupClient {
   return (SETUP_CLIENTS as ReadonlyArray<string>).includes(value);
 }
 
-// Config file and root key per file-based client. Home and cwd are
-// parameters so tests can cover every OS.
+// Config file and root key per file-based client. Home and cwd ride in an
+// options bag (lazily defaulted per call) so tests can cover every OS.
 export function resolveConfigFile(
   client: FileSetupClient,
   scope: "global" | "project",
-  home: string = os.homedir(),
-  cwd: string = process.cwd(),
+  env: { home?: string; cwd?: string } = {},
 ): { file: string; rootKey: "mcpServers" | "servers" } {
+  const { home = os.homedir(), cwd = process.cwd() } = env;
   if (client === "cursor") {
     if (scope === "project") {
       return { file: path.join(cwd, ".cursor", "mcp.json"), rootKey: "mcpServers" };
@@ -184,9 +230,7 @@ export function diagramsServerEntry(projectRoot?: string): ServerEntry {
 // configs instead of overwriting them.
 export function mergeServerConfig(
   existing: unknown,
-  rootKey: string,
-  name: string,
-  entry: ServerEntry,
+  target: { rootKey: string; name: string; entry: ServerEntry },
 ): Record<string, unknown> {
   const base: Record<string, unknown> =
     existing === undefined ? {} : (existing as Record<string, unknown>);
@@ -194,11 +238,13 @@ export function mergeServerConfig(
     throw new Error("Existing config is not a JSON object; refusing to overwrite it.");
   }
   const table: Record<string, unknown> =
-    base[rootKey] === undefined ? {} : (base[rootKey] as Record<string, unknown>);
+    base[target.rootKey] === undefined ? {} : (base[target.rootKey] as Record<string, unknown>);
   if (typeof table !== "object" || table === null || Array.isArray(table)) {
-    throw new Error(`Existing config key '${rootKey}' is not an object; refusing to overwrite it.`);
+    throw new Error(
+      `Existing config key '${target.rootKey}' is not an object; refusing to overwrite it.`,
+    );
   }
-  return { ...base, [rootKey]: { ...table, [name]: entry } };
+  return { ...base, [target.rootKey]: { ...table, [target.name]: target.entry } };
 }
 
 function isErrno(err: unknown): err is NodeJS.ErrnoException {
@@ -223,12 +269,11 @@ export async function writeFileClientConfig(
       throw new Error(`Cannot parse ${target.file}; fix or delete it, then retry.`);
     }
   }
-  const merged = mergeServerConfig(
-    existing,
-    target.rootKey,
-    "diagrams",
-    diagramsServerEntry(projectRoot),
-  );
+  const merged = mergeServerConfig(existing, {
+    rootKey: target.rootKey,
+    name: "diagrams",
+    entry: diagramsServerEntry(projectRoot),
+  });
   await fs.mkdir(path.dirname(target.file), { recursive: true });
   await fs.writeFile(target.file, `${JSON.stringify(merged, null, 2)}\n`, "utf-8");
   return target.file;

@@ -94,29 +94,24 @@ export interface Keypress {
   ctrl?: boolean;
 }
 
+// Static key-name mapping for normalizeKey below. Results are spread
+// per call so every invocation still returns a fresh object.
+const KEY_RESULTS: Record<string, PromptKey> = {
+  up: { kind: "up" },
+  down: { kind: "down" },
+  left: { kind: "left" },
+  right: { kind: "right" },
+  return: { kind: "submit" },
+  enter: { kind: "submit" },
+  escape: { kind: "cancel" },
+  y: { kind: "yes" },
+  n: { kind: "no" },
+};
+
 export function normalizeKey(key: Keypress): PromptKey {
   if (key.ctrl === true && key.name === "c") return { kind: "cancel" };
-  switch (key.name) {
-    case "up":
-      return { kind: "up" };
-    case "down":
-      return { kind: "down" };
-    case "left":
-      return { kind: "left" };
-    case "right":
-      return { kind: "right" };
-    case "return":
-    case "enter":
-      return { kind: "submit" };
-    case "escape":
-      return { kind: "cancel" };
-    case "y":
-      return { kind: "yes" };
-    case "n":
-      return { kind: "no" };
-    default:
-      break;
-  }
+  const found = key.name === undefined ? undefined : KEY_RESULTS[key.name];
+  if (found !== undefined) return { ...found };
   if (key.name !== undefined && /^[1-9]$/.test(key.name)) {
     return { kind: "digit", value: Number(key.name) };
   }
