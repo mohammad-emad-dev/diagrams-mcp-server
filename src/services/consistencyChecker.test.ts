@@ -275,9 +275,11 @@ describe("checkConsistency", () => {
         "export class User {}\nexport function login(name) {\n  return name;\n}\nexport const helper = 42;\nexport { login };\n",
     });
     const result = await checkConsistency(
-      "models/auth.puml",
-      "@startuml\nclass User\nclass login\nclass helper\nclass Missing\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/auth.puml",
+        source: "@startuml\nclass User\nclass login\nclass helper\nclass Missing\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 4);
@@ -293,9 +295,12 @@ describe("checkConsistency", () => {
       "Button.tsx": "export function Button() {\n  return null;\n}\n",
     });
     const result = await checkConsistency(
-      "models/ui.puml",
-      "@startuml\nclass Button\nclass User\nclass Role\nclass greet\nclass Ghost\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/ui.puml",
+        source:
+          "@startuml\nclass Button\nclass User\nclass Role\nclass greet\nclass Ghost\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 5);
@@ -309,9 +314,11 @@ describe("checkConsistency", () => {
       "services.py": "class Order:\n    pass\n\n\ndef charge(amount):\n    return amount\n",
     });
     const result = await checkConsistency(
-      "models/shop.puml",
-      "@startuml\nclass Order\nclass charge\nclass Missing\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shop.puml",
+        source: "@startuml\nclass Order\nclass charge\nclass Missing\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 3);
@@ -325,9 +332,12 @@ describe("checkConsistency", () => {
         "<?php\nnamespace App\\Models;\n\nclass User {}\ninterface HasId {}\ntrait Timestamps {}\nfunction boot() {}\n",
     });
     const result = await checkConsistency(
-      "models/user.puml",
-      "@startuml\nclass User\nclass HasId\nclass Timestamps\nclass boot\nclass Models\nclass Missing\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/user.puml",
+        source:
+          "@startuml\nclass User\nclass HasId\nclass Timestamps\nclass boot\nclass Models\nclass Missing\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 6);
@@ -341,9 +351,12 @@ describe("checkConsistency", () => {
         "package com.example.shop;\n\npublic record User(String name) {}\npublic enum Role { ADMIN }\npublic interface Repo {}\n",
     });
     const result = await checkConsistency(
-      "models/user.puml",
-      "@startuml\nclass User\nclass Role\nclass Repo\nclass shop\nclass Missing\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/user.puml",
+        source:
+          "@startuml\nclass User\nclass Role\nclass Repo\nclass shop\nclass Missing\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 5);
@@ -356,9 +369,11 @@ describe("checkConsistency", () => {
       "user_service.py": "def user_service():\n    pass\n",
     });
     const result = await checkConsistency(
-      "models/svc.puml",
-      "@startuml\nclass UserService\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/svc.puml",
+        source: "@startuml\nclass UserService\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 1);
@@ -372,9 +387,11 @@ describe("checkConsistency", () => {
         "// UserService handles everything\n/* OrderService is legacy */\nconst active = true;\n",
     });
     const result = await checkConsistency(
-      "models/svc.puml",
-      "@startuml\nclass UserService\nclass OrderService\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/svc.puml",
+        source: "@startuml\nclass UserService\nclass OrderService\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesMatched, 0);
@@ -387,9 +404,11 @@ describe("checkConsistency", () => {
       "notes.py": 'summary = """GhostService is planned"""\n',
     });
     const result = await checkConsistency(
-      "models/svc.puml",
-      "@startuml\nclass UserService\nclass OrderService\nclass GhostService\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/svc.puml",
+        source: "@startuml\nclass UserService\nclass OrderService\nclass GhostService\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesMatched, 0);
@@ -403,9 +422,11 @@ describe("checkConsistency", () => {
       "app.js": "export class Real {}\n",
     });
     const result = await checkConsistency(
-      "models/svc.puml",
-      "@startuml\nclass Real\nclass Phantom\nclass Specter\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/svc.puml",
+        source: "@startuml\nclass Real\nclass Phantom\nclass Specter\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesMatched, 1);
@@ -418,9 +439,11 @@ describe("checkConsistency", () => {
       "shop.js": "const Reorder = [];\nconst PreOrders = 1;\n",
     });
     const result = await checkConsistency(
-      "models/shop.puml",
-      "@startuml\nclass Order\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shop.puml",
+        source: "@startuml\nclass Order\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 1);
@@ -433,9 +456,11 @@ describe("checkConsistency", () => {
       "billing.py": "def charge():\n    pass\n",
     });
     const result = await checkConsistency(
-      "models/billing.puml",
-      "@startuml\nclass Billing\nclass charge\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/billing.puml",
+        source: "@startuml\nclass Billing\nclass charge\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 2);
@@ -448,9 +473,11 @@ describe("checkConsistency", () => {
       "user.ts": "export class User {\n  id: number;\n  name: string;\n  email: string;\n}\n",
     });
     const result = await checkConsistency(
-      "models/user-class.puml",
-      USER_CLASS_PUML,
-      "plantuml",
+      {
+        relativePath: "models/user-class.puml",
+        source: USER_CLASS_PUML,
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 2);
@@ -479,9 +506,12 @@ describe("checkConsistency (experimental languages)", () => {
       "node_modules/ignored.cs": "public class Ignored {}\n",
     });
     const result = await checkConsistency(
-      "models/shapes.puml",
-      "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shapes.puml",
+        source:
+          "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 5);
@@ -499,9 +529,12 @@ describe("checkConsistency (experimental languages)", () => {
       "dist/ignored.go": "package ghost\n\ntype Ignored struct{}\n",
     });
     const result = await checkConsistency(
-      "models/shapes.puml",
-      "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shapes.puml",
+        source:
+          "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 5);
@@ -518,9 +551,12 @@ describe("checkConsistency (experimental languages)", () => {
       "build/ignored.rb": "class Ignored\nend\n",
     });
     const result = await checkConsistency(
-      "models/shapes.puml",
-      "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shapes.puml",
+        source:
+          "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 5);
@@ -537,9 +573,12 @@ describe("checkConsistency (experimental languages)", () => {
       "out/ignored.kt": "class Ignored\n",
     });
     const result = await checkConsistency(
-      "models/shapes.puml",
-      "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shapes.puml",
+        source:
+          "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 5);
@@ -557,9 +596,12 @@ describe("checkConsistency (experimental languages)", () => {
       "target/ignored.rs": "pub struct Ignored;\n",
     });
     const result = await checkConsistency(
-      "models/shapes.puml",
-      "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shapes.puml",
+        source:
+          "@startuml\nclass Widget\nclass Missing\nclass Phantom\nclass Specter\nclass Ignored\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
     assert.equal(result.entitiesFound, 5);
@@ -587,9 +629,11 @@ describe("checkConsistency scan limit observability", () => {
       "user.ts": "export class User {\n  id: number;\n}\n",
     });
     const result = await checkConsistency(
-      "models/user-class.puml",
-      "@startuml\nclass User\nclass Ghost\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/user-class.puml",
+        source: "@startuml\nclass User\nclass Ghost\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
 
@@ -609,9 +653,11 @@ describe("checkConsistency scan limit observability", () => {
     }
     await writeFiles(tmpRoot, files);
     const result = await checkConsistency(
-      "models/shapes.puml",
-      "@startuml\nclass Widget\nclass Missing\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shapes.puml",
+        source: "@startuml\nclass Widget\nclass Missing\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
 
@@ -642,9 +688,11 @@ describe("checkConsistency evidence", () => {
       "user.ts": "export class User {\n  id: number;\n}\n",
     });
     const result = await checkConsistency(
-      "models/user-class.puml",
-      "@startuml\nclass User\nclass Ghost\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/user-class.puml",
+        source: "@startuml\nclass User\nclass Ghost\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
 
@@ -681,9 +729,11 @@ describe("checkConsistency evidence", () => {
       "shapes.go": "package shapes\n\ntype Widget struct {\n  Label string\n}\n",
     });
     const result = await checkConsistency(
-      "models/shapes.puml",
-      "@startuml\nclass Widget\nclass Missing\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shapes.puml",
+        source: "@startuml\nclass Widget\nclass Missing\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
 
@@ -711,9 +761,11 @@ describe("checkConsistency evidence", () => {
     }
     await writeFiles(tmpRoot, files);
     const result = await checkConsistency(
-      "models/shared.puml",
-      "@startuml\nclass Shared\n@enduml\n",
-      "plantuml",
+      {
+        relativePath: "models/shared.puml",
+        source: "@startuml\nclass Shared\n@enduml\n",
+        type: "plantuml",
+      },
       tmpRoot,
     );
 

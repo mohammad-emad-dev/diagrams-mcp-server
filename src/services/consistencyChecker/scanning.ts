@@ -47,9 +47,18 @@ export async function collectCodeFiles(
   const files: string[] = [];
   let truncated = false;
 
-  const walk = async (dir: string): Promise<void> => {
+  // Single cap-guard for the walk-entry, per-entry, and post-walk checks:
+  // same early-exit point, same truncation flag.
+  const isCapped = (): boolean => {
     if (files.length >= maxFiles) {
       truncated = true;
+      return true;
+    }
+    return false;
+  };
+
+  const walk = async (dir: string): Promise<void> => {
+    if (isCapped()) {
       return;
     }
     let entries;
@@ -59,8 +68,7 @@ export async function collectCodeFiles(
       return; // unreadable directory, skip
     }
     for (const entry of entries) {
-      if (files.length >= maxFiles) {
-        truncated = true;
+      if (isCapped()) {
         return;
       }
       if (entry.isDirectory()) {
@@ -78,8 +86,6 @@ export async function collectCodeFiles(
   };
 
   await walk(rootDir);
-  if (files.length >= maxFiles) {
-    truncated = true;
-  }
+  isCapped();
   return { files, truncated };
 }

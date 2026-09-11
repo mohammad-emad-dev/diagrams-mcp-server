@@ -141,21 +141,28 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
-export async function checkConsistency(
-  diagramRelativePath: string,
-  diagramSource: string,
-  diagramType: DiagramType,
-  codeRootDir: string,
-): Promise<ConsistencyCheckResult> {
-  const entities = extractEntities(diagramSource, diagramType);
-  const { files: codeFiles, truncated } = await collectCodeFiles(codeRootDir, MAX_FILES_SCANNED);
+/** Diagram under check: reporting path, raw source, and dialect. */
+export interface DiagramInput {
+  relativePath: string;
+  source: string;
+  type: DiagramType;
+}
 
+/** Scan the codebase: collect files, then read and analyze each one. */
+async function scanCodebase(
+  codeRootDir: string,
+): Promise<{ scanned: ScannedFile[]; truncated: boolean }> {
+  const { files: codeFiles, truncated } = await collectCodeFiles(codeRootDir, MAX_FILES_SCANNED);
   const scanned = (
     await mapWithConcurrency(codeFiles, MAX_SCAN_CONCURRENCY, (file) =>
       readScannedFile(codeRootDir, file),
     )
   ).filter((entry): entry is ScannedFile => entry !== null);
+  return { scanned, truncated };
+}
 
+/** Analyzer tiers observed across the scanned extensions. */
+function buildAnalyzerBreakdown(scanned: ScannedFile[]): AnalyzerBreakdown {
   const analyzers: AnalyzerBreakdown = {
     reliable: [],
     experimental: [],
@@ -176,7 +183,19 @@ export async function checkConsistency(
   for (const tier of Object.keys(analyzers) as AnalyzerTier[]) {
     analyzers[tier].sort();
   }
+  return analyzers;
+}
 
+interface EntityMatchResult {
+  matched: number;
+  matchedEntities: string[];
+  unmatchedEntities: string[];
+  issues: ConsistencyIssue[];
+  evidence: ConsistencyEntityEvidence[];
+}
+
+/** Match every entity against the scanned files, collecting issues and evidence. */
+function matchEntities(entities: string[], scanned: ScannedFile[]): EntityMatchResult {
   const issues: ConsistencyIssue[] = [];
   const evidence: ConsistencyEntityEvidence[] = [];
   const matchedEntities: string[] = [];
@@ -210,23 +229,35 @@ export async function checkConsistency(
     });
   }
 
+  return { matched, matchedEntities, unmatchedEntities, issues, evidence };
+}
+
+export async function checkConsistency(
+  input: DiagramInput,
+  codeRootDir: string,
+): Promise<ConsistencyCheckResult> {
+  const entities = extractEntities(input.source, input.type);
+  const { scanned, truncated } = await scanCodebase(codeRootDir);
+  const analyzers = buildAnalyzerBreakdown(scanned);
+  const match = matchEntities(entities, scanned);
+
   return {
-    diagramPath: diagramRelativePath,
+    diagramPath: input.relativePath,
     entitiesFound: entities.length,
-    entitiesMatched: matched,
-    entitiesUnmatched: entities.length - matched,
-    issues,
+    entitiesMatched: match.matched,
+    entitiesUnmatched: entities.length - match.matched,
+    issues: match.issues,
     searchedDirectory: codeRootDir,
     filesScanned: scanned.length,
     truncated,
     scanLimit: MAX_FILES_SCANNED,
     scanWarning: truncated ? SCAN_TRUNCATED_WARNING : null,
     entities: [...entities],
-    matchedEntities,
-    unmatchedEntities,
+    matchedEntities: match.matchedEntities,
+    unmatchedEntities: match.unmatchedEntities,
     analyzers,
     confidence: "heuristic",
     heuristicWarning: HEURISTIC_WARNING,
-    evidence,
+    evidence: match.evidence,
   };
 }

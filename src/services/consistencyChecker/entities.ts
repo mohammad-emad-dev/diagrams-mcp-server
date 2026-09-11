@@ -1,28 +1,34 @@
 // Diagram-side entity extraction: candidate names from PlantUML and Mermaid source.
 import type { DiagramType } from "../../types.js";
 
+/** Symmetric wrappers stripped before suffix/segment handling. */
+const WRAPPER_PAIRS: Array<[open: string, close: string]> = [
+  ['"', '"'],
+  ["'", "'"],
+  ["[", "]"],
+];
+
+/** Strip one symmetric wrapper (`".."`, `'..'`, `[..]`); untouched otherwise. */
+function stripWrapper(name: string): string {
+  const pair = WRAPPER_PAIRS.find(([open, close]) => name.startsWith(open) && name.endsWith(close));
+  return pair ? name.slice(1, -1).trim() : name;
+}
+
+/** Cut generic/tilde/paren suffixes (`A<T>`, `A~x`, `fn(x)`); guards keep index-0. */
+function cutSuffix(name: string): string {
+  const suffixStart = name.search(/[<~(]/);
+  const cut = suffixStart > 0 ? name.slice(0, suffixStart) : name;
+  const parenStart = cut.indexOf("(");
+  return (parenStart > 0 ? cut.slice(0, parenStart) : cut).trim();
+}
+
 /** Reduce a raw diagram name to its plain identifier. */
 function cleanDiagramName(raw: string): string | null {
-  let name = raw.trim();
-  if (name.length === 0) return null;
-  if (
-    (name.startsWith('"') && name.endsWith('"')) ||
-    (name.startsWith("'") && name.endsWith("'")) ||
-    (name.startsWith("[") && name.endsWith("]"))
-  ) {
-    name = name.slice(1, -1).trim();
-  }
-  if (name.length === 0) return null;
-  const suffixStart = name.search(/[<~(]/);
-  if (suffixStart > 0) {
-    name = name.slice(0, suffixStart).trim();
-  }
-  const parenStart = name.indexOf("(");
-  if (parenStart > 0) {
-    name = name.slice(0, parenStart).trim();
-  }
-  if (name.length === 0) return null;
-  const segments = name
+  const unwrapped = stripWrapper(raw.trim());
+  if (unwrapped.length === 0) return null;
+  const cut = cutSuffix(unwrapped);
+  if (cut.length === 0) return null;
+  const segments = cut
     .split(/[/\\.:]+/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);

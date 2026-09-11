@@ -90,7 +90,10 @@ Error Handling:
     async (params: Input) => {
       try {
         const { content, type } = await ctx.diagramStore.read(params.relative_path);
-        const result = await checkConsistency(params.relative_path, content, type, ctx.codeRootDir);
+        const result = await checkConsistency(
+          { relativePath: params.relative_path, source: content, type },
+          ctx.codeRootDir,
+        );
 
         const displayPath = toPosixPath(params.relative_path);
         const output = {
