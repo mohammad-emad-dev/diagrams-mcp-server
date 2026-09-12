@@ -10,6 +10,8 @@ export interface CallEdge {
   caller: string;
   /** Called function/method name. */
   callee: string;
+  /** True when the call sits inside a callback/promise/listener (ordering limit). */
+  viaCallback: boolean;
   /** 1-based line number of the call site. */
   line: number;
 }
