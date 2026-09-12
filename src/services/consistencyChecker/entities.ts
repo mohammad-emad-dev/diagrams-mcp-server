@@ -70,12 +70,11 @@ export function extractMessageCalls(source: string): string[] {
   return Array.from(names);
 }
 
-/** PlantUML participant/actor names, with optional aliases. */
-export function extractPlantUmlParticipants(source: string): string[] {
+/** Run one participant regex to completion, collecting display names and aliases. */
+function collectParticipants(source: string, participantRegex: RegExp): string[] {
   const { names, addClean } = makeEntitySink();
+  participantRegex.lastIndex = 0;
   let match: RegExpExecArray | null;
-  const participantRegex =
-    /^\s*(?:participant|actor|boundary|control|entity|database|collections|queue)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
   while ((match = participantRegex.exec(source)) !== null) {
     addClean(match[1]);
     if (match[2]) names.add(match[2]);
@@ -83,17 +82,20 @@ export function extractPlantUmlParticipants(source: string): string[] {
   return Array.from(names);
 }
 
+/** PlantUML participant/actor names, with optional aliases. */
+export function extractPlantUmlParticipants(source: string): string[] {
+  return collectParticipants(
+    source,
+    /^\s*(?:participant|actor|boundary|control|entity|database|collections|queue)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm,
+  );
+}
+
 /** Mermaid participant/actor names, with optional aliases. */
 export function extractMermaidParticipants(source: string): string[] {
-  const { names, addClean } = makeEntitySink();
-  let match: RegExpExecArray | null;
-  const participantRegex =
-    /^\s*(?:create\s+|destroy\s+)?(?:participant|actor)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
-  while ((match = participantRegex.exec(source)) !== null) {
-    addClean(match[1]);
-    if (match[2]) names.add(match[2]);
-  }
-  return Array.from(names);
+  return collectParticipants(
+    source,
+    /^\s*(?:create\s+|destroy\s+)?(?:participant|actor)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm,
+  );
 }
 
 /** Candidate entity names from PlantUML source. */
