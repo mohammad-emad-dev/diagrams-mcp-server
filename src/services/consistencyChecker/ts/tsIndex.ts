@@ -1,11 +1,30 @@
 // Glue between the AST layer and the existing ScannedFile shape.
-// Phase 1 stub: returns an empty set so the union in Phase 3 is a no-op
-// until the visitor is filled. No caller wires into this yet.
+//
+// analyzeTsFile returns the AST-declared set plus a strict flag: when a TS
+// family file parses, matching uses declarations (AST union regex) and the
+// module basename only. Any other case (non-TS extension, missing compiler,
+// syntax errors) reports strict false and the caller keeps the full
+// heuristic cascade.
 
-/** Build the AST-declared set for one file (stub: empty). */
-export function buildTsDeclared(_stripped: string, _raw: string, _ext: string): Set<string> {
-  void _stripped;
-  void _raw;
-  void _ext;
-  return new Set<string>();
+import { collectTsDeclaredSymbols } from "./tsSymbols.js";
+import { isTsFamilyExtension, parseTsSource } from "./tsParse.js";
+
+export interface TsFileAnalysis {
+  /** AST-declared names; empty when not applicable. */
+  declared: Set<string>;
+  /** True when the file parsed and strict matching applies. */
+  strict: boolean;
+}
+
+/** Analyze one file; never throws, falls back to `{ empty, strict false }`. */
+export async function analyzeTsFile(
+  rawText: string,
+  ext: string,
+  filePath: string,
+): Promise<TsFileAnalysis> {
+  const fallback: TsFileAnalysis = { declared: new Set<string>(), strict: false };
+  if (!isTsFamilyExtension(ext)) return fallback;
+  const sourceFile = await parseTsSource(filePath, rawText);
+  if (!sourceFile) return fallback;
+  return { declared: await collectTsDeclaredSymbols(sourceFile), strict: true };
 }

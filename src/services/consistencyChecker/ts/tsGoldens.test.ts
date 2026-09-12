@@ -110,25 +110,7 @@ describe("ts goldens (heuristic baseline, Phase 2)", () => {
     assert.deepEqual(result.evidence[0]?.matchedFiles, ["models/user.ts"]);
   });
 
-  it("documents current leniency: incidental-only names match (precision flip in Phase 3)", async () => {
-    await writeFiles(tmpRoot, {
-      "orders.ts":
-        "export interface Order {\n  User: string;\n}\nexport const orders: Order[] = [];\n",
-    });
-    const result = await checkConsistency(
-      {
-        relativePath: "models/lenient.puml",
-        source: "@startuml\nclass User\n@enduml\n",
-        type: "plantuml",
-      },
-      tmpRoot,
-    );
-    // Baseline: whole-word fallback counts the incidental `User` occurrence.
-    // Phase 3 (AST-strict matching on parsed TS) flips this to unmatched.
-    assert.equal(result.entitiesMatched, 1);
-  });
-
-  it.skip("Phase 3 strictness: incidental-only names stop matching on parsed TS", async () => {
+  it("applies AST strictness: incidental-only names stop matching on parsed TS", async () => {
     await writeFiles(tmpRoot, {
       "orders.ts":
         "export interface Order {\n  User: string;\n}\nexport const orders: Order[] = [];\n",
@@ -141,6 +123,8 @@ describe("ts goldens (heuristic baseline, Phase 2)", () => {
       },
       tmpRoot,
     );
+    // `User` is a property type, not a declaration: the AST-strict path
+    // skips the whole-word fallback that matched it before Phase 3.
     assert.equal(result.entitiesMatched, 0);
     assert.deepEqual(issueNames(result), ["User"]);
   });

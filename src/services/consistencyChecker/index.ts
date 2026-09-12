@@ -1,7 +1,9 @@
 // Compares entity names in a diagram (classes, components, interfaces)
 // against identifiers in the codebase. A fast text heuristic, not a
 // parser: it prefers real declarations but also accepts whole-word,
-// case-insensitive, and filename matches. Results are evidence, not proof.
+// case-insensitive, and filename matches. TypeScript files with a
+// successful AST parse match on declarations (AST union regex) and the
+// module basename only. Results are evidence, not proof.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -22,6 +24,7 @@ import {
   stripCommentsAndStrings,
 } from "./codeAnalysis.js";
 import { collectCodeFiles } from "./scanning.js";
+import { analyzeTsFile } from "./ts/tsIndex.js";
 
 const MAX_FILES_SCANNED = 5000;
 const MAX_FILE_SIZE_BYTES = 1_000_000; // Skip oversized generated files.
@@ -59,6 +62,8 @@ interface ScannedFile {
   normalized: string;
   declared: Set<string>;
   moduleName: string;
+  /** True when a TS AST parse succeeded; whole-word fallbacks are skipped. */
+  tsStrict: boolean;
 }
 
 /** Indexes of scanned files matching one entity name. */
@@ -84,6 +89,7 @@ function findMatchingFileIndexes(entity: string, scanned: ScannedFile[]): number
       matched.push(index);
       continue;
     }
+    if (file.tsStrict) continue;
     pattern.lastIndex = 0;
     if (pattern.test(file.stripped)) {
       matched.push(index);
@@ -105,13 +111,17 @@ async function readScannedFile(codeRootDir: string, file: string): Promise<Scann
     const ext = path.extname(file).toLowerCase();
     const family = familyForExtension(ext);
     const stripped = stripCommentsAndStrings(raw, family);
+    const declared = extractDeclaredIdentifiers(stripped, family);
+    const tsAnalysis = await analyzeTsFile(raw, ext, file);
+    for (const name of tsAnalysis.declared) declared.add(name);
     return {
       relativePath: toPosixPath(path.relative(codeRootDir, file)),
       ext,
       stripped,
       normalized: ` ${stripped.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `,
-      declared: extractDeclaredIdentifiers(stripped, family),
+      declared,
       moduleName: path.basename(file, ext),
+      tsStrict: tsAnalysis.strict,
     };
   } catch {
     // unreadable file (permissions, race condition); skip it
