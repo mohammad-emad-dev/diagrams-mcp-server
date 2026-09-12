@@ -3,7 +3,15 @@
 > **Technical Preview (V1 Preview, v0.5.2)** — local-first MCP server for
 > PlantUML and Mermaid diagrams with architecture drift detection.
 
-An MCP (Model Context Protocol) server that gives AI coding agents direct, structured access to your project's **PlantUML** and **Mermaid** architecture diagrams — list them, read them, create or update them, render them to images, and (uniquely) **check whether they still match your actual code**.
+[![CI](https://github.com/mohammad-emad-dev/diagrams-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mohammad-emad-dev/diagrams-mcp-server/actions/workflows/ci.yml)
+[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7%2B-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![MCP](https://img.shields.io/badge/MCP-stdio-6f42c1)](https://modelcontextprotocol.io/)
+[![PlantUML](https://img.shields.io/badge/PlantUML-supported-2f855a)](https://plantuml.com/)
+[![Mermaid](https://img.shields.io/badge/Mermaid-supported-ff3670)](https://mermaid.js.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
+An MCP (Model Context Protocol) server that gives AI coding agents structured access to your project's **PlantUML** and **Mermaid** architecture diagrams. It can list, read, create, update, render, and check diagrams against the codebase.
 
 Works with **any MCP-compatible client** over stdio: Claude Code, Codex (Desktop & CLI), Antigravity (IDE, 2.0 & CLI), OpenCode (Desktop & CLI), Cursor, and VS Code. See [Client setup](#client-setup) below.
 
@@ -11,7 +19,7 @@ Works with **any MCP-compatible client** over stdio: Claude Code, Codex (Desktop
 
 I built this after running into the same problem while using AI to work on software design. The diagram was in one place, the code was in another, and I kept having to paste context into the conversation. After a few rounds, it became hard to tell whether the diagram still described the project. I wanted a small local MCP server that could keep the diagram in the project, let the agent read it, and check it against the code when needed.
 
-`diagrams-mcp-server` closes that gap: it treats your diagrams folder as a first-class, agent-readable part of the project, right next to the code. Because it is built on plain stdio MCP with no client-specific code, it works across the clients listed below.
+`diagrams-mcp-server` keeps diagrams in the project next to the code so an agent can read and check them in the same workflow. It uses the standard stdio MCP transport and does not require client-specific server code.
 
 ## Features
 
@@ -25,7 +33,7 @@ I built this after running into the same problem while using AI to work on softw
 | `diagrams_render` | Render a diagram to SVG/PNG |
 | `diagrams_check_consistency` | **Compare class/interface/component names in a diagram against your actual codebase** and flag anything that looks outdated |
 
-`diagrams_check_consistency` is a fast, dependency-free heuristic (not a full semantic/AST analysis): it reads entity names from `class`/`interface`/`enum`/`component` declarations — plus aliases, namespaces and packages, sequence participants, message calls like `charge(card)`, C4 blocks, and subgraph groupings — and searches your source files for a matching identifier, using per-language declaration patterns where they exist (JavaScript/TypeScript, Python, PHP, Java) and whole-word matching elsewhere. It won't catch everything a real static analyzer would, but it catches the most common and costly form of drift: a class that was renamed or deleted, or a component that was designed but never built — for free, with no per-language parser required. Structured output includes the extracted/matched/unmatched entity names, per-entity evidence with matched files, the analyzer tiers involved (reliable vs experimental/generic heuristic), and an explicit heuristic confidence warning. The scan limits behind it are listed under [Consistency scan limits](#consistency-scan-limits).
+`diagrams_check_consistency` is a dependency-free heuristic, not a full semantic or AST analysis. It reads entity names from `class`/`interface`/`enum`/`component` declarations, aliases, namespaces, packages, sequence participants, message calls such as `charge(card)`, C4 blocks, and subgraph groupings. It then searches source files for matching identifiers, using declaration patterns for JavaScript/TypeScript, Python, PHP, and Java, and whole-word matching elsewhere. It helps detect common drift, such as a renamed or removed class or a component that has not been implemented. Structured output includes extracted, matched, and unmatched entities, per-entity file evidence, analyzer tiers, and an explicit heuristic confidence warning. The scan limits are listed under [Consistency scan limits](#consistency-scan-limits).
 
 ## Pagination and source windows
 
@@ -131,7 +139,7 @@ is wired up correctly.
 ```bash
 git clone https://github.com/mohammad-emad-dev/diagrams-mcp-server.git
 cd diagrams-mcp-server
-npm install
+npm ci
 npm run build
 ```
 
@@ -167,10 +175,10 @@ and `.prettierignore`. These two commands require the development toolchain
 pins all text files to LF, so Windows and Linux checkouts produce identical
 line endings and the format check gives the same result on every platform.
 
-### Local tarball install (no registry access)
+### Local tarball install without publishing
 
-To install and run this Technical Preview (v0.5.2) without registry
-access, pack and install from a local tarball instead:
+To install and run this Technical Preview from a local package file, create a
+tarball and install it in a separate consumer project:
 
 ```bash
 npm pack   # runs the prepack build and writes diagrams-mcp-server-0.5.2.tgz
@@ -182,8 +190,9 @@ npx diagrams-mcp-server --help    # resolves the local install, exits 0
 
 This installs only the published payload (`dist/` runtime files, `README.md`,
 `LICENSE`) — no tests, fixtures, or local configs — and
-changes nothing outside the consumer project (no global packages, no
-registry publish). Point any stdio MCP client at the installed binary
+changes nothing outside the consumer project (no global packages and no
+registry publish). The package file is local, but npm may still download the
+package dependencies from the registry during installation. Point any stdio MCP client at the installed binary
 (`node_modules/.bin/diagrams-mcp-server`) the same way as `dist/index.js`
 in [Client setup](#client-setup).
 
