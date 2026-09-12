@@ -10,13 +10,17 @@ const MAPPED = [
 ];
 
 describe("ordering goldens (contract pin, Phase 2)", () => {
-  it("pins the unwired state: stubs return empty", () => {
-    assert.deepEqual(extractCallEdges("login();\n"), []);
-    assert.deepEqual(mapParticipants(["Shop"], new Set(["Shop"])), []);
+  it("pins the wired state: edges, mapping, and empty comparison", () => {
+    assert.deepEqual(extractCallEdges("login();\n"), [
+      { caller: "<module>", callee: "login", viaCallback: false, line: 1 },
+    ]);
+    assert.deepEqual(mapParticipants(["Shop"], new Set(["Shop"])), [
+      { participant: "Shop", mapsTo: "Shop" },
+    ]);
     assert.deepEqual(compareMessageOrder(["login"], [], MAPPED), []);
   });
 
-  it.skip("happy path: identical order is a match", () => {
+  it("happy path: identical order is a match", () => {
     const findings = compareMessageOrder(
       ["login", "checkout"],
       [
@@ -29,7 +33,7 @@ describe("ordering goldens (contract pin, Phase 2)", () => {
     assert.equal(findings[0].kind, "match");
   });
 
-  it.skip("true divergence: same calls in a different order", () => {
+  it("true divergence: same calls in a different order", () => {
     const findings = compareMessageOrder(
       ["login", "checkout"],
       [
@@ -43,7 +47,7 @@ describe("ordering goldens (contract pin, Phase 2)", () => {
     assert.match(findings[0].detail, /checkout/);
   });
 
-  it.skip("callback-delivered calls are notes, not divergences", () => {
+  it("callback-delivered calls are notes, not divergences", () => {
     const findings = compareMessageOrder(
       ["notify"],
       [{ caller: "<callback>", callee: "notify", line: 5, viaCallback: true }],
@@ -53,7 +57,7 @@ describe("ordering goldens (contract pin, Phase 2)", () => {
     assert.equal(findings[0].kind, "callback-note");
   });
 
-  it.skip("all-null mappings skip ordering as unevaluable", () => {
+  it("all-null mappings skip ordering as unevaluable", () => {
     const findings = compareMessageOrder(
       ["charge"],
       [{ caller: "run", callee: "refund", line: 2, viaCallback: false }],
@@ -63,7 +67,7 @@ describe("ordering goldens (contract pin, Phase 2)", () => {
     assert.equal(findings[0].kind, "unmapped-skip");
   });
 
-  it.skip("participant mapping resolves names and nulls the unknown", () => {
+  it("participant mapping resolves names and nulls the unknown", () => {
     assert.deepEqual(mapParticipants(["Shop", "Courier"], new Set(["Shop"])), [
       { participant: "Shop", mapsTo: "Shop" },
       { participant: "Courier", mapsTo: null },

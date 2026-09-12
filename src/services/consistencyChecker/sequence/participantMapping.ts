@@ -12,12 +12,23 @@ export interface ParticipantMapping {
   mapsTo: string | null;
 }
 
+/** Declared identifier matching a participant: exact, then case-insensitive. */
+function matchDeclared(name: string, declared: Set<string>): string | null {
+  if (declared.has(name)) return name;
+  const lowered = name.toLowerCase();
+  for (const candidate of declared) {
+    if (candidate.toLowerCase() === lowered) return candidate;
+  }
+  return null;
+}
+
 /** Map each participant to a declared identifier; null when no match. */
 export function mapParticipants(
-  _participants: string[],
-  _declared: Set<string>,
+  participants: string[],
+  declared: Set<string>,
 ): ParticipantMapping[] {
-  void _participants;
-  void _declared;
-  return [];
+  return participants.map((participant) => ({
+    participant,
+    mapsTo: matchDeclared(participant, declared),
+  }));
 }
