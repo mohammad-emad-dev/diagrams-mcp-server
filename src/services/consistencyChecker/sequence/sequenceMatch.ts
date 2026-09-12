@@ -1,18 +1,27 @@
 // Kind-aware existence verdicts for sequence entities.
-// Seq P1 stub: returns empty verdicts. Phase 3 matches participants
-// through the entity cascade and operations through the operation index
-// with whole-word fallback. No caller wires into this yet.
+//
+// Unmatched participants and operations get construct-specific issue text;
+// structural entities (class diagrams and everything else) keep the
+// long-standing generic text byte-identical.
 
-import type { SequenceEntity } from "./sequenceEntities.js";
+import type { SequenceEntityKind } from "./sequenceEntities.js";
 
-/** Existence verdict split for kind-tagged entities. */
-export interface SequenceMatchResult {
-  matched: string[];
-  unmatched: string[];
-}
-
-/** Match kind-tagged entities against the codebase (stub: empty). */
-export function matchSequenceEntities(_entities: SequenceEntity[]): SequenceMatchResult {
-  void _entities;
-  return { matched: [], unmatched: [] };
+/** Issue text for one unmatched entity of a known kind. */
+export function sequenceIssueText(entity: string, kind: SequenceEntityKind): string {
+  if (kind === "participant") {
+    return (
+      `'${entity}' appears as a participant in the diagram but no matching identifier ` +
+      "was found in the scanned codebase. It may be renamed, removed, or not yet implemented."
+    );
+  }
+  if (kind === "operation") {
+    return (
+      `'${entity}' appears as an operation in the diagram but no matching function ` +
+      "was found in the scanned codebase. It may be renamed, removed, or not yet implemented."
+    );
+  }
+  return (
+    `'${entity}' appears in the diagram but no matching identifier was found ` +
+    "in the scanned codebase. It may be renamed, removed, or not yet implemented."
+  );
 }

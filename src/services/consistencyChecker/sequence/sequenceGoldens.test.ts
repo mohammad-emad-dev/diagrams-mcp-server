@@ -96,7 +96,7 @@ describe("sequence goldens (baseline pin, Seq P2)", () => {
     assert.deepEqual(result.issues, []);
   });
 
-  it.skip("missing participant reports a participant issue", async () => {
+  it("missing participant reports a participant issue", async () => {
     await writeFiles(tmpRoot, {
       "shop/Shop.java": "package com.example.shop;\n\npublic class Shop {}\n",
     });
@@ -115,7 +115,7 @@ describe("sequence goldens (baseline pin, Seq P2)", () => {
     ]);
   });
 
-  it.skip("missing operation reports an operation issue", async () => {
+  it("missing operation reports an operation issue", async () => {
     await writeFiles(tmpRoot, {
       "shop.js": "export class Shop {}\n",
     });

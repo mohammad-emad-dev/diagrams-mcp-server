@@ -1,8 +1,16 @@
 // Kind-tagged diagram entity extraction (sequence layer).
-// Seq P1 stub: signatures only. No caller wires into this yet, so tagging
-// returns an empty list.
+//
+// Tags every name from extractEntities by construct: participant names,
+// message-call (operation) names, or anything else (structural: classes,
+// components, namespaces). Participant wins when a name is both.
 
 import type { DiagramType } from "../../../types.js";
+import {
+  extractEntities,
+  extractMermaidParticipants,
+  extractMessageCalls,
+  extractPlantUmlParticipants,
+} from "../entities.js";
 
 /** Which diagram construct an entity name came from. */
 export type SequenceEntityKind = "participant" | "operation" | "structural";
@@ -13,9 +21,20 @@ export interface SequenceEntity {
   kind: SequenceEntityKind;
 }
 
-/** Extract kind-tagged entities from diagram source (stub: empty). */
-export function extractSequenceEntities(_source: string, _type: DiagramType): SequenceEntity[] {
-  void _source;
-  void _type;
-  return [];
+/** Extract kind-tagged entities from diagram source. */
+export function extractSequenceEntities(source: string, type: DiagramType): SequenceEntity[] {
+  const names = extractEntities(source, type);
+  const participants = new Set(
+    type === "plantuml" ? extractPlantUmlParticipants(source) : extractMermaidParticipants(source),
+  );
+  const operations = new Set(extractMessageCalls(source));
+  return names.map((name) => {
+    let kind: SequenceEntityKind = "structural";
+    if (participants.has(name)) {
+      kind = "participant";
+    } else if (operations.has(name)) {
+      kind = "operation";
+    }
+    return { name, kind };
+  });
 }
