@@ -1,7 +1,9 @@
 // Compares entity names in a diagram (classes, components, interfaces)
 // against identifiers in the codebase. A fast text heuristic, not a
 // parser: it prefers real declarations but also accepts whole-word,
-// case-insensitive, and filename matches. Results are evidence, not proof.
+// case-insensitive, and filename matches. TypeScript files with a
+// successful AST parse match on declarations (AST union regex) and the
+// module basename only. Results are evidence, not proof.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -22,6 +24,11 @@ import {
   stripCommentsAndStrings,
 } from "./codeAnalysis.js";
 import { collectCodeFiles } from "./scanning.js";
+import { analyzeTsFile } from "./ts/tsIndex.js";
+import type { SequenceEntityKind } from "./sequence/sequenceEntities.js";
+import { extractSequenceEntities } from "./sequence/sequenceEntities.js";
+import { buildOperationIndex } from "./sequence/operationIndex.js";
+import { sequenceIssueText } from "./sequence/sequenceMatch.js";
 
 const MAX_FILES_SCANNED = 5000;
 const MAX_FILE_SIZE_BYTES = 1_000_000; // Skip oversized generated files.
@@ -59,15 +66,38 @@ interface ScannedFile {
   normalized: string;
   declared: Set<string>;
   moduleName: string;
+  /** Operation names visible in this file (V1: the declared set). */
+  operations: Set<string>;
+  /** True when a TS AST parse succeeded; whole-word fallbacks are skipped. */
+  tsStrict: boolean;
 }
 
 /** Indexes of scanned files matching one entity name. */
-function findMatchingFileIndexes(entity: string, scanned: ScannedFile[]): number[] {
+function findMatchingFileIndexes(
+  entity: string,
+  kind: SequenceEntityKind,
+  scanned: ScannedFile[],
+): number[] {
   const normalizedEntity = normalizeForMatch(entity);
   const pattern = buildDeclarationPattern(entity);
   const matched: number[] = [];
   for (let index = 0; index < scanned.length; index += 1) {
     const file = scanned[index];
+    if (kind === "operation") {
+      if (file.operations.has(entity)) {
+        matched.push(index);
+        continue;
+      }
+      pattern.lastIndex = 0;
+      if (pattern.test(file.stripped)) {
+        matched.push(index);
+        continue;
+      }
+      if (normalizedEntity.length > 0 && file.normalized.includes(` ${normalizedEntity} `)) {
+        matched.push(index);
+      }
+      continue;
+    }
     if (file.declared.has(entity)) {
       matched.push(index);
       continue;
@@ -84,6 +114,7 @@ function findMatchingFileIndexes(entity: string, scanned: ScannedFile[]): number
       matched.push(index);
       continue;
     }
+    if (file.tsStrict) continue;
     pattern.lastIndex = 0;
     if (pattern.test(file.stripped)) {
       matched.push(index);
@@ -105,13 +136,18 @@ async function readScannedFile(codeRootDir: string, file: string): Promise<Scann
     const ext = path.extname(file).toLowerCase();
     const family = familyForExtension(ext);
     const stripped = stripCommentsAndStrings(raw, family);
+    const declared = extractDeclaredIdentifiers(stripped, family);
+    const tsAnalysis = await analyzeTsFile(raw, ext, file);
+    for (const name of tsAnalysis.declared) declared.add(name);
     return {
       relativePath: toPosixPath(path.relative(codeRootDir, file)),
       ext,
       stripped,
       normalized: ` ${stripped.toLowerCase().replace(/[^a-z0-9]+/g, " ")} `,
-      declared: extractDeclaredIdentifiers(stripped, family),
+      declared,
       moduleName: path.basename(file, ext),
+      operations: buildOperationIndex(declared),
+      tsStrict: tsAnalysis.strict,
     };
   } catch {
     // unreadable file (permissions, race condition); skip it
@@ -195,7 +231,11 @@ interface EntityMatchResult {
 }
 
 /** Match every entity against the scanned files, collecting issues and evidence. */
-function matchEntities(entities: string[], scanned: ScannedFile[]): EntityMatchResult {
+function matchEntities(
+  entities: string[],
+  kinds: Map<string, SequenceEntityKind>,
+  scanned: ScannedFile[],
+): EntityMatchResult {
   const issues: ConsistencyIssue[] = [];
   const evidence: ConsistencyEntityEvidence[] = [];
   const matchedEntities: string[] = [];
@@ -203,7 +243,8 @@ function matchEntities(entities: string[], scanned: ScannedFile[]): EntityMatchR
   let matched = 0;
 
   for (const entity of entities) {
-    const matchIndexes = findMatchingFileIndexes(entity, scanned);
+    const kind = kinds.get(entity) ?? "structural";
+    const matchIndexes = findMatchingFileIndexes(entity, kind, scanned);
     const isMatched = matchIndexes.length > 0;
     if (isMatched) {
       matched++;
@@ -212,7 +253,7 @@ function matchEntities(entities: string[], scanned: ScannedFile[]): EntityMatchR
       unmatchedEntities.push(entity);
       issues.push({
         name: entity,
-        issue: `'${entity}' appears in the diagram but no matching identifier was found in the scanned codebase. It may be renamed, removed, or not yet implemented.`,
+        issue: sequenceIssueText(entity, kind),
         severity: "warning",
       });
     }
@@ -237,9 +278,15 @@ export async function checkConsistency(
   codeRootDir: string,
 ): Promise<ConsistencyCheckResult> {
   const entities = extractEntities(input.source, input.type);
+  const kinds = new Map<string, SequenceEntityKind>(
+    extractSequenceEntities(input.source, input.type).map((entry): [string, SequenceEntityKind] => [
+      entry.name,
+      entry.kind,
+    ]),
+  );
   const { scanned, truncated } = await scanCodebase(codeRootDir);
   const analyzers = buildAnalyzerBreakdown(scanned);
-  const match = matchEntities(entities, scanned);
+  const match = matchEntities(entities, kinds, scanned);
 
   return {
     diagramPath: input.relativePath,

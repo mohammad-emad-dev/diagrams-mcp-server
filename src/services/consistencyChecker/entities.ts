@@ -63,6 +63,41 @@ function collectMessageCalls(source: string, addClean: (raw: string | undefined)
   }
 }
 
+/** Message-call names (`charge` in `: charge(card)`), shared by both dialects. */
+export function extractMessageCalls(source: string): string[] {
+  const { names, addClean } = makeEntitySink();
+  collectMessageCalls(source, addClean);
+  return Array.from(names);
+}
+
+/** Run one participant regex to completion, collecting display names and aliases. */
+function collectParticipants(source: string, participantRegex: RegExp): string[] {
+  const { names, addClean } = makeEntitySink();
+  participantRegex.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = participantRegex.exec(source)) !== null) {
+    addClean(match[1]);
+    if (match[2]) names.add(match[2]);
+  }
+  return Array.from(names);
+}
+
+/** PlantUML participant/actor names, with optional aliases. */
+export function extractPlantUmlParticipants(source: string): string[] {
+  return collectParticipants(
+    source,
+    /^\s*(?:participant|actor|boundary|control|entity|database|collections|queue)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm,
+  );
+}
+
+/** Mermaid participant/actor names, with optional aliases. */
+export function extractMermaidParticipants(source: string): string[] {
+  return collectParticipants(
+    source,
+    /^\s*(?:create\s+|destroy\s+)?(?:participant|actor)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm,
+  );
+}
+
 /** Candidate entity names from PlantUML source. */
 function extractEntitiesFromPlantUml(source: string): string[] {
   const { names, addClean } = makeEntitySink();
@@ -99,12 +134,7 @@ function extractEntitiesFromPlantUml(source: string): string[] {
   }
 
   // Sequence participants and actors, with optional aliases.
-  const participantRegex =
-    /^\s*(?:participant|actor|boundary|control|entity|database|collections|queue)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
-  while ((match = participantRegex.exec(source)) !== null) {
-    addClean(match[1]);
-    if (match[2]) names.add(match[2]);
-  }
+  for (const name of extractPlantUmlParticipants(source)) names.add(name);
 
   collectMessageCalls(source, addClean);
 
@@ -135,12 +165,7 @@ function extractEntitiesFromMermaid(source: string): string[] {
   }
 
   // Sequence participants and actors, with optional aliases.
-  const participantRegex =
-    /^\s*(?:create\s+|destroy\s+)?(?:participant|actor)\s+("[^"]+"|\[[^\]]+\]|\S+)(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
-  while ((match = participantRegex.exec(source)) !== null) {
-    addClean(match[1]);
-    if (match[2]) names.add(match[2]);
-  }
+  for (const name of extractMermaidParticipants(source)) names.add(name);
 
   // C4 containers, components, systems, and people.
   const c4Regex =

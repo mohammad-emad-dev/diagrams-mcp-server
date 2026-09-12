@@ -28,10 +28,11 @@
   "scripts": {
     "build": "tsc",
     "test":
-      "node --test dist/constants.test.js dist/integration/mcpServer.test.js dist/services/consistencyChecker.test.js dist/services/diagramStore.test.js dist/services/diagramValidator.test.js dist/services/renderer.test.js dist/setup.test.js dist/tools/diagramsCreateUpdateValidation.test.js dist/tools/diagramsDelete.test.js dist/tools/diagramsPagination.test.js dist/tools/toolError.test.js dist/tools/toolOutput.test.js",
+      "node --test dist/constants.test.js dist/integration/mcpServer.test.js dist/services/consistencyChecker.test.js dist/services/consistencyChecker/ts/tsParse.test.js dist/services/consistencyChecker/ts/tsSymbols.test.js dist/services/consistencyChecker/ts/tsIndex.test.js dist/services/consistencyChecker/ts/tsGoldens.test.js dist/services/consistencyChecker/sequence/sequenceGoldens.test.js dist/services/diagramStore.test.js dist/services/diagramValidator.test.js dist/services/renderer.test.js dist/setup.test.js dist/tools/diagramsCreateUpdateValidation.test.js dist/tools/diagramsDelete.test.js dist/tools/diagramsPagination.test.js dist/tools/toolError.test.js dist/tools/toolOutput.test.js",
     "lint": "eslint src --max-warnings 0",
     "format:check": "prettier --check \"src/**/*.ts\"",
     "prepack": "npm run build",
+    "probe:prod": "node evaluations/prod-activation/probe.mjs",
     "start": "node dist/index.js",
     "dev": "tsc --watch"
   },
@@ -48,6 +49,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "typescript": "^5.7.2",
     "zod": "^3.24.1"
   },
   "devDependencies": {
@@ -55,7 +57,6 @@
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.6",
-    "typescript": "^5.7.2",
     "typescript-eslint": "^8.70.0"
   },
   "engines": {
