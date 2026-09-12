@@ -21,34 +21,89 @@ function moduleNameText(ts: TsModule, name: tsTypes.ModuleName): string {
   return "";
 }
 
-function visitNode(ts: TsModule, node: tsTypes.Node, declared: Set<string>): void {
-  if (
+/** Named type/function declarations: class, interface, enum, type alias, function. */
+type NamedDeclaration =
+  | tsTypes.ClassDeclaration
+  | tsTypes.InterfaceDeclaration
+  | tsTypes.EnumDeclaration
+  | tsTypes.TypeAliasDeclaration
+  | tsTypes.FunctionDeclaration;
+
+function collectNamedDeclaration(
+  ts: TsModule,
+  node: NamedDeclaration,
+  declared: Set<string>,
+): void {
+  if (node.name && ts.isIdentifier(node.name)) addIdentifier(declared, node.name.text);
+}
+
+/** Variable statements: simple `const X =` bindings only, no destructuring. */
+function collectVariableStatement(
+  ts: TsModule,
+  node: tsTypes.VariableStatement,
+  declared: Set<string>,
+): void {
+  for (const declaration of node.declarationList.declarations) {
+    if (ts.isIdentifier(declaration.name)) addIdentifier(declared, declaration.name.text);
+  }
+}
+
+/** Named export specifiers: both `original` and `alias` sides of `as`. */
+function collectExportDeclaration(
+  ts: TsModule,
+  node: tsTypes.ExportDeclaration,
+  declared: Set<string>,
+): void {
+  const clause = node.exportClause;
+  if (!clause || !ts.isNamedExports(clause)) return;
+  for (const element of clause.elements) {
+    if (ts.isIdentifier(element.name)) addIdentifier(declared, element.name.text);
+    if (element.propertyName && ts.isIdentifier(element.propertyName)) {
+      addIdentifier(declared, element.propertyName.text);
+    }
+  }
+}
+
+/** Default-exported identifiers (`export default Foo`); anonymous adds nothing. */
+function collectExportAssignment(
+  ts: TsModule,
+  node: tsTypes.ExportAssignment,
+  declared: Set<string>,
+): void {
+  if (ts.isIdentifier(node.expression)) addIdentifier(declared, node.expression.text);
+}
+
+/** Namespace names; nested namespaces resolve by recursion. */
+function collectModuleDeclaration(
+  ts: TsModule,
+  node: tsTypes.ModuleDeclaration,
+  declared: Set<string>,
+): void {
+  const full = moduleNameText(ts, node.name);
+  for (const part of full.split(".")) addIdentifier(declared, part);
+}
+
+function isNamedDeclaration(ts: TsModule, node: tsTypes.Node): node is NamedDeclaration {
+  return (
     ts.isClassDeclaration(node) ||
     ts.isInterfaceDeclaration(node) ||
     ts.isEnumDeclaration(node) ||
     ts.isTypeAliasDeclaration(node) ||
     ts.isFunctionDeclaration(node)
-  ) {
-    if (node.name && ts.isIdentifier(node.name)) addIdentifier(declared, node.name.text);
+  );
+}
+
+function visitNode(ts: TsModule, node: tsTypes.Node, declared: Set<string>): void {
+  if (isNamedDeclaration(ts, node)) {
+    collectNamedDeclaration(ts, node, declared);
   } else if (ts.isVariableStatement(node)) {
-    for (const declaration of node.declarationList.declarations) {
-      if (ts.isIdentifier(declaration.name)) addIdentifier(declared, declaration.name.text);
-    }
+    collectVariableStatement(ts, node, declared);
   } else if (ts.isExportDeclaration(node)) {
-    const clause = node.exportClause;
-    if (clause && ts.isNamedExports(clause)) {
-      for (const element of clause.elements) {
-        if (ts.isIdentifier(element.name)) addIdentifier(declared, element.name.text);
-        if (element.propertyName && ts.isIdentifier(element.propertyName)) {
-          addIdentifier(declared, element.propertyName.text);
-        }
-      }
-    }
+    collectExportDeclaration(ts, node, declared);
   } else if (ts.isExportAssignment(node)) {
-    if (ts.isIdentifier(node.expression)) addIdentifier(declared, node.expression.text);
+    collectExportAssignment(ts, node, declared);
   } else if (ts.isModuleDeclaration(node)) {
-    const full = moduleNameText(ts, node.name);
-    for (const part of full.split(".")) addIdentifier(declared, part);
+    collectModuleDeclaration(ts, node, declared);
   }
   ts.forEachChild(node, (child) => visitNode(ts, child, declared));
 }

@@ -41,4 +41,18 @@ describe("collectTsDeclaredSymbols", () => {
     assert.deepEqual([...(await collectTsDeclaredSymbols(null))], []);
     assert.deepEqual([...(await collectTsDeclaredSymbols({}))], []);
   });
+
+  it("characterizes a mixed source exactly (refactor drift detector)", async () => {
+    assert.deepEqual(
+      await collect(
+        'import { Used } from "./used";\n' +
+          "export abstract class Base {}\nexport default class Named {}\n" +
+          "export default function anon(): void {}\nexport default class {}\n" +
+          "const { skipped } = obj;\nexport async function* gen(): AsyncGenerator<number> {}\n" +
+          "namespace Outer {\n  namespace Inner {\n    export const deep = 1;\n  }\n}\n" +
+          "export { Base as RenamedBase, type Deep };\n",
+      ),
+      ["Base", "Deep", "Inner", "Named", "Outer", "RenamedBase", "anon", "deep", "gen"],
+    );
+  });
 });
