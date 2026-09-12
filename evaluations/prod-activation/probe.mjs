@@ -18,11 +18,31 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const installDir = path.resolve(process.argv[2] ?? ".");
+// Dev-mode (repo root) keeps dist at the top level; a consumer install
+// nests it under node_modules/<package>. Probe the first layout that exists.
+const candidateRoots = [
+  installDir,
+  path.join(installDir, "node_modules", "diagrams-mcp-server"),
+];
+let packageRoot = null;
+for (const candidate of candidateRoots) {
+  try {
+    await fs.access(path.join(candidate, "dist", "services", "consistencyChecker"));
+    packageRoot = candidate;
+    break;
+  } catch {
+    // try the next layout
+  }
+}
+if (!packageRoot) {
+  console.log(`AST probe: no install found under ${installDir} -> DORMANT`);
+  process.exit(1);
+}
 const tsParseUrl = pathToFileURL(
-  path.join(installDir, "dist/services/consistencyChecker/ts/tsParse.js"),
+  path.join(packageRoot, "dist/services/consistencyChecker/ts/tsParse.js"),
 ).href;
 const checkerUrl = pathToFileURL(
-  path.join(installDir, "dist/services/consistencyChecker/index.js"),
+  path.join(packageRoot, "dist/services/consistencyChecker/index.js"),
 ).href;
 
 let tsParse;
@@ -34,7 +54,7 @@ try {
 }
 
 const available = await tsParse.isTsAstAvailable();
-console.log(`AST probe: isTsAstAvailable=${available} [${installDir}]`);
+console.log(`AST probe: isTsAstAvailable=${available} [${packageRoot}]`);
 if (!available) {
   console.log("AST probe verdict: DORMANT (compiler not installed) -> pay Option A");
   process.exit(1);
