@@ -4,6 +4,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { DiagramExistsError, DiagramStore, PathTraversalError } from "./diagramStore.js";
+import { MAX_TITLE_SCAN_BYTES } from "../constants.js";
 
 const OUTSIDE_CONTENT = "external secret content 7f3a9c";
 const DIAGRAM_CONTENT = "@startuml\nclass LocalWidget\n@enduml\n";
@@ -305,5 +306,88 @@ describe("DiagramStore TOCTOU atomicity", () => {
       (fs as { lstat: Lstat }).lstat = originalLstat as Lstat;
       await fs.rm(subAbs, { recursive: true, force: true });
     }
+  });
+});
+
+describe("DiagramStore bounded title scan", () => {
+  let diagramsRoot: string;
+  let store: DiagramStore;
+
+  beforeEach(async () => {
+    diagramsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-titles-"));
+    store = new DiagramStore(diagramsRoot);
+  });
+
+  afterEach(async () => {
+    await fs.rm(diagramsRoot, { recursive: true, force: true });
+  });
+
+  function findTitle(
+    entries: Awaited<ReturnType<DiagramStore["list"]>>,
+    name: string,
+  ): string | null | undefined {
+    return entries.find((entry) => entry.relativePath === name)?.title;
+  }
+
+  it("exposes the title scan cap as a documented positive bound", () => {
+    assert.equal(MAX_TITLE_SCAN_BYTES, 8192);
+  });
+
+  it("keeps exact titles for small files", async () => {
+    await store.write("small.puml", "@startuml\ntitle Small Exact\nclass A\n@enduml\n", {
+      overwrite: false,
+    });
+
+    assert.equal(
+      (await store.list()).find((e) => e.relativePath === "small.puml")?.title,
+      "Small Exact",
+    );
+  });
+
+  it("keeps an early title in a large file without scanning the whole file", async () => {
+    const padding = "note filler line for size padding 0123456789\n".repeat(400);
+    await store.write("big-early.puml", `@startuml\ntitle Early Title\n${padding}@enduml\n`, {
+      overwrite: false,
+    });
+
+    assert.equal(findTitle(await store.list(), "big-early.puml"), "Early Title");
+  });
+
+  it("reports null when the title starts past the scan window", async () => {
+    const padding = "x".repeat(MAX_TITLE_SCAN_BYTES + 64);
+    await store.write("big-late.puml", `@startuml\n${padding}\ntitle Late Title\n@enduml\n`, {
+      overwrite: false,
+    });
+
+    assert.equal(findTitle(await store.list(), "big-late.puml"), null);
+  });
+
+  it("reports null for a mermaid title past the scan window", async () => {
+    const padding = "z".repeat(MAX_TITLE_SCAN_BYTES + 32);
+    await store.write("late.mmd", `flowchart TD\n${padding}\n%% title: Late Mermaid\nA --> B\n`, {
+      overwrite: false,
+    });
+
+    assert.equal(findTitle(await store.list(), "late.mmd"), null);
+  });
+
+  it("prefixes a title line cut by the scan window edge (D-007)", async () => {
+    const fullTitle = "Straddled Title Value";
+    const head = "@startuml\n";
+    // Start the title line just before the window edge so the scan
+    // captures only its head; the full read (pre-fix) sees it all.
+    const titleStart = MAX_TITLE_SCAN_BYTES - 12;
+    const padding = "y".repeat(titleStart - head.length - 1);
+    await store.write("edge.puml", `${head}${padding}\ntitle ${fullTitle}\n@enduml\n`, {
+      overwrite: false,
+    });
+
+    const title = findTitle(await store.list(), "edge.puml");
+
+    assert.ok(
+      typeof title === "string" && title.startsWith("…"),
+      `expected a "…"-prefixed excerpt, got ${JSON.stringify(title)}`,
+    );
+    assert.notEqual(title, fullTitle);
   });
 });

@@ -2,8 +2,9 @@
 // Paths escaping that root are rejected.
 
 import { constants as fsConstants, promises as fs } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
-import { EXTENSION_TO_TYPE, toPosixPath } from "../constants.js";
+import { EXTENSION_TO_TYPE, MAX_TITLE_SCAN_BYTES, toPosixPath } from "../constants.js";
 import type { DiagramFile, DiagramType } from "../types.js";
 import { validateDiagramSource } from "./diagramValidator.js";
 
@@ -134,18 +135,35 @@ export class DiagramStore {
     return EXTENSION_TO_TYPE[ext] ?? null;
   }
 
-  // Best-effort title from the diagram content.
-  private extractTitle(content: string, type: DiagramType): string | null {
-    if (type === "plantuml") {
-      const match = content.match(/^\s*title\s+(.+)$/m);
-      if (match) return match[1].trim();
-    } else {
-      // Mermaid: look for a leading "%% title: ..." comment, or the
-      // diagram declaration line as a fallback.
-      const commentMatch = content.match(/^\s*%%\s*title:\s*(.+)$/m);
-      if (commentMatch) return commentMatch[1].trim();
+  // Best-effort title from the scanned file prefix. Titles past the
+  // window read as null; a title line cut at the window edge keeps its
+  // scanned part with a "…" prefix (D-007) so it never passes as exact.
+  private extractTitle(prefix: string, type: DiagramType, truncated: boolean): string | null {
+    const pattern = type === "plantuml" ? /^\s*title\s+(.+)$/m : /^\s*%%\s*title:\s*(.+)$/m;
+    const match = prefix.match(pattern);
+    if (!match?.[1]) return null;
+    const title = match[1].trim();
+    const end = (match.index ?? 0) + match[0].length;
+    const cut = truncated && end >= prefix.length;
+    return cut ? `…${title}` : title;
+  }
+
+  // First bytes of a file through its already-open NOFOLLOW handle, so
+  // title extraction never buffers a whole diagram and never re-opens
+  // the path (no TOCTOU between the open and the read).
+  private async readTitlePrefix(
+    handle: FileHandle,
+    size: number,
+  ): Promise<{ text: string; truncated: boolean }> {
+    const length = Math.min(size, MAX_TITLE_SCAN_BYTES);
+    const buffer = Buffer.alloc(length);
+    let offset = 0;
+    while (offset < length) {
+      const { bytesRead } = await handle.read(buffer, offset, length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
     }
-    return null;
+    return { text: buffer.toString("utf-8", 0, offset), truncated: size > offset };
   }
 
   async ensureRootExists(): Promise<void> {
@@ -176,12 +194,12 @@ export class DiagramStore {
             const handle = await fs.open(fullPath, fsConstants.O_RDONLY | NOFOLLOW);
             try {
               const stat = await handle.stat();
-              const content = await handle.readFile("utf-8");
+              const prefix = await this.readTitlePrefix(handle, stat.size);
               results.push({
                 relativePath: toPosixPath(path.relative(this.root, fullPath)),
                 absolutePath: fullPath,
                 type,
-                title: this.extractTitle(content, type),
+                title: this.extractTitle(prefix.text, type, prefix.truncated),
                 sizeBytes: stat.size,
                 modifiedAt: stat.mtime.toISOString(),
               });
