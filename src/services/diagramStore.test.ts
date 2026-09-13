@@ -59,6 +59,18 @@ describe("DiagramStore symlink safety", () => {
     assert.equal(content, DIAGRAM_CONTENT);
   });
 
+  it("creates a missing root on list instead of failing", async () => {
+    const missing = new DiagramStore(path.join(diagramsRoot, "does-not-exist"));
+
+    const files = await missing.list();
+
+    assert.deepEqual(files, []);
+    assert.equal(
+      await fs.stat(path.join(diagramsRoot, "does-not-exist")).then((s) => s.isDirectory()),
+      true,
+    );
+  });
+
   it("rejects reading a symlink inside the root that points outside", async (t) => {
     if (!(await symlinkSupported(diagramsRoot))) {
       t.skip(

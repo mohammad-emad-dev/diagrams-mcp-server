@@ -66,14 +66,18 @@ export function isExpectedToolError(err: unknown): err is Error {
   );
 }
 
-// Render-step errors for diagrams_render. After a successful read, any
-// plain Error is a child-process failure and stays expected.
+// Render-step errors for diagrams_render. Only typed RenderErrors and
+// exit-failure markers stay expected; any other failure (filesystem,
+// spawn, response handling) is unexpected so paths and errno text never
+// reach users verbatim.
+const EXIT_FAILURE_MARKERS = [/\bexited? with (?:exit )?code \d+\b/i, /\bcommand failed\b/i];
+
 export function isExpectedRenderError(err: unknown): err is Error {
   if (err instanceof RenderError) {
     return true;
   }
   if (err instanceof Error && !isProgrammingError(err)) {
-    return true;
+    return EXIT_FAILURE_MARKERS.some((marker) => marker.test(err.message));
   }
   return false;
 }

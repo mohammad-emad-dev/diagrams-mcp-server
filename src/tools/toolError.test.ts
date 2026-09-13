@@ -126,7 +126,16 @@ describe("isExpectedRenderError", () => {
   it("accepts RenderError and child-process failures", () => {
     assert.equal(isExpectedRenderError(new RenderError("no mmdc")), true);
     assert.equal(isExpectedRenderError(new Error("Command exited with code 1")), true);
-    assert.equal(isExpectedRenderError(new Error("mmdc failed: bad syntax")), true);
+    assert.equal(isExpectedRenderError(new Error("Command failed: mmdc -i in.mmd")), true);
+  });
+
+  it("rejects non-exit runtime failures even when they mention a renderer", () => {
+    assert.equal(
+      isExpectedRenderError(new Error("EACCES: permission denied, open '/tmp/x'")),
+      false,
+    );
+    assert.equal(isExpectedRenderError(new Error("spawn mmdc EACCES")), false);
+    assert.equal(isExpectedRenderError(new Error("boom")), false);
   });
 
   it("rejects programming errors and non-errors", () => {
@@ -199,6 +208,20 @@ describe("handleRenderError", () => {
     assert.match(result.content[0].text, /Unexpected internal error/);
     assert.ok(!result.content[0].text.includes("boom"));
     assert.equal(loggedLines.length, 1);
+  });
+
+  it("routes render-step filesystem failures to generic without path leaks", () => {
+    const result = handleRenderError(
+      "diagrams_render",
+      new Error(`EACCES: permission denied, open '${ABS_POSIX_LEAK}'`),
+    );
+
+    assert.equal(result.isError, true);
+    assert.match(result.content[0].text, /Unexpected internal error/);
+    assert.ok(!result.content[0].text.includes(ABS_POSIX_LEAK));
+    assert.ok(!result.content[0].text.includes("EACCES"));
+    assert.equal(loggedLines.length, 1);
+    assert.ok(!loggedLines[0].includes(ABS_POSIX_LEAK));
   });
 });
 

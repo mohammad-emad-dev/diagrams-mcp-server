@@ -62,8 +62,14 @@ export class DiagramStore {
     if (this.rootReal === null) {
       try {
         this.rootReal = await fs.realpath(this.root);
-      } catch {
-        this.rootReal = this.root;
+      } catch (err: unknown) {
+        // Only "missing" means absent; anything else (permissions, I/O)
+        // must surface instead of silently weakening the root check.
+        if (isNodeError(err) && (err.code === "ENOENT" || err.code === "ENOTDIR")) {
+          this.rootReal = this.root;
+        } else {
+          throw err;
+        }
       }
     }
     return this.rootReal;

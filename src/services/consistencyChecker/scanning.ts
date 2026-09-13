@@ -64,8 +64,19 @@ export async function collectCodeFiles(
     let entries;
     try {
       entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return; // unreadable directory, skip
+    } catch (err: unknown) {
+      // Skip missing/unreadable directories; anything else (I/O errors,
+      // name too long) must surface instead of silently truncating the scan.
+      const skippable =
+        isNodeError(err) &&
+        (err.code === "ENOENT" ||
+          err.code === "EACCES" ||
+          err.code === "EPERM" ||
+          err.code === "ENOTDIR");
+      if (!skippable) {
+        throw err;
+      }
+      return;
     }
     for (const entry of entries) {
       if (isCapped()) {
@@ -88,4 +99,8 @@ export async function collectCodeFiles(
   await walk(rootDir);
   isCapped();
   return { files, truncated };
+}
+
+function isNodeError(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && "code" in err;
 }
