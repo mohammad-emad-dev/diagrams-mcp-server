@@ -1,7 +1,7 @@
 // Filesystem CRUD for diagram files, rooted at one directory.
 // Paths escaping that root are rejected.
 
-import { promises as fs } from "node:fs";
+import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
 import { EXTENSION_TO_TYPE, toPosixPath } from "../constants.js";
 import type { DiagramFile, DiagramType } from "../types.js";
@@ -44,11 +44,48 @@ export class DiagramExistsError extends Error {
   }
 }
 
+// O_NOFOLLOW makes open fail with ELOOP instead of following a final
+// symlink. Where the platform ignores it (0), the realpath checks above
+// remain the enforcement.
+const NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
+
 export class DiagramStore {
   private readonly root: string;
+  private rootReal: string | null = null;
 
   constructor(root: string) {
     this.root = path.resolve(root);
+  }
+
+  private async getRootReal(): Promise<string> {
+    if (this.rootReal === null) {
+      try {
+        this.rootReal = await fs.realpath(this.root);
+      } catch {
+        this.rootReal = this.root;
+      }
+    }
+    return this.rootReal;
+  }
+
+  // realpath follows symlinks, so it sees what lstat-based checks can miss
+  // in a swap-after-check race. Returns null when nothing exists there yet.
+  private async realpathInsideRoot(
+    absolutePath: string,
+    relativeForError: string,
+  ): Promise<string | null> {
+    try {
+      const real = await fs.realpath(absolutePath);
+      const base = await this.getRootReal();
+      const baseWithSep = base.endsWith(path.sep) ? base : base + path.sep;
+      if (real !== base && !real.startsWith(baseWithSep)) {
+        throw new PathTraversalError(toPosixPath(relativeForError));
+      }
+      return real;
+    } catch (err: unknown) {
+      if (isNodeError(err) && err.code === "ENOENT") return null;
+      throw err;
+    }
   }
 
   getRoot(): string {
@@ -121,6 +158,9 @@ export class DiagramStore {
     const results: DiagramFile[] = [];
 
     const walk = async (dir: string): Promise<void> => {
+      // A dir swapped to a symlink after the parent readdir must not
+      // pull outside files into the listing.
+      if ((await this.realpathInsideRoot(dir, path.relative(this.root, dir))) === null) return;
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         const fullPath = path.join(dir, entry.name);
@@ -132,16 +172,28 @@ export class DiagramStore {
         } else if (entry.isFile()) {
           const type = this.detectType(entry.name);
           if (!type) continue;
-          const stat = await fs.stat(fullPath);
-          const content = await fs.readFile(fullPath, "utf-8");
-          results.push({
-            relativePath: toPosixPath(path.relative(this.root, fullPath)),
-            absolutePath: fullPath,
-            type,
-            title: this.extractTitle(content, type),
-            sizeBytes: stat.size,
-            modifiedAt: stat.mtime.toISOString(),
-          });
+          try {
+            const handle = await fs.open(fullPath, fsConstants.O_RDONLY | NOFOLLOW);
+            try {
+              const stat = await handle.stat();
+              const content = await handle.readFile("utf-8");
+              results.push({
+                relativePath: toPosixPath(path.relative(this.root, fullPath)),
+                absolutePath: fullPath,
+                type,
+                title: this.extractTitle(content, type),
+                sizeBytes: stat.size,
+                modifiedAt: stat.mtime.toISOString(),
+              });
+            } finally {
+              await handle.close();
+            }
+          } catch (err: unknown) {
+            // Swapped to a link (ELOOP) or removed (ENOENT) after readdir:
+            // skip instead of following.
+            if (isNodeError(err) && (err.code === "ELOOP" || err.code === "ENOENT")) continue;
+            throw err;
+          }
         }
       }
     };
@@ -158,24 +210,44 @@ export class DiagramStore {
     if (!type) {
       throw new UnsupportedDiagramExtensionError(toPosixPath(relativePath));
     }
+    // realpath sees a link swapped in after the lstat walk; null means missing.
+    if ((await this.realpathInsideRoot(absolutePath, relativePath)) === null) {
+      throw new DiagramNotFoundError(toPosixPath(relativePath));
+    }
+    let handle;
     try {
-      const content = await fs.readFile(absolutePath, "utf-8");
-      return { content, type };
+      handle = await fs.open(absolutePath, fsConstants.O_RDONLY | NOFOLLOW);
     } catch (err: unknown) {
+      if (isNodeError(err) && err.code === "ELOOP") {
+        throw new PathTraversalError(toPosixPath(relativePath));
+      }
       if (isNodeError(err) && err.code === "ENOENT") {
         throw new DiagramNotFoundError(toPosixPath(relativePath));
       }
       throw err;
+    }
+    try {
+      return { content: await handle.readFile("utf-8"), type };
+    } finally {
+      await handle.close();
     }
   }
 
   async exists(relativePath: string): Promise<boolean> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
+    if ((await this.realpathInsideRoot(absolutePath, relativePath)) === null) {
+      // Missing — but a dangling link still counts as an escape attempt
+      // when the lstat walk saw it (preserves the symlink contract).
+      return false;
+    }
+    let handle;
     try {
-      await fs.access(absolutePath);
-      return true;
+      handle = await fs.open(absolutePath, fsConstants.O_RDONLY | NOFOLLOW);
     } catch (err: unknown) {
+      if (isNodeError(err) && err.code === "ELOOP") {
+        throw new PathTraversalError(toPosixPath(relativePath));
+      }
       // Only "missing" means absent; anything else (permissions, I/O)
       // is a real failure the caller must see.
       if (isNodeError(err) && err.code === "ENOENT") {
@@ -183,6 +255,8 @@ export class DiagramStore {
       }
       throw err;
     }
+    await handle.close();
+    return true;
   }
 
   async write(
@@ -198,16 +272,29 @@ export class DiagramStore {
     }
     // Validate before touching disk; invalid content writes nothing.
     validateDiagramSource(content, type);
-    await fs.mkdir(path.dirname(absolutePath), { recursive: true });
+    const parent = path.dirname(absolutePath);
+    await fs.mkdir(parent, { recursive: true });
+    // Parent swapped to a link after the walk must not redirect creation.
+    if ((await this.realpathInsideRoot(parent, relativePath)) === null) {
+      throw new PathTraversalError(toPosixPath(relativePath));
+    }
+    // Existing link swapped in after the walk must not be followed:
+    // throws here when the link resolves outside; null (missing) is safe
+    // to create. NOFOLLOW below turns a link raced in after this check
+    // into ELOOP instead of a follow.
+    await this.realpathInsideRoot(absolutePath, relativePath);
+    const base = fsConstants.O_WRONLY | fsConstants.O_CREAT | NOFOLLOW;
+    const flags = options.overwrite ? base | fsConstants.O_TRUNC : base | fsConstants.O_EXCL;
+    let handle;
     try {
-      // "wx" creates atomically: a concurrent writer loses with EEXIST
-      // instead of slipping through a check-then-write race. A directory
-      // at the target fails with EISDIR and keeps the same contract.
-      await fs.writeFile(absolutePath, content, {
-        encoding: "utf-8",
-        flag: options.overwrite ? "w" : "wx",
-      });
+      // NOFOLLOW: a concurrent link loses with ELOOP instead of
+      // redirecting the write outside. EXCL keeps the atomic-create
+      // guarantee; a directory fails with EISDIR like before.
+      handle = await fs.open(absolutePath, flags, 0o666);
     } catch (err: unknown) {
+      if (isNodeError(err) && err.code === "ELOOP") {
+        throw new PathTraversalError(toPosixPath(relativePath));
+      }
       if (
         !options.overwrite &&
         isNodeError(err) &&
@@ -217,11 +304,25 @@ export class DiagramStore {
       }
       throw err;
     }
+    try {
+      await handle.writeFile(content, "utf-8");
+    } finally {
+      await handle.close();
+    }
   }
 
   async delete(relativePath: string): Promise<void> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
+    // Parent or file swapped to a link after the walk must not redirect
+    // the unlink outside. realpath follows what lstat may have missed.
+    const parentReal = await this.realpathInsideRoot(path.dirname(absolutePath), relativePath);
+    if (parentReal === null) {
+      throw new DiagramNotFoundError(toPosixPath(relativePath));
+    }
+    if ((await this.realpathInsideRoot(absolutePath, relativePath)) === null) {
+      throw new DiagramNotFoundError(toPosixPath(relativePath));
+    }
     try {
       await fs.unlink(absolutePath);
     } catch (err: unknown) {

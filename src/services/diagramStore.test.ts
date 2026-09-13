@@ -170,3 +170,140 @@ describe("DiagramStore atomic create", () => {
     );
   });
 });
+
+describe("DiagramStore TOCTOU atomicity", () => {
+  let diagramsRoot: string;
+  let outsideDir: string;
+  let store: DiagramStore;
+
+  beforeEach(async () => {
+    diagramsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-toctou-"));
+    outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-toctou-outside-"));
+    store = new DiagramStore(diagramsRoot);
+  });
+
+  afterEach(async () => {
+    await fs.rm(diagramsRoot, { recursive: true, force: true });
+    await fs.rm(outsideDir, { recursive: true, force: true });
+  });
+
+  it("write with overwrite:true does not follow a symlink swapped in after check", async (t) => {
+    if (!(await symlinkSupported(diagramsRoot))) {
+      t.skip(
+        "symlink creation is unavailable in this environment (EPERM/EACCES); " +
+          "TOCTOU write coverage was NOT verified here",
+      );
+      return;
+    }
+    const outsideFile = path.join(outsideDir, "secret.puml");
+    await fs.writeFile(outsideFile, OUTSIDE_CONTENT, "utf-8");
+    const linkAbs = path.join(diagramsRoot, "race.puml");
+    await fs.symlink(outsideFile, linkAbs, "file");
+
+    // Simulate the race: the pre-check sees a clean path while the use
+    // step still faces the link.
+    const originalLstat = fs.lstat.bind(fs);
+    type Lstat = typeof fs.lstat;
+    const fakeLstat = ((...args: Parameters<Lstat>) => {
+      const target = args[0];
+      const targetPath = typeof target === "string" ? target : target.toString();
+      if (targetPath === linkAbs) {
+        return originalLstat(diagramsRoot);
+      }
+      return (originalLstat as Lstat)(...args);
+    }) as Lstat;
+    (fs as { lstat: Lstat }).lstat = fakeLstat;
+    try {
+      // Arrange (liar installed) - Act:
+      await assert.rejects(
+        store.write("race.puml", DIAGRAM_CONTENT, { overwrite: true }),
+        PathTraversalError,
+      );
+
+      // Assert: the external target must be untouched.
+      assert.equal(await fs.readFile(outsideFile, "utf-8"), OUTSIDE_CONTENT);
+    } finally {
+      (fs as { lstat: Lstat }).lstat = originalLstat as Lstat;
+      await fs.rm(linkAbs, { force: true });
+    }
+  });
+
+  it("read does not follow a symlink swapped in after check", async (t) => {
+    if (!(await symlinkSupported(diagramsRoot))) {
+      t.skip(
+        "symlink creation is unavailable in this environment (EPERM/EACCES); " +
+          "TOCTOU read coverage was NOT verified here",
+      );
+      return;
+    }
+    const outsideFile = path.join(outsideDir, "secret.puml");
+    await fs.writeFile(outsideFile, OUTSIDE_CONTENT, "utf-8");
+    const linkAbs = path.join(diagramsRoot, "race.puml");
+    await fs.symlink(outsideFile, linkAbs, "file");
+
+    const originalLstat = fs.lstat.bind(fs);
+    type Lstat = typeof fs.lstat;
+    const fakeLstat = ((...args: Parameters<Lstat>) => {
+      const target = args[0];
+      const targetPath = typeof target === "string" ? target : target.toString();
+      if (targetPath === linkAbs) {
+        return originalLstat(diagramsRoot);
+      }
+      return (originalLstat as Lstat)(...args);
+    }) as Lstat;
+    (fs as { lstat: Lstat }).lstat = fakeLstat;
+    try {
+      // Arrange (liar installed) - Act + Assert:
+      await assert.rejects(store.read("race.puml"), PathTraversalError);
+    } finally {
+      (fs as { lstat: Lstat }).lstat = originalLstat as Lstat;
+      await fs.rm(linkAbs, { force: true });
+    }
+  });
+
+  it("delete through a parent dir swapped after check does not delete outside", async (t) => {
+    if (!(await symlinkSupported(diagramsRoot))) {
+      t.skip(
+        "symlink creation is unavailable in this environment (EPERM/EACCES); " +
+          "TOCTOU delete coverage was NOT verified here",
+      );
+      return;
+    }
+    const outsideFile = path.join(outsideDir, "victim.puml");
+    await fs.writeFile(outsideFile, OUTSIDE_CONTENT, "utf-8");
+    const subAbs = path.join(diagramsRoot, "sub");
+    try {
+      await fs.symlink(outsideDir, subAbs, "dir");
+    } catch (err: unknown) {
+      if (isErrno(err) && (err.code === "EPERM" || err.code === "EACCES")) {
+        t.skip(
+          "directory symlinks are unavailable here (EPERM/EACCES); " +
+            "TOCTOU delete coverage was NOT verified here",
+        );
+        return;
+      }
+      throw err;
+    }
+
+    const originalLstat = fs.lstat.bind(fs);
+    type Lstat = typeof fs.lstat;
+    const fakeLstat = ((...args: Parameters<Lstat>) => {
+      const target = args[0];
+      const targetPath = typeof target === "string" ? target : target.toString();
+      if (targetPath === subAbs) {
+        return originalLstat(diagramsRoot);
+      }
+      return (originalLstat as Lstat)(...args);
+    }) as Lstat;
+    (fs as { lstat: Lstat }).lstat = fakeLstat;
+    try {
+      // Arrange (liar installed) - Act + Assert:
+      await assert.rejects(store.delete("sub/victim.puml"), PathTraversalError);
+
+      assert.equal(await fs.readFile(outsideFile, "utf-8"), OUTSIDE_CONTENT);
+    } finally {
+      (fs as { lstat: Lstat }).lstat = originalLstat as Lstat;
+      await fs.rm(subAbs, { recursive: true, force: true });
+    }
+  });
+});
