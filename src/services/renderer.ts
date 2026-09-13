@@ -96,9 +96,17 @@ async function runLocalCommand(
 }
 
 // Quote one argv element for the Windows command interpreter.
+// Dual-layer quoting: MSVC C-runtime first, then cmd.exe. Safe chars pass
+// through; everything else is wrapped in double quotes so & | < > ^ stay
+// literal. Embedded quotes become \" (not ""), trailing backslashes double,
+// and % doubles to block %VAR% expansion inside quotes.
 function quoteWindowsArg(arg: string): string {
-  if (!/[\s"]/.test(arg)) return arg;
-  return `"${arg.replace(/"/g, '""')}"`;
+  if (arg.length === 0) return '""';
+  if (/^[A-Za-z0-9_\-./:\\]+$/.test(arg)) return arg;
+  let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
+  escaped = escaped.replace(/(\\+)$/, "$1$1");
+  escaped = escaped.replace(/%/g, "%%");
+  return `"${escaped}"`;
 }
 
 export interface SpawnTarget {

@@ -571,6 +571,53 @@ describe("renderer command resolution (Windows npm shims)", () => {
   });
 });
 
+describe("quoteWindowsArg cmd.exe injection", () => {
+  it("quotes & without spaces so cmd.exe cannot split commands", () => {
+    // Arrange: metacharacter with no whitespace (current code leaves it unquoted).
+    // Act:
+    const line = resolveSpawnTarget("mmdc.cmd", ["a&calc.exe"], "win32").args[3];
+
+    // Assert: the metacharacter must be inside double quotes.
+    assert.equal(line, 'mmdc.cmd "a&calc.exe"');
+  });
+
+  it("quotes | < > ^ metacharacters", () => {
+    // Arrange: each cmd.exe metacharacter from the P0 finding.
+    const cases: Array<[string, string]> = [
+      ["a|b", 'mmdc.cmd "a|b"'],
+      ["a<b", 'mmdc.cmd "a<b"'],
+      ["a>b", 'mmdc.cmd "a>b"'],
+      ["a^b", 'mmdc.cmd "a^b"'],
+    ];
+
+    // Act + Assert:
+    for (const [input, expected] of cases) {
+      const line = resolveSpawnTarget("mmdc.cmd", [input], "win32").args[3];
+      assert.equal(line, expected, `input=${input}`);
+    }
+  });
+
+  it("escapes an embedded double-quote without breaking out of quoting", () => {
+    // Arrange: quote-breakout attempt with a chained command.
+    // Act:
+    const line = resolveSpawnTarget("mmdc.cmd", ['a" & calc'], "win32").args[3];
+
+    // Assert: must not use the MSVC-only '""' form, must escape for cmd.exe.
+    assert.ok(!line.includes('""'), `must not contain '""': ${line}`);
+    assert.ok(line.includes('\\"'), `must escape the quote: ${line}`);
+    assert.ok(line.startsWith('mmdc.cmd "'), `must stay quoted: ${line}`);
+  });
+
+  it("quotes the empty string as an explicit empty argv element", () => {
+    // Arrange: empty argv element (current code drops it).
+    // Act:
+    const line = resolveSpawnTarget("mmdc.cmd", [""], "win32").args[3];
+
+    // Assert:
+    assert.equal(line, 'mmdc.cmd ""');
+  });
+});
+
 describe("renderer bounded child-process output", () => {
   const nodeCmd = process.execPath;
 
