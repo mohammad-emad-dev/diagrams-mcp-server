@@ -7,8 +7,15 @@ import { spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import zlib from "node:zlib";
-import { MAX_RENDER_OUTPUT_CHARS, PLANTUML_SERVER_URL } from "../constants.js";
+import {
+  MAX_REMOTE_BODY_BYTES,
+  MAX_RENDER_ERROR_CHARS,
+  MAX_RENDER_OUTPUT_CHARS,
+  PLANTUML_SERVER_URL,
+  REMOTE_FETCH_TIMEOUT_MS,
+} from "../constants.js";
 import type { DiagramType } from "../types.js";
 
 export type RenderFormat = "svg" | "png";
@@ -24,6 +31,7 @@ export class RenderError extends Error {
 export interface RemoteRenderResponse {
   ok: boolean;
   status: number;
+  contentLength?: number | null;
   arrayBuffer: () => Promise<ArrayBuffer>;
 }
 
@@ -136,7 +144,8 @@ export function resolveSpawnTarget(
 // with a RenderError that never includes captured output. Timeouts are
 // enforced by a timer (not the spawn option) so a lingering descendant
 // holding the pipes cannot delay the error. A non-zero exit rejects with
-// the bounded stderr text.
+// the stderr prefix (at most MAX_RENDER_ERROR_CHARS) so tool output never
+// carries unbounded renderer text.
 export function runCommand(
   cmd: string,
   args: string[],
@@ -207,7 +216,11 @@ export function runCommand(
       if (code === 0) {
         settleResolve({ stdout, stderr });
       } else {
-        settleReject(new Error(stderr || `Command exited with code ${code}`));
+        const detail =
+          stderr.length > MAX_RENDER_ERROR_CHARS
+            ? `${stderr.slice(0, MAX_RENDER_ERROR_CHARS)}…`
+            : stderr;
+        settleReject(new Error(detail || `Command exited with code ${code}`));
       }
     });
   });
@@ -249,9 +262,13 @@ async function renderMermaid(
   }
 }
 
+const deflateRawAsync = promisify(zlib.deflateRaw);
+
 /** PlantUML's "deflate + custom base64" encoding for its HTTP rendering API. */
-function encodePlantUmlForUrl(source: string): string {
-  const deflated = zlib.deflateRawSync(Buffer.from(source, "utf-8"), {
+// Async so huge sources compress off the event loop instead of stalling
+// the server. Exported as a test seam (same precedent as resolveSpawnTarget).
+export async function encodePlantUmlForUrl(source: string): Promise<string> {
+  const deflated = await deflateRawAsync(Buffer.from(source, "utf-8"), {
     level: 9,
   });
   const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
@@ -300,13 +317,34 @@ async function renderPlantUmlLocal(
   }
 }
 
-async function defaultFetchRemote(url: string): Promise<RemoteRenderResponse> {
-  const response = await fetch(url);
-  return {
-    ok: response.ok,
-    status: response.status,
-    arrayBuffer: () => response.arrayBuffer(),
-  };
+// Exported as a test seam (same precedent as resolveSpawnTarget).
+export async function defaultFetchRemote(
+  url: string,
+  timeoutMs = REMOTE_FETCH_TIMEOUT_MS,
+): Promise<RemoteRenderResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const lengthHeader = response.headers.get("content-length");
+    const contentLength = lengthHeader === null ? null : Number(lengthHeader);
+    return {
+      ok: response.ok,
+      status: response.status,
+      contentLength: contentLength === null || Number.isNaN(contentLength) ? null : contentLength,
+      arrayBuffer: () => response.arrayBuffer(),
+    };
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new RenderError(
+        `PlantUML rendering request timed out after ${timeoutMs}ms and was stopped. ` +
+          `Install a local 'plantuml' CLI for offline rendering.`,
+      );
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function renderPlantUmlRemote(
@@ -314,7 +352,7 @@ async function renderPlantUmlRemote(
   format: RenderFormat,
   deps: Required<RendererDeps>,
 ): Promise<Buffer> {
-  const encoded = encodePlantUmlForUrl(source);
+  const encoded = await encodePlantUmlForUrl(source);
   const url = `${PLANTUML_SERVER_URL}/${format}/${encoded}`;
 
   const response = await deps.fetchRemote(url);
@@ -324,8 +362,25 @@ async function renderPlantUmlRemote(
         `Install a local 'plantuml' CLI for offline rendering, or check the diagram syntax.`,
     );
   }
+  // Bound the remote body before buffering it: a declared over-cap length
+  // rejects without reading, and the buffered length is re-checked for
+  // missing or lying headers. The error never includes body bytes.
+  const declared = response.contentLength ?? null;
+  if (declared !== null && declared > MAX_REMOTE_BODY_BYTES) {
+    throw overRemoteBodyCap();
+  }
   const arrayBuffer = await response.arrayBuffer();
+  if (arrayBuffer.byteLength > MAX_REMOTE_BODY_BYTES) {
+    throw overRemoteBodyCap();
+  }
   return Buffer.from(arrayBuffer);
+}
+
+function overRemoteBodyCap(): RenderError {
+  return new RenderError(
+    `PlantUML rendering response exceeded the ${MAX_REMOTE_BODY_BYTES}-byte ` +
+      `limit and was discarded. Install a local 'plantuml' CLI for offline rendering.`,
+  );
 }
 
 export async function renderDiagram(
