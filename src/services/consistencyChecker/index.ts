@@ -127,6 +127,10 @@ function findMatchingFileIndexes(
   return matched;
 }
 
+function isNodeError(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && "code" in err;
+}
+
 /** Read and analyze one file for the scan; null when unreadable or oversized. */
 async function readScannedFile(codeRootDir: string, file: string): Promise<ScannedFile | null> {
   try {
@@ -149,8 +153,19 @@ async function readScannedFile(codeRootDir: string, file: string): Promise<Scann
       operations: buildOperationIndex(declared),
       tsStrict: tsAnalysis.strict,
     };
-  } catch {
-    // unreadable file (permissions, race condition); skip it
+  } catch (err: unknown) {
+    // Skip files that cannot be read; anything else (analyzer-internal
+    // failures) must surface instead of silently dropping evidence.
+    const skippable =
+      isNodeError(err) &&
+      (err.code === "ENOENT" ||
+        err.code === "EACCES" ||
+        err.code === "EPERM" ||
+        err.code === "ENOTDIR" ||
+        err.code === "EISDIR");
+    if (!skippable) {
+      throw err;
+    }
     return null;
   }
 }

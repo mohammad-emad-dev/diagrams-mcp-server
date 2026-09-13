@@ -288,6 +288,87 @@ describe("checkConsistency", () => {
     assert.equal(result.filesScanned, 1);
   });
 
+  it("rethrows unexpected scan errors instead of silently skipping them", async (t) => {
+    // A 300-char entry exceeds NAME_MAX (255) on POSIX, so readdir fails
+    // with ENAMETOOLONG; Windows maps the same path to ENOENT, so probe
+    // openly and skip where the distinction is unobservable (same pattern
+    // as the DiagramStore exists() narrowing test).
+    const longDir = path.join(tmpRoot, "x".repeat(300));
+    let probe: string | null = null;
+    try {
+      await fs.readdir(longDir);
+    } catch (err: unknown) {
+      if (err instanceof Error && "code" in err) probe = String(err.code ?? null);
+    }
+    if (probe !== "ENAMETOOLONG") {
+      t.skip(
+        `non-skip scan failures are unobservable here (got ${probe}); ` +
+          "scan narrowing coverage was NOT verified on this platform",
+      );
+      return;
+    }
+    await assert.rejects(
+      checkConsistency(
+        {
+          relativePath: "models/a.puml",
+          source: "@startuml\nclass User\n@enduml\n",
+          type: "plantuml",
+        },
+        longDir,
+      ),
+      (err: unknown) => err instanceof Error && "code" in err && err.code === "ENAMETOOLONG",
+    );
+  });
+
+  it("skips oversized files without failing the scan", async () => {
+    await writeFiles(tmpRoot, {
+      "big.js": `export class User {}\n${"x".repeat(1_000_001)}`,
+      "small.js": "export class User {}\n",
+    });
+    const result = await checkConsistency(
+      {
+        relativePath: "models/a.puml",
+        source: "@startuml\nclass User\nclass Ghost\n@enduml\n",
+        type: "plantuml",
+      },
+      tmpRoot,
+    );
+    assert.equal(result.filesScanned, 1);
+    assert.deepEqual(issueNames(result), ["Ghost"]);
+  });
+
+  it("skips unreadable files without failing the scan", async (t) => {
+    // chmod 000 blocks reads on POSIX; elsewhere (Windows, root) the
+    // file stays readable, so probe openly and skip where unobservable.
+    await writeFiles(tmpRoot, {
+      "locked.js": "export class Locked {}\n",
+      "open.js": "export class User {}\n",
+    });
+    const locked = path.join(tmpRoot, "locked.js");
+    await fs.chmod(locked, 0o000);
+    try {
+      await fs.readFile(locked, "utf-8");
+      t.skip("unreadable files are unobservable here (read succeeded); skipping");
+      return;
+    } catch {
+      // Read blocked as intended; the scan must skip this file.
+    }
+    try {
+      const result = await checkConsistency(
+        {
+          relativePath: "models/a.puml",
+          source: "@startuml\nclass User\nclass Ghost\n@enduml\n",
+          type: "plantuml",
+        },
+        tmpRoot,
+      );
+      assert.equal(result.filesScanned, 1);
+      assert.deepEqual(issueNames(result), ["Ghost"]);
+    } finally {
+      await fs.chmod(locked, 0o644);
+    }
+  });
+
   it("matches TypeScript interfaces, types, functions, and TSX components", async () => {
     await writeFiles(tmpRoot, {
       "models.ts":

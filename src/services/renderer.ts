@@ -220,7 +220,7 @@ export function runCommand(
           stderr.length > MAX_RENDER_ERROR_CHARS
             ? `${stderr.slice(0, MAX_RENDER_ERROR_CHARS)}…`
             : stderr;
-        settleReject(new Error(detail || `Command exited with code ${code}`));
+        settleReject(new RenderError(detail || `Command exited with code ${code}`));
       }
     });
   });

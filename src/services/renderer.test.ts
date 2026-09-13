@@ -818,9 +818,8 @@ describe("renderer bounded child-process output", () => {
     await assert.rejects(
       runCommand(nodeCmd, ["-e", "process.stderr.write('diag-line');process.exit(3);"]),
       (err: unknown) => {
-        assert.ok(err instanceof Error);
-        assert.ok(!(err instanceof RenderError));
-        assert.equal(err.message, "diag-line");
+        assert.ok(err instanceof RenderError);
+        assert.equal((err as Error).message, "diag-line");
         return true;
       },
     );
@@ -832,9 +831,8 @@ describe("renderer bounded child-process output", () => {
     await assert.rejects(
       runCommand(nodeCmd, ["-e", "process.stderr.write('x'.repeat(2000));process.exit(3);"]),
       (err: unknown) => {
-        assert.ok(err instanceof Error);
-        assert.ok(!(err instanceof RenderError));
-        assert.ok(err.message.length <= MAX_RENDER_ERROR_CHARS + 1, `length=${err.message.length}`);
+        assert.ok(err instanceof RenderError);
+        assert.ok((err as Error).message.length <= MAX_RENDER_ERROR_CHARS + 1);
         return true;
       },
     );
