@@ -1,3 +1,40 @@
+# Release notes — 0.6.0
+
+`diagrams-mcp-server` v0.6.0 is a backward-compatible minor release: no MCP
+tool signature changes, no config changes. It sharpens consistency checking
+with a real TypeScript parser and kind-aware sequence-diagram existence
+checks. All findings stay `confidence: "heuristic"` evidence, never verdicts.
+
+## TypeScript AST analyzer layer
+
+- `.ts`/`.tsx` files now parse with the real TypeScript compiler API
+  (`typescript` ships as a runtime dependency so the layer is active in
+  packed installs, not just source checkouts).
+- A successful parse matches on declarations only (strict-on-parsed: the
+  whole-word fallback is skipped for that file); an unparseable file keeps
+  the previous regex behavior. Either way the matched/unmatched contract is
+  unchanged — the layer only widens what counts as evidence.
+
+## Sequence-diagram existence layer
+
+- Diagram entities are tagged by construct — participant, operation
+  (message call), or structural — and unmatched names report
+  construct-specific issue text instead of the generic message.
+- Structural entities (class diagrams and everything else) keep the
+  long-standing generic text byte-identical.
+- Known gap, locked by test: Java has no method-declaration patterns, so
+  method-only operations match via the whole-word fallback by design.
+
+## Verification status (this release)
+
+- `npm run build` (`tsc`): exit 0. `npm run lint` (zero warnings) and
+  `npm run format:check`: pass.
+- `npm test`: 222 tests across 58 suites — 221 passed, 0 failed,
+  1 skipped (the documented Java method-pattern gap). Numbers measured on
+  the release branch; rerun `npm run build` and `npm test` to re-verify.
+
+---
+
 # Release notes — V1 Preview / Technical Preview (0.1.0)
 
 `diagrams-mcp-server` v0.1.0 is a Technical Preview (V1 Preview): a local-first
