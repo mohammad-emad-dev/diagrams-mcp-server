@@ -34,3 +34,16 @@ export const PLANTUML_SERVER_URL =
 // Captured characters per renderer stream. Enforced while collecting,
 // so runaway output cannot grow memory without bound.
 export const MAX_RENDER_OUTPUT_CHARS = 1_000_000;
+
+// Largest PlantUML remote response kept in memory. Larger bodies are
+// discarded with an error before conversion, so a compromised server
+// cannot exhaust memory. See D-008.
+export const MAX_REMOTE_BODY_BYTES = 5_000_000;
+
+// Abort timeout for PlantUML remote requests. See D-008.
+export const REMOTE_FETCH_TIMEOUT_MS = 20_000;
+
+// Largest renderer stderr excerpt surfaced in an exit error. The full
+// stream stays capped by MAX_RENDER_OUTPUT_CHARS; tool output only ever
+// carries this prefix.
+export const MAX_RENDER_ERROR_CHARS = 500;

@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -9,6 +11,8 @@ import { DiagramStore } from "./diagramStore.js";
 import { registerDiagramsRender } from "../tools/diagramsRender.js";
 import {
   RenderError,
+  defaultFetchRemote,
+  encodePlantUmlForUrl,
   isRemotePlantUmlDisabled,
   renderDiagram,
   resolveSpawnTarget,
@@ -16,7 +20,12 @@ import {
   type RemoteRenderResponse,
   type RendererDeps,
 } from "./renderer.js";
-import { MAX_RENDER_OUTPUT_CHARS } from "../constants.js";
+import {
+  MAX_REMOTE_BODY_BYTES,
+  MAX_RENDER_ERROR_CHARS,
+  MAX_RENDER_OUTPUT_CHARS,
+  REMOTE_FETCH_TIMEOUT_MS,
+} from "../constants.js";
 
 const DISABLE_FLAG = "DISABLE_REMOTE_PLANTUML";
 const ALLOW_FLAG = "ALLOW_REMOTE_PLANTUML";
@@ -618,6 +627,121 @@ describe("quoteWindowsArg cmd.exe injection", () => {
   });
 });
 
+describe("remote fetch resilience", () => {
+  let savedFlag: string | undefined;
+  let savedAllow: string | undefined;
+
+  beforeEach(() => {
+    savedFlag = process.env[DISABLE_FLAG];
+    savedAllow = process.env[ALLOW_FLAG];
+  });
+
+  afterEach(() => {
+    setFlag(savedFlag);
+    setAllow(savedAllow);
+  });
+
+  it("exposes the remote caps as documented positive bounds", () => {
+    for (const cap of [MAX_REMOTE_BODY_BYTES, REMOTE_FETCH_TIMEOUT_MS, MAX_RENDER_ERROR_CHARS]) {
+      assert.ok(Number.isInteger(cap));
+      assert.ok(cap > 0);
+    }
+  });
+
+  it("times out a stalled PlantUML server instead of hanging", { timeout: 10_000 }, async () => {
+    // Arrange: a server that accepts the connection but never responds.
+    const server = http.createServer((_req, res) => {
+      const timer = setTimeout(() => {
+        try {
+          res.end("too-late");
+        } catch {
+          // Client already aborted; nothing left to answer.
+        }
+      }, 5000);
+      timer.unref();
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const port = (server.address() as AddressInfo).port;
+    try {
+      // Act + Assert: must reject with a bounded timeout error, not hang.
+      await assert.rejects(
+        defaultFetchRemote(`http://127.0.0.1:${port}/svg/abc`, 100),
+        (err: unknown) => {
+          assert.ok(err instanceof RenderError);
+          assert.match(err.message, /timed out/);
+          assert.ok(err.message.includes("100"));
+          assert.ok(!err.message.includes("127.0.0.1"));
+          return true;
+        },
+      );
+    } finally {
+      server.close();
+    }
+  });
+
+  it("rejects an over-cap Content-Length without reading the body", async () => {
+    setFlag(undefined);
+    setAllow("true");
+    let reads = 0;
+    const deps = offlineDeps(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        contentLength: MAX_REMOTE_BODY_BYTES + 1,
+        arrayBuffer: () => {
+          reads += 1;
+          return Promise.resolve(toArrayBuffer(REMOTE_SVG));
+        },
+      }),
+    );
+
+    await assert.rejects(renderDiagram(SECRET_SOURCE, "plantuml", "svg", deps), (err: unknown) => {
+      assert.ok(err instanceof RenderError);
+      assert.match(err.message, /exceeded/);
+      assert.ok(err.message.includes(String(MAX_REMOTE_BODY_BYTES)));
+      assert.ok(!err.message.includes("SecretWidgetDoodad"));
+      return true;
+    });
+    assert.equal(reads, 0);
+  });
+
+  it("rejects an over-cap body even when Content-Length is absent", async () => {
+    setFlag(undefined);
+    setAllow("true");
+    const big = Buffer.alloc(MAX_REMOTE_BODY_BYTES + 1, 0x61);
+    const deps = offlineDeps(() => Promise.resolve(okRemote(big)));
+
+    await assert.rejects(renderDiagram(SECRET_SOURCE, "plantuml", "svg", deps), (err: unknown) => {
+      assert.ok(err instanceof RenderError);
+      assert.match(err.message, /exceeded/);
+      assert.ok(err.message.includes(String(MAX_REMOTE_BODY_BYTES)));
+      assert.ok(!err.message.includes("SecretWidgetDoodad"));
+      return true;
+    });
+  });
+});
+
+describe("plantuml url encoding", () => {
+  it("encodes off the event loop instead of blocking it", async () => {
+    // Arrange: the encoder must be async so huge sources never stall the server.
+    // Act:
+    const result = encodePlantUmlForUrl(SECRET_SOURCE) as unknown;
+
+    // Assert:
+    assert.ok(result instanceof Promise, "expected encodePlantUmlForUrl to return a promise");
+    assert.equal(typeof (await result), "string");
+  });
+
+  it("keeps the PlantUML URL encoding byte-identical", async () => {
+    // Arrange: golden captured from the sync implementation before the change.
+    // Act:
+    const encoded = await encodePlantUmlForUrl("@startuml\nclass GoldenWidget\n@enduml\n");
+
+    // Assert:
+    assert.equal(encoded, "SoWkIImgAStDuKhEIImkLd3Fpqb9pGlFJ4bFBU5oICrB0Ka100");
+  });
+});
+
 describe("renderer bounded child-process output", () => {
   const nodeCmd = process.execPath;
 
@@ -697,6 +821,20 @@ describe("renderer bounded child-process output", () => {
         assert.ok(err instanceof Error);
         assert.ok(!(err instanceof RenderError));
         assert.equal(err.message, "diag-line");
+        return true;
+      },
+    );
+  });
+
+  it("truncates huge renderer stderr in the exit error", async () => {
+    // Arrange: a failing renderer flooding stderr (2_000 chars).
+    // Act + Assert: tool output must carry only a bounded prefix.
+    await assert.rejects(
+      runCommand(nodeCmd, ["-e", "process.stderr.write('x'.repeat(2000));process.exit(3);"]),
+      (err: unknown) => {
+        assert.ok(err instanceof Error);
+        assert.ok(!(err instanceof RenderError));
+        assert.ok(err.message.length <= MAX_RENDER_ERROR_CHARS + 1, `length=${err.message.length}`);
         return true;
       },
     );
