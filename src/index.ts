@@ -68,7 +68,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: "diagrams-mcp-server",
-    version: "0.5.2",
+    version: "0.6.0",
   });
 
   registerDiagramsList(server, ctx);
