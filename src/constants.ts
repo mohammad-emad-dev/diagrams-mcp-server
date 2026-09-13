@@ -47,3 +47,8 @@ export const REMOTE_FETCH_TIMEOUT_MS = 20_000;
 // stream stays capped by MAX_RENDER_OUTPUT_CHARS; tool output only ever
 // carries this prefix.
 export const MAX_RENDER_ERROR_CHARS = 500;
+
+// Largest file prefix scanned for a diagram title during list(). Titles
+// past the window read as null; a title line cut at the window edge keeps
+// a "…"-prefixed excerpt instead of passing as the exact title. See D-007.
+export const MAX_TITLE_SCAN_BYTES = 8_192;
