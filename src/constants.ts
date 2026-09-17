@@ -63,3 +63,16 @@ export const MAX_GENERATE_ENTITIES = 60;
 // were dropped by the entity cap are excluded too (a diagram must never
 // reference a box it does not declare); both drops count as relations_capped.
 export const MAX_GENERATE_RELATIONS = 60;
+
+// Largest participant list diagrams_generate_sequence declares. A sequence
+// diagram names the parties to a conversation, so the cap bounds how many
+// files become boxes. The input schema's own max_participants (1-20) is
+// bounded by this ceiling; anything past the cap is counted in
+// participants_available and flagged by participants_capped.
+export const MAX_SEQUENCE_PARTICIPANTS = 20;
+
+// Largest message list diagrams_generate_sequence emits. Messages are ordered
+// call sites, so this bounds the conversation length independently of the
+// participant cap; a message whose endpoint the participant cap removed is
+// dropped too (never a message to an undeclared box) and counts as capped.
+export const MAX_SEQUENCE_MESSAGES = 50;
