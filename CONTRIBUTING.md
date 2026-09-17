@@ -59,7 +59,7 @@ The bar for calling a language reliable is representative fixtures, documented l
 
 ## Adding or modifying an MCP tool
 
-The eight tools (`diagrams_list`, `diagrams_get`, `diagrams_create`, `diagrams_update`, `diagrams_delete`, `diagrams_render`, `diagrams_check_consistency`, `diagrams_generate`) each live in their own file under `src/tools/`, as a `registerDiagramsX(server, ctx)` function. `src/index.ts` wires them up, and `src/context.ts` builds the shared `ServerContext` once at startup.
+The nine tools (`diagrams_list`, `diagrams_get`, `diagrams_create`, `diagrams_update`, `diagrams_delete`, `diagrams_render`, `diagrams_check_consistency`, `diagrams_generate`, `diagrams_diff`) each live in their own file under `src/tools/`, as a `registerDiagramsX(server, ctx)` function. `src/index.ts` wires them up, and `src/context.ts` builds the shared `ServerContext` once at startup.
 
 For a new or changed tool:
 
