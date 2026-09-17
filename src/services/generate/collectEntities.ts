@@ -20,14 +20,13 @@ import {
   stripCommentsAndStrings,
 } from "../consistencyChecker/codeAnalysis.js";
 import {
-  collectCodeFiles,
   GENERATE_SCAN_TRUNCATED_WARNING,
-  isCodeExtension,
   mapWithConcurrency,
   MAX_SCAN_CONCURRENCY,
   MAX_SCAN_FILE_BYTES,
   MAX_SCAN_FILES,
 } from "../consistencyChecker/scanning.js";
+import { listScopeFiles } from "./scopeFiles.js";
 
 /** One directed edge in the generated diagram. */
 export interface RelationEdge {
@@ -103,6 +102,10 @@ const NO_TS_FILES_NOTE =
   "relations unavailable: no TypeScript-family files in the scanned scope; " +
   "relations are read from TypeScript extends/implements clauses only";
 
+function isNodeError(err: unknown): err is NodeJS.ErrnoException {
+  return err instanceof Error && "code" in err;
+}
+
 /** Empty result for a scope with no code files; fresh object per caller. */
 function emptyResult(): EntityCollectionResult {
   return {
@@ -119,33 +122,6 @@ function emptyResult(): EntityCollectionResult {
     dialectNote: EMPTY_SCOPE_NOTE,
     tsAstAvailable: false,
   };
-}
-
-function isNodeError(err: unknown): err is NodeJS.ErrnoException {
-  return err instanceof Error && "code" in err;
-}
-
-/** Scope target: one file, a directory walk, or nothing when missing. */
-async function listScopeFiles(scopePath: string): Promise<{ files: string[]; truncated: boolean }> {
-  let stat;
-  try {
-    stat = await fs.stat(scopePath);
-  } catch (err: unknown) {
-    // A missing or unreadable scope is not an error: it yields an empty
-    // result with a note. Anything else (I/O failure) must surface.
-    const skippable =
-      isNodeError(err) && (err.code === "ENOENT" || err.code === "EACCES" || err.code === "EPERM");
-    if (skippable) return { files: [], truncated: false };
-    throw err;
-  }
-  if (stat.isFile()) {
-    const scoped = isCodeExtension(path.extname(scopePath).toLowerCase()) ? [scopePath] : [];
-    return { files: scoped, truncated: false };
-  }
-  if (stat.isDirectory()) {
-    return collectCodeFiles(scopePath, MAX_SCAN_FILES);
-  }
-  return { files: [], truncated: false };
 }
 
 /** Read and analyze one file; null when unreadable, oversized, or unparseable. */

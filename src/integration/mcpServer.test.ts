@@ -16,6 +16,7 @@ const EXPECTED_TOOLS = [
   "diagrams_delete",
   "diagrams_diff",
   "diagrams_generate",
+  "diagrams_generate_sequence",
   "diagrams_get",
   "diagrams_list",
   "diagrams_render",
@@ -28,6 +29,13 @@ const DIAGRAM_V1 =
 const DIAGRAM_V2 =
   "@startuml\ntitle Widget Model\nclass Widget {\n  +id: int\n  +label: string\n}\nclass GhostWidget {\n  +id: int\n}\n@enduml\n";
 const CODE_FIXTURE = "export class Widget {\n  id: number;\n}\n";
+
+// A second, separate code fixture: the sequence tool needs a caller and a
+// callee in different files, but the class-diagram test above asserts
+// files_scanned === 1 on src-code, so the pair lives in its own directory.
+const SEQUENCE_CALLER =
+  "import { charge } from './payment.js';\n\nexport function checkout() {\n  charge();\n}\n";
+const SEQUENCE_CALLEE = "export function charge() {\n  return 1;\n}\n";
 
 interface McpToolContent {
   type: string;
@@ -53,6 +61,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
   let projectRoot = "";
   let diagramsDir = "";
   let codeFixturePath = "";
+  let sequenceCallerPath = "";
   let client: Client | undefined;
 
   function getClient(): Client {
@@ -76,6 +85,12 @@ describe("MCP stdio integration (dist/index.js)", () => {
     codeFixturePath = path.join(projectRoot, "src-code", "widget.ts");
     await fs.mkdir(path.dirname(codeFixturePath), { recursive: true });
     await fs.writeFile(codeFixturePath, CODE_FIXTURE, "utf-8");
+
+    sequenceCallerPath = path.join(projectRoot, "src-sequence", "checkout.ts");
+    const sequenceCalleePath = path.join(projectRoot, "src-sequence", "payment.ts");
+    await fs.mkdir(path.dirname(sequenceCallerPath), { recursive: true });
+    await fs.writeFile(sequenceCallerPath, SEQUENCE_CALLER, "utf-8");
+    await fs.writeFile(sequenceCalleePath, SEQUENCE_CALLEE, "utf-8");
 
     const serverPath = path.join(process.cwd(), "dist", "index.js");
     await fs.access(serverPath);
@@ -113,7 +128,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 9 tools", async () => {
+  it("discovers all 10 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });
@@ -457,6 +472,93 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal(await fs.readFile(codeFixturePath, "utf-8"), CODE_FIXTURE);
     const stored = await callTool("diagrams_list", { type_filter: "all" });
     assert.equal((stored.structuredContent as { count: number }).count, 1);
+  });
+
+  it("generates a sequence diagram from the two-file call flow", async () => {
+    // Snapshot the diagram count first: generation is read-only, so the
+    // sequence tool must not add anything to the diagrams directory.
+    const before = await callTool("diagrams_list", { type_filter: "all" });
+    const beforeCount = (before.structuredContent as { count: number }).count;
+
+    const result = await callTool("diagrams_generate_sequence", { scope: "src-sequence" });
+
+    assert.equal(result.isError, undefined);
+    const structured = result.structuredContent as {
+      scope: string;
+      format: string;
+      source: string;
+      participants: string[];
+      participants_included: number;
+      participants_available: number;
+      participants_capped: boolean;
+      participant_limit: number;
+      messages: Array<{
+        from: string;
+        to: string;
+        message: string;
+        line: number;
+        via_callback: boolean;
+      }>;
+      messages_included: number;
+      messages_available: number;
+      messages_capped: boolean;
+      message_limit: number;
+      deferred_count: number;
+      unresolved_callees: string[];
+      files_scanned: number;
+      truncated: boolean;
+      scan_limit: number;
+      scan_warning: string | null;
+      confidence: string;
+      heuristic_warning: string;
+      written: boolean;
+    };
+    assertPosixPath(structured.scope, "generated sequence scope");
+    assert.equal(structured.scope, "src-sequence");
+    assert.equal(structured.format, "puml");
+    assert.equal(structured.files_scanned, 2);
+    assert.equal(structured.deferred_count, 0);
+    assert.deepEqual(structured.unresolved_callees, []);
+    assert.equal(structured.confidence, "heuristic");
+    assert.equal(structured.written, false);
+    assert.ok(structured.heuristic_warning.length > 0);
+    assert.ok(
+      structured.heuristic_warning.includes("not runtime order"),
+      "the warning must say static order is not runtime order",
+    );
+
+    // The conversation: checkout calls charge, which payment.ts declares.
+    assert.ok(structured.participants.length > 0, "participants must not be empty");
+    assert.equal(structured.participants_included, structured.participants.length);
+    assert.equal(structured.participants_available, structured.participants.length);
+    assert.equal(structured.participants_capped, false);
+    assert.equal(structured.participant_limit, 8);
+    assert.equal(structured.messages.length, 1);
+    assert.equal(structured.messages_included, 1);
+    assert.equal(structured.messages_available, 1);
+    assert.equal(structured.messages_capped, false);
+    assert.equal(structured.message_limit, 20);
+    const first = structured.messages[0];
+    assert.ok(
+      structured.participants.includes(first.from),
+      `from '${first.from}' must be a declared participant`,
+    );
+    assert.ok(
+      structured.participants.includes(first.to),
+      `to '${first.to}' must be a declared participant`,
+    );
+    assert.equal(first.message, "charge");
+    assert.equal(first.via_callback, false);
+
+    // The text block is the emitted source, and it carries the same message.
+    assert.equal(textOf(result), structured.source);
+    assert.ok(textOf(result).includes("@startuml"));
+    assert.ok(textOf(result).includes(`${first.from} -> ${first.to} : charge`));
+
+    // Read-only: nothing was written and the fixtures are untouched.
+    const after = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((after.structuredContent as { count: number }).count, beforeCount);
+    assert.equal(await fs.readFile(sequenceCallerPath, "utf-8"), SEQUENCE_CALLER);
   });
 
   it("diffs a stored diagram against inline previous-version text", async () => {

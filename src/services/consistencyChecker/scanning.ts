@@ -60,6 +60,10 @@ export const GENERATE_SCAN_TRUNCATED_WARNING =
   "Scan reached the 5,000-file limit and stopped early; generated entities may be incomplete. " +
   "Narrow the scanned scope or split the generation to cover the rest.";
 
+export const SEQUENCE_SCAN_TRUNCATED_WARNING =
+  "Scan reached the 5,000-file limit and stopped early; generated messages may be incomplete. " +
+  "Narrow the scanned scope or split the generation to cover the rest.";
+
 /** Map inputs through an async worker with bounded concurrency, order-preserving. */
 export async function mapWithConcurrency<T, R>(
   inputs: T[],

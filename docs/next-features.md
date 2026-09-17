@@ -370,29 +370,29 @@ read-only, dependency-free, capped.
 
 **Acceptance checklist**
 
-- [ ] `src/tools/diagramsGenerateSequence.ts` exists and is registered in
+- [x] `src/tools/diagramsGenerateSequence.ts` exists and is registered in
       `src/index.ts`; the tool description states up front that static call
       order is not runtime order.
-- [ ] `max_participants` (`1`–`20`) and `max_messages` (`1`–`50`) are enforced by
+- [x] `max_participants` (`1`–`20`) and `max_messages` (`1`–`50`) are enforced by
       the zod schema, and both bounds appear in the tool description and README.
-- [ ] `MAX_SEQUENCE_PARTICIPANTS` and `MAX_SEQUENCE_MESSAGES` constants are added
+- [x] `MAX_SEQUENCE_PARTICIPANTS` and `MAX_SEQUENCE_MESSAGES` constants are added
       to `src/constants.ts` with explanatory comments.
-- [ ] A call site with `via_callback: true` is never emitted as an ordered
+- [x] A call site with `via_callback: true` is never emitted as an ordered
       message; it is counted in `deferred_count` (asserted against a fixture
       containing a `setTimeout`/`.then(` call).
-- [ ] Callees with no matching declared participant appear in
+- [x] Callees with no matching declared participant appear in
       `unresolved_callees` and are emitted as self-messages or skipped — never
       as an invented participant.
-- [ ] Participant names containing characters illegal in a sequence participant
+- [x] Participant names containing characters illegal in a sequence participant
       are sanitized or quoted per dialect, and the emitted source still passes
       `validateDiagramSource`.
-- [ ] `written` is always `false`; a test asserts no new file exists under
+- [x] `written` is always `false`; a test asserts no new file exists under
       `PROJECT_ROOT` after a call.
-- [ ] Scope rejection reuses the exact typed error and message as feature 1
+- [x] Scope rejection reuses the exact typed error and message as feature 1
       (shared resolver, not a second implementation).
-- [ ] `README.md` gains a table row and mentions the roadmap item this delivers;
+- [x] `README.md` gains a table row and mentions the roadmap item this delivers;
       `EXPECTED_TOOLS` and the discovery test are updated.
-- [ ] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
+- [x] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
       pass; `node dist/index.js --help` exits 0.
 
 **Test plan**
