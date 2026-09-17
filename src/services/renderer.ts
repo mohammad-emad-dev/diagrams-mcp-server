@@ -106,14 +106,16 @@ async function runLocalCommand(
 // Quote one argv element for the Windows command interpreter.
 // Dual-layer quoting: MSVC C-runtime first, then cmd.exe. Safe chars pass
 // through; everything else is wrapped in double quotes so & | < > ^ stay
-// literal. Embedded quotes become \" (not ""), trailing backslashes double,
-// and % doubles to block %VAR% expansion inside quotes.
+// literal. Embedded quotes become \" (not ""), trailing backslashes double.
+// % is deliberately NOT doubled: inside a quoted argument cmd.exe expands
+// %VAR% regardless, so doubling only corrupts literal percent signs
+// ("100%" -> "100%%") without buying any protection. The line is handed to
+// cmd.exe verbatim (see runCommand), so no escaping of % is possible here.
 function quoteWindowsArg(arg: string): string {
   if (arg.length === 0) return '""';
   if (/^[A-Za-z0-9_\-./:\\]+$/.test(arg)) return arg;
   let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
   escaped = escaped.replace(/(\\+)$/, "$1$1");
-  escaped = escaped.replace(/%/g, "%%");
   return `"${escaped}"`;
 }
 
@@ -152,8 +154,20 @@ export function runCommand(
   timeoutMs = 20_000,
 ): Promise<{ stdout: string; stderr: string }> {
   const target = resolveSpawnTarget(cmd, args);
+  // When resolveSpawnTarget wrapped a .cmd/.bat shim it hand-quoted the
+  // /c line; libuv must pass it through untouched or it re-quotes the
+  // already-quoted path and splits every argument containing a space
+  // (C:\sub dir\in.mmd arrives as three fragments with literal quotes).
+  // Gated on the wrapped case only: a real executable (mmdc.exe) still
+  // needs libuv's own quoting for its spaced arguments.
+  const interpreter = process.env.ComSpec ?? "cmd.exe";
+  const usesInterpreter = process.platform === "win32" && target.cmd === interpreter;
   return new Promise((resolve, reject) => {
-    const child = spawn(target.cmd, target.args);
+    const child = spawn(
+      target.cmd,
+      target.args,
+      usesInterpreter ? { windowsVerbatimArguments: true } : {},
+    );
     let stdout = "";
     let stderr = "";
     let settled = false;

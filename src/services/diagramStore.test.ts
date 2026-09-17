@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { DiagramExistsError, DiagramStore, PathTraversalError } from "./diagramStore.js";
+import {
+  DiagramExistsError,
+  DiagramStore,
+  PathTraversalError,
+  UnsupportedDiagramExtensionError,
+} from "./diagramStore.js";
 import { MAX_TITLE_SCAN_BYTES } from "../constants.js";
 
 const OUTSIDE_CONTENT = "external secret content 7f3a9c";
@@ -180,6 +186,154 @@ describe("DiagramStore atomic create", () => {
     await assert.rejects(
       store.exists("blocker/child.puml"),
       (err: unknown) => isErrno(err) && err.code === "ENOTDIR",
+    );
+  });
+});
+
+describe("DiagramStore extension gate on every mutating path", () => {
+  let diagramsRoot: string;
+  let store: DiagramStore;
+
+  beforeEach(async () => {
+    diagramsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-gate-"));
+    store = new DiagramStore(diagramsRoot);
+  });
+
+  afterEach(async () => {
+    await fs.rm(diagramsRoot, { recursive: true, force: true });
+  });
+
+  it("refuses to delete a non-diagram file and leaves it on disk", async () => {
+    // Arrange: a file the store may read neither by extension nor content.
+    const notePath = path.join(diagramsRoot, "notes.txt");
+    await fs.writeFile(notePath, "important notes 41c9", "utf-8");
+
+    // Act + Assert: read already refuses; delete must refuse too.
+    await assert.rejects(store.read("notes.txt"), UnsupportedDiagramExtensionError);
+    await assert.rejects(store.delete("notes.txt"), UnsupportedDiagramExtensionError);
+
+    // Assert: the file is still there, byte-for-byte.
+    assert.equal(await fs.readFile(notePath, "utf-8"), "important notes 41c9");
+  });
+
+  it("refuses exists() on a non-diagram path instead of reporting it as free", async () => {
+    // Arrange: a non-diagram file in the root.
+    await fs.writeFile(path.join(diagramsRoot, "readme.md"), "# notes", "utf-8");
+
+    // Act + Assert: exists() throws rather than returning false. Returning
+    // false would imply write() could create the file there, which it also
+    // refuses — the two must agree.
+    await assert.rejects(store.exists("readme.md"), UnsupportedDiagramExtensionError);
+
+    // Assert: untouched.
+    assert.equal(await fs.readFile(path.join(diagramsRoot, "readme.md"), "utf-8"), "# notes");
+  });
+
+  it("still deletes and reports genuine diagram files", async () => {
+    // Arrange: a real diagram plus a non-diagram neighbour.
+    await store.write("models/order.puml", DIAGRAM_CONTENT, { overwrite: false });
+    await fs.writeFile(path.join(diagramsRoot, "models", "notes.txt"), "keep me", "utf-8");
+
+    // Act: the diagram deletes cleanly; the note still cannot.
+    await store.delete("models/order.puml");
+    await assert.rejects(store.delete("models/notes.txt"), UnsupportedDiagramExtensionError);
+
+    // Assert: only the diagram is gone.
+    assert.equal(
+      await fs.readFile(path.join(diagramsRoot, "models", "notes.txt"), "utf-8"),
+      "keep me",
+    );
+    await assert.rejects(store.read("models/order.puml"));
+  });
+});
+
+describe("DiagramStore atomic overwrite", () => {
+  let diagramsRoot: string;
+  let store: DiagramStore;
+
+  beforeEach(async () => {
+    diagramsRoot = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-atomic-"));
+    store = new DiagramStore(diagramsRoot);
+  });
+
+  afterEach(async () => {
+    await fs.rm(diagramsRoot, { recursive: true, force: true });
+  });
+
+  // Lists the temp files a write leaves behind, so a failed write can be
+  // proven to clean up after itself.
+  async function tempFiles(): Promise<string[]> {
+    const entries = await fs.readdir(diagramsRoot);
+    return entries.filter((name) => name.startsWith(".diagrams-mcp-tmp-"));
+  }
+
+  it("overwrites an existing diagram without truncating it first", async () => {
+    // Arrange: a 29-byte original (the size that reproduced the data loss).
+    const original = "@startuml\nclass Original\n@enduml\n";
+    await store.write("flow.puml", original, { overwrite: false });
+    assert.equal((await fs.stat(path.join(diagramsRoot, "flow.puml"))).size, original.length);
+
+    // Act: a write whose content lands.
+    const next = "@startuml\nclass Replaced\n@enduml\n";
+    await store.write("flow.puml", next, { overwrite: true });
+
+    // Assert: whole new content, no temp debris.
+    const { content: replaced } = await store.read("flow.puml");
+    assert.equal(replaced, next);
+    assert.deepEqual(await tempFiles(), []);
+  });
+
+  it("leaves the original intact when the write fails mid-way", async () => {
+    // Arrange: the original that must survive an injected I/O failure.
+    const original = "@startuml\nclass Original\n@enduml\n";
+    await store.write("flow.puml", original, { overwrite: false });
+
+    // Act: make the temp write fail after the file is created, the point
+    // where O_TRUNC had already zeroed the target before the fix.
+    const originalOpen = fs.open.bind(fs);
+    const failingHandle = {
+      writeFile: async () => {
+        throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+      },
+      close: async () => {
+        /* closed by the store's cleanup path */
+      },
+    } as unknown as FileHandle;
+    type Open = typeof fs.open;
+    const fakeOpen = ((...args: Parameters<Open>) => {
+      const opened = typeof args[0] === "string" ? args[0] : String(args[0]);
+      if (opened.includes(".diagrams-mcp-tmp-")) {
+        return Promise.resolve(failingHandle);
+      }
+      return originalOpen(...args);
+    }) as Open;
+    (fs as { open: Open }).open = fakeOpen;
+    try {
+      await assert.rejects(
+        store.write("flow.puml", "@startuml\nclass Lost\n@enduml\n", { overwrite: true }),
+        (err: unknown) => err instanceof Error && err.message.includes("ENOSPC"),
+      );
+    } finally {
+      (fs as { open: Open }).open = originalOpen as unknown as Open;
+    }
+
+    // Assert: the original is fully intact — not 0 bytes, not truncated.
+    const { content: survivor } = await store.read("flow.puml");
+    assert.equal(survivor, original);
+    assert.equal((await fs.stat(path.join(diagramsRoot, "flow.puml"))).size, original.length);
+    assert.deepEqual(await tempFiles(), []);
+  });
+
+  it("still creates a missing file on overwrite and keeps atomic create exclusive", async () => {
+    // Act + Assert: overwrite:true onto a path that does not exist yet.
+    await store.write("new.puml", DIAGRAM_CONTENT, { overwrite: true });
+    const { content: created } = await store.read("new.puml");
+    assert.equal(created, DIAGRAM_CONTENT);
+
+    // Act + Assert: the atomic-create path still refuses a second writer.
+    await assert.rejects(
+      store.write("new.puml", DIAGRAM_CONTENT, { overwrite: false }),
+      DiagramExistsError,
     );
   });
 });
