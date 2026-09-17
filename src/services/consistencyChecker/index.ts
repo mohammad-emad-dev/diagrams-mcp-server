@@ -17,6 +17,7 @@ import type {
   DiagramType,
 } from "../../types.js";
 import { extractEntities } from "./entities.js";
+import { normalizeForMatch } from "../nameNormalize.js";
 import {
   analyzerTierForExtension,
   extractDeclaredIdentifiers,
@@ -45,11 +46,6 @@ const HEURISTIC_WARNING =
   "to whole-word occurrence, case/separator-insensitive comparison, and " +
   "file-basename comparison, so an incidental reference can count as a match. " +
   "Treat results as evidence, not a definitive verdict.";
-
-/** Lowercase, separator-free form for lenient matching. */
-function normalizeForMatch(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
 
 /** Whole-word pattern for one name, plus its declaration-like usages. */
 function buildDeclarationPattern(name: string): RegExp {

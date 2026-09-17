@@ -33,10 +33,13 @@ I built this after running into the same problem while using AI to work on softw
 | `diagrams_render` | Render a diagram to SVG/PNG |
 | `diagrams_check_consistency` | **Compare class/interface/component names in a diagram against your actual codebase** and flag anything that looks outdated |
 | `diagrams_generate` | **Draft a PlantUML or Mermaid class diagram from a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
+| `diagrams_diff` | **Compare two diagram sources — two stored files, or a stored file against inline text — and report added, removed, and renamed entity names** |
 
 `diagrams_check_consistency` is a dependency-free heuristic, not a full semantic or AST analysis. It reads entity names from `class`/`interface`/`enum`/`component` declarations, aliases, namespaces, packages, sequence participants, message calls such as `charge(card)`, C4 blocks, and subgraph groupings. It then searches source files for matching identifiers, using declaration patterns for JavaScript/TypeScript, Python, PHP, and Java, and whole-word matching elsewhere. It helps detect common drift, such as a renamed or removed class or a component that has not been implemented. Structured output includes extracted, matched, and unmatched entities, per-entity file evidence, analyzer tiers, and an explicit heuristic confidence warning. The scan limits are listed under [Consistency scan limits](#consistency-scan-limits).
 
 `diagrams_generate` is the generative flip side of that check: it reads the same declarations from a file or directory under your project root and drafts a class diagram from them — one box per declared name, plus `extends`/`implements` edges when the TypeScript compiler can evidence them. It is read-only and **never writes**: the source text comes back in the response, and nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call. It is a heuristic (name extraction, not full type modeling): member lists, generics, namespace nesting, and cross-file inheritance through re-exports are out of scope, and a scope without TypeScript-family files yields entities with no relations and a `dialect_note` saying why. Every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, and every cap reports itself in-band (`entities_capped` / `entities_available` / `relations_capped` / `truncated`), so a capped draft is never mistaken for a complete one. The generation limits are listed under [Generation limits](#generation-limits).
+
+`diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
 
 ## Pagination and source windows
 
@@ -386,6 +389,18 @@ Every `diagrams_generate` run observes these caps. `max_entities` (1–60, defau
 
 When the TypeScript compiler is not installed (published installs have no `typescript` dependency), the tool degrades openly instead of failing: entities still come from declaration patterns, `relations` is empty, and `dialect_note` says relations are unavailable.
 
+### Diff scope
+
+`diagrams_diff` reports, and never silently drops a change — but it deliberately compares less than a differencing tool can:
+
+| Compared | Not compared |
+|---|---|
+| Declared class/interface/enum/component names, aliases, namespaces, participants, and message calls | Member lists, attributes, and method signatures |
+| Added, removed, and renamed names (renames paired by the shared name normalizer) | Layout, position, ordering, styling, and theme |
+| Sequence participants and message calls, per dialect | Cross-file or cross-diagram references and resolved types |
+
+The tool has no caps of its own: both sides are already bounded by the two sources being compared, so every added, removed, and renamed name is reported in full. It reads nothing outside the diagrams root, and input-shape errors (a side given both or neither of its path and content, or inline content in no recognized dialect) are reported before any file is opened.
+
 ## Example
 
 ```
@@ -422,7 +437,8 @@ src/
 │   └── terminal.ts                # Banner, boxes, color
 ├── services/
 │   ├── diagramStore.ts            # Safe filesystem CRUD (path-traversal protected)
-│   ├── diagramValidator.ts        # PlantUML/Mermaid syntax checks
+│   ├── diagramValidator.ts        # PlantUML/Mermaid syntax checks and dialect detection
+│   ├── nameNormalize.ts           # Shared lenient name normalizer (checker + diff)
 │   ├── renderer.ts                # Mermaid/PlantUML -> SVG/PNG rendering
 │   ├── scopeResolve.ts            # Bounds read-only tool scopes to PROJECT_ROOT
 │   ├── consistencyChecker/        # Diagram <-> code drift detection
@@ -431,6 +447,8 @@ src/
 │   │   ├── codeAnalysis.ts        # Per-language declaration patterns
 │   │   ├── scanning.ts            # Filesystem walk with scan limits
 │   │   └── ts/                    # Optional TypeScript AST path (dynamic import)
+│   ├── diff/                      # diagrams_diff comparison
+│   │   └── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
 │   └── generate/                  # diagrams_generate entity collection and emitters
 │       ├── collectEntities.ts     # Scan a scope into ordered entities + relations
 │       └── emitters.ts            # Pure PlantUML/Mermaid class-diagram emitters
@@ -447,6 +465,7 @@ test files need adding there.
 
 -   All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected. Windows-style `\` separators work as path separators on every platform, so `..\..` traversal is rejected on Linux too.
 - `diagrams_check_consistency` and `diagrams_generate` only *read* your codebase — they never modify code or diagrams. `diagrams_generate` resolves its `scope` against `PROJECT_ROOT` and refuses (without reading anything) any path that would land outside it; its output is source text you save yourself with `diagrams_create`.
+- `diagrams_diff` is read-only too: stored sides are read through the same traversal-protected store as `diagrams_get`, inline sides never touch the filesystem at all, and input-shape errors are reported before any file is opened. Errors and logs never include diagram source, only the names being reported.
 - No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
 - Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
 

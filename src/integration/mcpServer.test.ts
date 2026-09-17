@@ -14,6 +14,7 @@ const EXPECTED_TOOLS = [
   "diagrams_check_consistency",
   "diagrams_create",
   "diagrams_delete",
+  "diagrams_diff",
   "diagrams_generate",
   "diagrams_get",
   "diagrams_list",
@@ -112,7 +113,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 8 tools", async () => {
+  it("discovers all 9 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });
@@ -456,6 +457,85 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal(await fs.readFile(codeFixturePath, "utf-8"), CODE_FIXTURE);
     const stored = await callTool("diagrams_list", { type_filter: "all" });
     assert.equal((stored.structuredContent as { count: number }).count, 1);
+  });
+
+  it("diffs a stored diagram against inline previous-version text", async () => {
+    // Create, update, then diff: the stored v2 gains a whole class, which is
+    // the level the tool compares (members are out of scope), so the diff of
+    // the stored v2 against v1 as inline text must surface it as added.
+    const diffPath = "models/diff-demo.puml";
+    const diffV1 = "@startuml\nclass Widget\nclass GhostWidget\n@enduml\n";
+    const diffV2 = "@startuml\nclass Widget\nclass GhostWidget\nclass Invoice\n@enduml\n";
+    await callTool("diagrams_create", { relative_path: diffPath, content: diffV1 });
+    await callTool("diagrams_update", { relative_path: diffPath, content: diffV2 });
+
+    const result = await callTool("diagrams_diff", {
+      a_content: diffV1,
+      b_relative_path: diffPath,
+    });
+
+    assert.equal(result.isError, undefined);
+    const structured = result.structuredContent as {
+      a: { source: string; type: string };
+      b: { source: string; type: string };
+      added: Array<{ name: string }>;
+      removed: Array<{ name: string }>;
+      renamed: Array<{ from: string; to: string; confidence: string }>;
+      unchanged: string[];
+      unchanged_count: number;
+      participants_added: string[];
+      calls_added: string[];
+      is_same: boolean;
+      confidence: string;
+      heuristic_warning: string;
+    };
+    assert.equal(structured.a.source, "<inline>");
+    assert.equal(structured.a.type, "plantuml");
+    assert.equal(structured.b.source, diffPath);
+    assertPosixPath(structured.b.source, "diff b source");
+    assert.deepEqual(structured.added, [{ name: "Invoice" }]);
+    assert.deepEqual(structured.removed, []);
+    assert.deepEqual(structured.renamed, []);
+    assert.deepEqual(structured.unchanged, ["Widget", "GhostWidget"]);
+    assert.equal(structured.unchanged_count, 2);
+    assert.deepEqual(structured.participants_added, []);
+    assert.deepEqual(structured.calls_added, []);
+    assert.equal(structured.is_same, false);
+    assert.equal(structured.confidence, "heuristic");
+    assert.ok(structured.heuristic_warning.length > 0);
+    assert.ok(textOf(result).includes("Invoice"));
+
+    await callTool("diagrams_delete", { relative_path: diffPath });
+  });
+
+  it("reports a member-only change as identical because members are out of scope", async () => {
+    // DIAGRAM_PATH holds V2 at this point; V1 differs from it only by one
+    // member line. The diff compares declared names, so it reports no change.
+    const result = await callTool("diagrams_diff", {
+      a_content: DIAGRAM_V1,
+      b_relative_path: DIAGRAM_PATH,
+    });
+
+    assert.equal(result.isError, undefined);
+    const structured = result.structuredContent as {
+      added: unknown[];
+      removed: unknown[];
+      renamed: unknown[];
+      is_same: boolean;
+    };
+    assert.deepEqual(structured.added, []);
+    assert.deepEqual(structured.removed, []);
+    assert.deepEqual(structured.renamed, []);
+    assert.equal(structured.is_same, true);
+    assert.match(textOf(result), /No differences/i);
+  });
+
+  it("rejects diagrams_diff sides that supply neither path nor content", async () => {
+    const result = await callTool("diagrams_diff", {});
+
+    assert.equal(result.isError, true);
+    assert.match(textOf(result), /side 'a'/);
+    assert.match(textOf(result), /side 'b'/);
   });
 
   it("deletes the diagram and leaves the codebase fixture untouched", async () => {

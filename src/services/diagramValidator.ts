@@ -189,3 +189,26 @@ export function validateDiagramSource(content: string, type: DiagramType): void 
   }
   validateMermaid(content);
 }
+
+// Detect the dialect from source alone, for the case where no file extension
+// pins it (an inline diagrams_diff side). PlantUML is checked first: a
+// Mermaid source has no reason to contain either boundary, while a PlantUML
+// source always does. Null means "not recognizable", so callers report an
+// input-shape error instead of guessing; detection deliberately never returns
+// a type for a source validateDiagramSource would reject.
+export function detectDiagramType(content: string): DiagramType | null {
+  if (typeof content !== "string") return null;
+  const lowered = content.toLowerCase();
+  const startIndex = lowered.indexOf(PLANTUML_START);
+  const endIndex = lowered.indexOf(PLANTUML_END);
+  // Both boundaries, in order. Reversed boundaries fail validation, so they
+  // must not detect as PlantUML either.
+  if (startIndex !== -1 && endIndex > startIndex) {
+    return "plantuml";
+  }
+  const meaningful = firstMeaningfulMermaidLines(content);
+  if (meaningful.length > 0 && isKnownMermaidStarter(mermaidFirstToken(meaningful[0]))) {
+    return "mermaid";
+  }
+  return null;
+}

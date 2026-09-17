@@ -248,30 +248,30 @@ semantic identity.
 
 **Acceptance checklist**
 
-- [ ] `src/tools/diagramsDiff.ts` exists and is registered in `src/index.ts`.
-- [ ] Exactly-one-per-side validation returns `isError: true` for all four
+- [x] `src/tools/diagramsDiff.ts` exists and is registered in `src/index.ts`.
+- [x] Exactly-one-per-side validation returns `isError: true` for all four
       malformed combinations (both, neither, and the two mixed cases), with a
       message that names the offending side.
-- [ ] Reading a stored side goes through `ctx.diagramStore.read`, so a missing
+- [x] Reading a stored side goes through `ctx.diagramStore.read`, so a missing
       diagram yields `Error: No diagram found at '<path>'` and a traversal
       attempt yields `Error: Refused to access path outside the diagrams root`.
-- [ ] `added` and `removed` are exact set differences of extracted entity names,
+- [x] `added` and `removed` are exact set differences of extracted entity names,
       and a test asserts they are symmetric when the two sides are swapped.
-- [ ] `renamed` pairs a removed name with an added name only via the shared
+- [x] `renamed` pairs a removed name with an added name only via the shared
       normalizer, each entry carries `confidence: "heuristic"`, and a purely
       reordering change produces zero renames.
-- [ ] Sequence-side fields are populated for both `puml` and `mmd` sequence
+- [x] Sequence-side fields are populated for both `puml` and `mmd` sequence
       sources, and are `[]` (never `undefined`) for class diagrams.
-- [ ] `is_same` is `true` iff `added`, `removed`, and `renamed` are all empty,
+- [x] `is_same` is `true` iff `added`, `removed`, and `renamed` are all empty,
       and the text summary then says so in one line.
-- [ ] The shared normalizer module is imported by both
+- [x] The shared normalizer module is imported by both
       `consistencyChecker/index.ts` and the diff service; no duplicated
       normalization logic exists (verifiable by grepping the two call sites).
-- [ ] Output paths are POSIX on both `a` and `b` sides, asserted by a test on
+- [x] Output paths are POSIX on both `a` and `b` sides, asserted by a test on
       Windows CI as well as Linux.
-- [ ] `README.md` gains a table row; `EXPECTED_TOOLS` and the discovery test in
+- [x] `README.md` gains a table row; `EXPECTED_TOOLS` and the discovery test in
       `mcpServer.test.ts` are updated.
-- [ ] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
+- [x] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
       pass; `node dist/index.js --help` exits 0.
 
 **Test plan**
