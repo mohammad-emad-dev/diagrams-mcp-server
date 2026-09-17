@@ -50,6 +50,10 @@ export class DiagramExistsError extends Error {
 // remain the enforcement.
 const NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
 
+// Monotonic per-process counter backing the temp-file names in
+// writeToTempFile, so sibling writes never reuse a name.
+let tempFileCounter = 0;
+
 export class DiagramStore {
   private readonly root: string;
   private rootReal: string | null = null;
@@ -260,6 +264,13 @@ export class DiagramStore {
   async exists(relativePath: string): Promise<boolean> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
+    const type = this.detectType(absolutePath);
+    if (!type) {
+      // Same gate as read()/write(): a non-diagram path is a contract
+      // violation, not an absence. Returning false would imply the caller
+      // may create it here, which write() would then refuse.
+      throw new UnsupportedDiagramExtensionError(toPosixPath(relativePath));
+    }
     if ((await this.realpathInsideRoot(absolutePath, relativePath)) === null) {
       // Missing — but a dangling link still counts as an escape attempt
       // when the lstat walk saw it (preserves the symlink contract).
@@ -307,37 +318,102 @@ export class DiagramStore {
     // to create. NOFOLLOW below turns a link raced in after this check
     // into ELOOP instead of a follow.
     await this.realpathInsideRoot(absolutePath, relativePath);
-    const base = fsConstants.O_WRONLY | fsConstants.O_CREAT | NOFOLLOW;
-    const flags = options.overwrite ? base | fsConstants.O_TRUNC : base | fsConstants.O_EXCL;
-    let handle;
+    // overwrite:false reserves the target itself: O_EXCL with no O_TRUNC,
+    // so nothing existing can be lost and concurrent creates keep exactly
+    // one winner. overwrite:true writes a sibling temp file and renames it
+    // over the target: O_TRUNC zeroed the original at open time, so a
+    // failed write (ENOSPC, EIO, crash) left it truncated or empty. Rename
+    // lands on the old or the new content, never a partial middle state.
+    const targetPath = options.overwrite
+      ? await this.writeToTempFile(parent, content, relativePath)
+      : absolutePath;
+    if (!options.overwrite) {
+      const base = fsConstants.O_WRONLY | fsConstants.O_CREAT | NOFOLLOW;
+      let handle;
+      try {
+        // NOFOLLOW: a concurrent link loses with ELOOP instead of
+        // redirecting the write outside. EXCL keeps the atomic-create
+        // guarantee; a directory fails with EISDIR like before.
+        handle = await fs.open(absolutePath, base | fsConstants.O_EXCL, 0o666);
+      } catch (err: unknown) {
+        if (isNodeError(err) && err.code === "ELOOP") {
+          throw new PathTraversalError(toPosixPath(relativePath));
+        }
+        if (isNodeError(err) && (err.code === "EEXIST" || err.code === "EISDIR")) {
+          throw new DiagramExistsError(toPosixPath(relativePath));
+        }
+        throw err;
+      }
+      try {
+        await handle.writeFile(content, "utf-8");
+      } finally {
+        await handle.close();
+      }
+      return;
+    }
+    // The temp file was written and closed off the target path, so this
+    // rename is the only step that touches the diagram. On failure the
+    // temp file is removed and the original is left untouched.
     try {
-      // NOFOLLOW: a concurrent link loses with ELOOP instead of
-      // redirecting the write outside. EXCL keeps the atomic-create
-      // guarantee; a directory fails with EISDIR like before.
-      handle = await fs.open(absolutePath, flags, 0o666);
+      await fs.rename(targetPath, absolutePath);
     } catch (err: unknown) {
+      await fs.rm(targetPath, { force: true }).catch(() => {});
       if (isNodeError(err) && err.code === "ELOOP") {
         throw new PathTraversalError(toPosixPath(relativePath));
       }
-      if (
-        !options.overwrite &&
-        isNodeError(err) &&
-        (err.code === "EEXIST" || err.code === "EISDIR")
-      ) {
-        throw new DiagramExistsError(toPosixPath(relativePath));
-      }
       throw err;
     }
-    try {
-      await handle.writeFile(content, "utf-8");
-    } finally {
-      await handle.close();
+  }
+
+  // Write content to a uniquely-named file in the same directory as the
+  // target, so the following rename never crosses a filesystem (rename is
+  // atomic only within one). The name carries the pid and a per-process
+  // counter; O_EXCL still retries on collision so concurrency cannot fail
+  // a write that would otherwise succeed.
+  private async writeToTempFile(
+    parent: string,
+    content: string,
+    relativeForError: string,
+  ): Promise<string> {
+    for (let attempt = 0; attempt < 64; attempt += 1) {
+      tempFileCounter += 1;
+      const candidate = path.join(parent, `.diagrams-mcp-tmp-${process.pid}-${tempFileCounter}`);
+      const base = fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | NOFOLLOW;
+      let handle: FileHandle;
+      try {
+        // NOFOLLOW keeps a link raced onto the temp name from
+        // redirecting the write outside the root (ELOOP -> escape error).
+        handle = await fs.open(candidate, base, 0o666);
+      } catch (err: unknown) {
+        if (isNodeError(err) && err.code === "EEXIST") continue;
+        if (isNodeError(err) && err.code === "ELOOP") {
+          throw new PathTraversalError(toPosixPath(relativeForError));
+        }
+        throw err;
+      }
+      try {
+        await handle.writeFile(content, "utf-8");
+      } catch (err: unknown) {
+        // A failed write must not leave a partial file behind.
+        await fs.rm(candidate, { force: true }).catch(() => {});
+        throw err;
+      } finally {
+        await handle.close();
+      }
+      return candidate;
     }
+    throw new Error("Could not create a temporary file for writing");
   }
 
   async delete(relativePath: string): Promise<void> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
+    const type = this.detectType(absolutePath);
+    if (!type) {
+      // Matches read(): the store deletes diagrams only, so an
+      // unrecognized extension must fail before anything reaches disk.
+      throw new UnsupportedDiagramExtensionError(toPosixPath(relativePath));
+    }
     // Parent or file swapped to a link after the walk must not redirect
     // the unlink outside. realpath follows what lstat may have missed.
     const parentReal = await this.realpathInsideRoot(path.dirname(absolutePath), relativePath);

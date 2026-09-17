@@ -625,6 +625,66 @@ describe("quoteWindowsArg cmd.exe injection", () => {
     // Assert:
     assert.equal(line, 'mmdc.cmd ""');
   });
+
+  it("does not double a literal percent sign", () => {
+    // Arrange: `%%` doubling was removed — it never blocked %VAR%
+    // expansion inside quotes and corrupted every literal "%".
+    // Act:
+    const line = resolveSpawnTarget("mmdc.cmd", ["100%"], "win32").args[3];
+
+    // Assert: the percent survives as one character.
+    assert.equal(line, 'mmdc.cmd "100%"');
+    assert.ok(!line.includes("%%"), `must not double the percent: ${line}`);
+  });
+});
+
+// Spawns a real .cmd shim with a spaced temp path. Before the fix libuv
+// re-quoted the already-quoted /c line, so the renderer received every
+// spaced argument split into fragments with literal quotes glued on.
+describe("runCommand spaced argv through a real .cmd shim", () => {
+  let probeDir: string;
+
+  beforeEach(async () => {
+    probeDir = await fs.mkdtemp(path.join(os.tmpdir(), "argv-probe-"));
+  });
+
+  afterEach(async () => {
+    await fs.rm(probeDir, { recursive: true, force: true });
+  });
+
+  it("delivers spaced paths and literal percents to the child intact", async (t) => {
+    // Arrange: a directory whose name contains a space, plus a shim that
+    // forwards %* to a dumper writing its own argv as JSON.
+    if (process.platform !== "win32") {
+      t.skip(
+        ".cmd shims only execute on win32; spaced-argv spawn coverage was " +
+          "NOT verified on this platform",
+      );
+      return;
+    }
+    const spacedDir = path.join(probeDir, "sub dir");
+    await fs.mkdir(spacedDir);
+    const inputPath = path.join(spacedDir, "input file.mmd");
+    await fs.writeFile(inputPath, "graph TD\n  A-->B\n", "utf-8");
+    const outputPath = path.join(spacedDir, "output file.svg");
+    const dumpPath = path.join(probeDir, "argv-dump.json");
+    const dumper = path.join(probeDir, "dump-argv.cjs");
+    await fs.writeFile(
+      dumper,
+      `require("fs").writeFileSync(${JSON.stringify(dumpPath)}, ` +
+        `JSON.stringify(process.argv.slice(2)));`,
+      "utf-8",
+    );
+    const shim = path.join(probeDir, "mmdc-shim.cmd");
+    await fs.writeFile(shim, `@echo off\r\nnode "%~dp0dump-argv.cjs" %*\r\n`, "utf-8");
+
+    // Act: runCommand builds the cmd.exe line itself.
+    await runCommand(shim, ["-i", inputPath, "-o", outputPath, "-b", "100%"], 20_000);
+
+    // Assert: every argv element arrives exactly as passed.
+    const received = JSON.parse(await fs.readFile(dumpPath, "utf-8")) as string[];
+    assert.deepEqual(received, ["-i", inputPath, "-o", outputPath, "-b", "100%"]);
+  });
 });
 
 describe("remote fetch resilience", () => {
