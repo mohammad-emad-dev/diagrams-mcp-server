@@ -578,6 +578,24 @@ describe("renderer command resolution (Windows npm shims)", () => {
       args: ["-i", "in.mmd"],
     });
   });
+
+  it("wraps the /c line when the shim path itself needs quoting", () => {
+    // Arrange: CI runners use 8.3 short names (C:\Users\RUNNER~1\...) where
+    // `~` forces quoting, so the command starts with a quote. cmd.exe /s
+    // strips the first and last quote of such a line, which ate the shim's
+    // own quotes ("filename syntax is incorrect" on CI only).
+    // Act:
+    const wrapped = resolveSpawnTarget(
+      "C:\\Users\\RUNNER~1\\mmdc-shim.cmd",
+      ["-i", "in.mmd"],
+      "win32",
+    );
+
+    // Assert: an outer wrapper absorbs the /s strip, restoring the inner line.
+    const line = wrapped.args[3];
+    assert.ok(line.startsWith('"') && line.endsWith('"'), `must be wrapped: ${line}`);
+    assert.equal(line.slice(1, -1), '"C:\\Users\\RUNNER~1\\mmdc-shim.cmd" -i in.mmd');
+  });
 });
 
 describe("quoteWindowsArg cmd.exe injection", () => {
@@ -667,15 +685,22 @@ describe("runCommand spaced argv through a real .cmd shim", () => {
     const inputPath = path.join(spacedDir, "input file.mmd");
     await fs.writeFile(inputPath, "graph TD\n  A-->B\n", "utf-8");
     const outputPath = path.join(spacedDir, "output file.svg");
-    const dumpPath = path.join(probeDir, "argv-dump.json");
-    const dumper = path.join(probeDir, "dump-argv.cjs");
+    // The shim itself lives in a spaced directory too: that forces its own
+    // path to be quoted, reproducing CI runners whose temp dir needs quoting
+    // (8.3 short names like C:\Users\RUNNER~1). Without the /c wrapper,
+    // cmd.exe /s strips the shim's quotes there ("filename syntax is
+    // incorrect") while dev machines with quoteless temp dirs stay green.
+    const shimDir = path.join(probeDir, "shim dir");
+    await fs.mkdir(shimDir);
+    const dumpPath = path.join(shimDir, "argv-dump.json");
+    const dumper = path.join(shimDir, "dump-argv.cjs");
     await fs.writeFile(
       dumper,
       `require("fs").writeFileSync(${JSON.stringify(dumpPath)}, ` +
         `JSON.stringify(process.argv.slice(2)));`,
       "utf-8",
     );
-    const shim = path.join(probeDir, "mmdc-shim.cmd");
+    const shim = path.join(shimDir, "mmdc-shim.cmd");
     await fs.writeFile(shim, `@echo off\r\nnode "%~dp0dump-argv.cjs" %*\r\n`, "utf-8");
 
     // Act: runCommand builds the cmd.exe line itself.

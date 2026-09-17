@@ -135,9 +135,16 @@ export function resolveSpawnTarget(
     return { cmd, args };
   }
   const line = [cmd, ...args].map(quoteWindowsArg).join(" ");
+  // cmd.exe /d /s /c strips the first and last quote when the command starts
+  // with one. A quoted shim path (8.3 short names like C:\Users\RUNNER~1 on
+  // CI, or any spaced directory) would lose its opening quote together with
+  // the last argument's closing quote, failing with "The filename, directory
+  // name, or volume label syntax is incorrect". An outer wrapper makes the
+  // strip remove only the wrapper, leaving the inner command intact.
+  const commandLine = line.startsWith('"') ? `"${line}"` : line;
   return {
     cmd: process.env.ComSpec ?? "cmd.exe",
-    args: ["/d", "/s", "/c", line],
+    args: ["/d", "/s", "/c", commandLine],
   };
 }
 
@@ -163,11 +170,10 @@ export function runCommand(
   const interpreter = process.env.ComSpec ?? "cmd.exe";
   const usesInterpreter = process.platform === "win32" && target.cmd === interpreter;
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      target.cmd,
-      target.args,
-      usesInterpreter ? { windowsVerbatimArguments: true } : {},
-    );
+    const child = spawn(target.cmd, target.args, {
+      windowsHide: true,
+      ...(usesInterpreter ? { windowsVerbatimArguments: true } : {}),
+    });
     let stdout = "";
     let stderr = "";
     let settled = false;
