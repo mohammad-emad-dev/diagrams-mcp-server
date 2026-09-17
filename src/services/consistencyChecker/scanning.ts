@@ -40,6 +40,48 @@ const CODE_EXTENSIONS = new Set([
   ".hpp",
 ]);
 
+export function isCodeExtension(ext: string): boolean {
+  return CODE_EXTENSIONS.has(ext);
+}
+
+// Scan caps shared by the consistency checker and diagram generation, so a
+// capped scan reports the same bounds everywhere. Every bound is surfaced
+// in-band when it bites (truncated / scan_limit / scan_warning).
+export const MAX_SCAN_FILES = 5000;
+export const MAX_SCAN_FILE_BYTES = 1_000_000; // Skip oversized generated files.
+export const MAX_SCAN_CONCURRENCY = 32; // Bound concurrent file reads (EMFILE safety).
+
+// Shared truncation wording; each tool names what may be incomplete.
+export const SCAN_TRUNCATED_WARNING =
+  "Scan reached the 5,000-file limit and stopped early; unmatched results may be incomplete. " +
+  "Narrow the scanned directory or split the check to complete verification.";
+
+export const GENERATE_SCAN_TRUNCATED_WARNING =
+  "Scan reached the 5,000-file limit and stopped early; generated entities may be incomplete. " +
+  "Narrow the scanned scope or split the generation to cover the rest.";
+
+/** Map inputs through an async worker with bounded concurrency, order-preserving. */
+export async function mapWithConcurrency<T, R>(
+  inputs: T[],
+  concurrency: number,
+  worker: (input: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(inputs.length);
+  let next = 0;
+  const runners = Array.from(
+    { length: Math.min(Math.max(concurrency, 1), Math.max(inputs.length, 1)) },
+    async () => {
+      while (next < inputs.length) {
+        const index = next;
+        next += 1;
+        results[index] = await worker(inputs[index]);
+      }
+    },
+  );
+  await Promise.all(runners);
+  return results;
+}
+
 export async function collectCodeFiles(
   rootDir: string,
   maxFiles: number,

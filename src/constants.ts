@@ -52,3 +52,14 @@ export const MAX_RENDER_ERROR_CHARS = 500;
 // past the window read as null; a title line cut at the window edge keeps
 // a "…"-prefixed excerpt instead of passing as the exact title. See D-007.
 export const MAX_TITLE_SCAN_BYTES = 8_192;
+
+// Largest entity list diagrams_generate emits. The input schema's own
+// max_entities (1-60) is clamped to this, so an oversized request still
+// yields a bounded diagram and the drop is reported in-band as
+// entities_available / entities_capped.
+export const MAX_GENERATE_ENTITIES = 60;
+
+// Largest relations list diagrams_generate emits. Edges whose endpoints
+// were dropped by the entity cap are excluded too (a diagram must never
+// reference a box it does not declare); both drops count as relations_capped.
+export const MAX_GENERATE_RELATIONS = 60;

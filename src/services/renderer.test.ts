@@ -105,14 +105,22 @@ function localMermaidDeps(image: Buffer): RendererDeps {
   };
 }
 
+// The runner interleaves suites, and the integration suite's project roots
+// share the "diagrams-mcp-" prefix (mcpServer.test.ts). They are not render
+// temp dirs, so leak detection must ignore them: only dirs the renderer itself
+// created count as a leak.
+function isRenderTempDir(entry: string): boolean {
+  return entry.startsWith("diagrams-mcp-") && !entry.startsWith("diagrams-mcp-integ-");
+}
+
 async function leakedRenderDirs(before: Set<string>): Promise<string[]> {
   const entries = await fs.readdir(os.tmpdir());
-  return entries.filter((entry) => entry.startsWith("diagrams-mcp-") && !before.has(entry));
+  return entries.filter((entry) => isRenderTempDir(entry) && !before.has(entry));
 }
 
 async function snapshotRenderDirs(): Promise<Set<string>> {
   const entries = await fs.readdir(os.tmpdir());
-  return new Set(entries.filter((entry) => entry.startsWith("diagrams-mcp-")));
+  return new Set(entries.filter((entry) => isRenderTempDir(entry)));
 }
 
 /** Signal-0 liveness check for a spawned process. */
@@ -1033,7 +1041,7 @@ describe("renderer bounded child-process output", () => {
   it("cleans up the render temp directory after a timeout", async () => {
     const hangingRun: NonNullable<RendererDeps["runCommand"]> = () =>
       runCommand(nodeCmd, ["-e", "setTimeout(()=>{},30000);"], 300);
-    const before = (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith("diagrams-mcp-"));
+    const before = (await fs.readdir(os.tmpdir())).filter(isRenderTempDir);
 
     await assert.rejects(
       renderDiagram("graph TD\n  A-->B\n", "mermaid", "svg", {
@@ -1048,7 +1056,7 @@ describe("renderer bounded child-process output", () => {
     );
 
     const leaked = (await fs.readdir(os.tmpdir()))
-      .filter((n) => n.startsWith("diagrams-mcp-"))
+      .filter(isRenderTempDir)
       .filter((n) => !before.includes(n));
     assert.deepEqual(leaked, []);
   });
@@ -1056,7 +1064,7 @@ describe("renderer bounded child-process output", () => {
   it("cleans up the render temp directory after a non-zero exit", async () => {
     const failingRun: NonNullable<RendererDeps["runCommand"]> = () =>
       Promise.reject(new Error("diag-boom"));
-    const before = (await fs.readdir(os.tmpdir())).filter((n) => n.startsWith("diagrams-mcp-"));
+    const before = (await fs.readdir(os.tmpdir())).filter(isRenderTempDir);
 
     await assert.rejects(
       renderDiagram("graph TD\n  A-->B\n", "mermaid", "svg", {
@@ -1067,7 +1075,7 @@ describe("renderer bounded child-process output", () => {
     );
 
     const leaked = (await fs.readdir(os.tmpdir()))
-      .filter((n) => n.startsWith("diagrams-mcp-"))
+      .filter(isRenderTempDir)
       .filter((n) => !before.includes(n));
     assert.deepEqual(leaked, []);
   });
