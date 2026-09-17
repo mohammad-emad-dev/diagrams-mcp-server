@@ -32,8 +32,11 @@ I built this after running into the same problem while using AI to work on softw
 | `diagrams_delete` | Delete a diagram (explicit, marked `destructiveHint`) |
 | `diagrams_render` | Render a diagram to SVG/PNG |
 | `diagrams_check_consistency` | **Compare class/interface/component names in a diagram against your actual codebase** and flag anything that looks outdated |
+| `diagrams_generate` | **Draft a PlantUML or Mermaid class diagram from a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 
 `diagrams_check_consistency` is a dependency-free heuristic, not a full semantic or AST analysis. It reads entity names from `class`/`interface`/`enum`/`component` declarations, aliases, namespaces, packages, sequence participants, message calls such as `charge(card)`, C4 blocks, and subgraph groupings. It then searches source files for matching identifiers, using declaration patterns for JavaScript/TypeScript, Python, PHP, and Java, and whole-word matching elsewhere. It helps detect common drift, such as a renamed or removed class or a component that has not been implemented. Structured output includes extracted, matched, and unmatched entities, per-entity file evidence, analyzer tiers, and an explicit heuristic confidence warning. The scan limits are listed under [Consistency scan limits](#consistency-scan-limits).
+
+`diagrams_generate` is the generative flip side of that check: it reads the same declarations from a file or directory under your project root and drafts a class diagram from them — one box per declared name, plus `extends`/`implements` edges when the TypeScript compiler can evidence them. It is read-only and **never writes**: the source text comes back in the response, and nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call. It is a heuristic (name extraction, not full type modeling): member lists, generics, namespace nesting, and cross-file inheritance through re-exports are out of scope, and a scope without TypeScript-family files yields entities with no relations and a `dialect_note` saying why. Every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, and every cap reports itself in-band (`entities_capped` / `entities_available` / `relations_capped` / `truncated`), so a capped draft is never mistaken for a complete one. The generation limits are listed under [Generation limits](#generation-limits).
 
 ## Pagination and source windows
 
@@ -369,6 +372,20 @@ Every `diagrams_check_consistency` run observes these caps:
 | Evidence per entity | 10 matched files | `matched_files` is capped; `matched_file_count` still reports the full count |
 | Concurrent file reads | 32 | bounds open handles while the scan runs |
 
+### Generation limits
+
+Every `diagrams_generate` run observes these caps. `max_entities` (1–60, default 30) bounds the emitted declarations; the limits below are the hard ceilings:
+
+| Limit | Value | How you see it |
+|---|---|---|
+| Emitted entities | 60 declarations | `entities_available` reports the total found and `entities_capped` is true when any were dropped; `entity_limit` reports the applied cap |
+| Emitted relations | 60 edges | `relations_available` reports the total evidenced and `relations_capped` is true when any were dropped by the cap or by an entity the cap removed — a diagram never references a box it does not declare |
+| Files scanned | 5,000 source files | the result reports `truncated`, `scan_limit`, `files_scanned`, and `scan_warning` so a capped scan is never mistaken for a complete one — when `truncated` is true, generated entities may be incomplete |
+| Per-file size | 1,000,000 bytes | larger files (usually generated bundles) are skipped |
+| Concurrent file reads | 32 | bounds open handles while the scan runs |
+
+When the TypeScript compiler is not installed (published installs have no `typescript` dependency), the tool degrades openly instead of failing: entities still come from declaration patterns, `relations` is empty, and `dialect_note` says relations are unavailable.
+
 ## Example
 
 ```
@@ -407,11 +424,16 @@ src/
 │   ├── diagramStore.ts            # Safe filesystem CRUD (path-traversal protected)
 │   ├── diagramValidator.ts        # PlantUML/Mermaid syntax checks
 │   ├── renderer.ts                # Mermaid/PlantUML -> SVG/PNG rendering
-│   └── consistencyChecker/        # Diagram <-> code drift detection
-│       ├── index.ts               # checkConsistency orchestration (scan, match, report)
-│       ├── entities.ts            # Entity names from diagram source
-│       ├── codeAnalysis.ts        # Per-language declaration patterns
-│       └── scanning.ts            # Filesystem walk with scan limits
+│   ├── scopeResolve.ts            # Bounds read-only tool scopes to PROJECT_ROOT
+│   ├── consistencyChecker/        # Diagram <-> code drift detection
+│   │   ├── index.ts               # checkConsistency orchestration (scan, match, report)
+│   │   ├── entities.ts            # Entity names from diagram source
+│   │   ├── codeAnalysis.ts        # Per-language declaration patterns
+│   │   ├── scanning.ts            # Filesystem walk with scan limits
+│   │   └── ts/                    # Optional TypeScript AST path (dynamic import)
+│   └── generate/                  # diagrams_generate entity collection and emitters
+│       ├── collectEntities.ts     # Scan a scope into ordered entities + relations
+│       └── emitters.ts            # Pure PlantUML/Mermaid class-diagram emitters
 ├── tools/                         # One MCP tool adapter per file (diagramsList, diagramsGet, …)
 └── integration/
     └── mcpServer.test.ts          # End-to-end server surface tests
@@ -424,14 +446,14 @@ test files need adding there.
 ## Security notes
 
 -   All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected. Windows-style `\` separators work as path separators on every platform, so `..\..` traversal is rejected on Linux too.
-- `diagrams_check_consistency` only *reads* your codebase — it never modifies code or diagrams.
+- `diagrams_check_consistency` and `diagrams_generate` only *read* your codebase — they never modify code or diagrams. `diagrams_generate` resolves its `scope` against `PROJECT_ROOT` and refuses (without reading anything) any path that would land outside it; its output is source text you save yourself with `diagrams_create`.
 - No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
 - Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
 
 ## Roadmap ideas
 
 - AST-based consistency checking per language (starting with TypeScript) for higher precision than the current text-heuristic approach
-- Two-way diagram-to-code generation (scaffold a class from a diagram, or a diagram from a class)
+- Code-from-diagram scaffolding: generate a class skeleton from a diagram (the reverse of `diagrams_generate`, which already drafts a diagram from code)
 - Sequence diagram consistency checks against actual function call graphs
 
 Contributions and issues welcome.

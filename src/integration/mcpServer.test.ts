@@ -14,6 +14,7 @@ const EXPECTED_TOOLS = [
   "diagrams_check_consistency",
   "diagrams_create",
   "diagrams_delete",
+  "diagrams_generate",
   "diagrams_get",
   "diagrams_list",
   "diagrams_render",
@@ -111,7 +112,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 7 tools", async () => {
+  it("discovers all 8 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });
@@ -405,6 +406,56 @@ describe("MCP stdio integration (dist/index.js)", () => {
     for (const matchedFile of widgetEvidence.matched_files) {
       assertPosixPath(matchedFile, "evidence matched_file");
     }
+  });
+
+  it("generates a class diagram from the codebase fixture", async () => {
+    const result = await callTool("diagrams_generate", { scope: "src-code" });
+
+    assert.equal(result.isError, undefined);
+    const structured = result.structuredContent as {
+      scope: string;
+      format: string;
+      source: string;
+      entities: string[];
+      entities_included: number;
+      entities_available: number;
+      entities_capped: boolean;
+      entity_limit: number;
+      relations: unknown[];
+      files_scanned: number;
+      truncated: boolean;
+      scan_limit: number;
+      scan_warning: string | null;
+      dialect_note: string | null;
+      confidence: string;
+      heuristic_warning: string;
+      written: boolean;
+    };
+    assertPosixPath(structured.scope, "generated scope");
+    assert.equal(structured.scope, "src-code");
+    assert.equal(structured.format, "puml");
+    assert.ok(
+      structured.entities.includes("Widget"),
+      `entities: ${JSON.stringify(structured.entities)}`,
+    );
+    assert.equal(structured.entities_included, structured.entities.length);
+    assert.equal(structured.entities_available, structured.entities.length);
+    assert.equal(structured.entities_capped, false);
+    assert.equal(structured.entity_limit, 30);
+    assert.equal(structured.confidence, "heuristic");
+    assert.equal(structured.written, false);
+    assert.equal(structured.files_scanned, 1);
+    assert.equal(structured.truncated, false);
+    assert.equal(structured.scan_limit, 5000);
+    assert.equal(structured.scan_warning, null);
+    assert.ok(structured.heuristic_warning.length > 0);
+    // The text block is the generated source itself.
+    assert.equal(textOf(result), structured.source);
+    assert.ok(textOf(result).includes("class Widget"));
+    // Read-only: the code fixture is untouched and no diagram was written.
+    assert.equal(await fs.readFile(codeFixturePath, "utf-8"), CODE_FIXTURE);
+    const stored = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((stored.structuredContent as { count: number }).count, 1);
   });
 
   it("deletes the diagram and leaves the codebase fixture untouched", async () => {

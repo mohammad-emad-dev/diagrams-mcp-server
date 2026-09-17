@@ -14,6 +14,7 @@ import {
   UnsupportedDiagramExtensionError,
 } from "../services/diagramStore.js";
 import { RenderError } from "../services/renderer.js";
+import { ScopeEscapeError } from "../services/scopeResolve.js";
 import { registerDiagramsCheckConsistency } from "./diagramsCheckConsistency.js";
 import { registerDiagramsCreate } from "./diagramsCreate.js";
 import { registerDiagramsDelete } from "./diagramsDelete.js";
@@ -110,6 +111,7 @@ describe("isExpectedToolError", () => {
     assert.equal(isExpectedToolError(new DiagramValidationError("plantuml", "bad")), true);
     assert.equal(isExpectedToolError(new DiagramExistsError("a.puml")), true);
     assert.equal(isExpectedToolError(new UnsupportedDiagramExtensionError("a.txt")), true);
+    assert.equal(isExpectedToolError(new ScopeEscapeError("../outside")), true);
     assert.equal(isExpectedToolError(new RenderError("no renderer")), true);
   });
 

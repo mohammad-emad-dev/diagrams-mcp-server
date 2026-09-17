@@ -23,27 +23,28 @@ import {
   familyForExtension,
   stripCommentsAndStrings,
 } from "./codeAnalysis.js";
-import { collectCodeFiles } from "./scanning.js";
+import {
+  collectCodeFiles,
+  mapWithConcurrency,
+  MAX_SCAN_CONCURRENCY,
+  MAX_SCAN_FILE_BYTES,
+  MAX_SCAN_FILES,
+  SCAN_TRUNCATED_WARNING,
+} from "./scanning.js";
 import { analyzeTsFile } from "./ts/tsIndex.js";
 import type { SequenceEntityKind } from "./sequence/sequenceEntities.js";
 import { extractSequenceEntities } from "./sequence/sequenceEntities.js";
 import { buildOperationIndex } from "./sequence/operationIndex.js";
 import { sequenceIssueText } from "./sequence/sequenceMatch.js";
 
-const MAX_FILES_SCANNED = 5000;
-const MAX_FILE_SIZE_BYTES = 1_000_000; // Skip oversized generated files.
+const MAX_FILE_SIZE_BYTES = MAX_SCAN_FILE_BYTES; // Skip oversized generated files.
 const MAX_EVIDENCE_MATCHED_FILES = 10; // Cap matched files per entity.
-const MAX_SCAN_CONCURRENCY = 32; // Bound concurrent file reads (EMFILE safety).
 
 const HEURISTIC_WARNING =
   "Heuristic text matching only: matching prefers declarations but falls back " +
   "to whole-word occurrence, case/separator-insensitive comparison, and " +
   "file-basename comparison, so an incidental reference can count as a match. " +
   "Treat results as evidence, not a definitive verdict.";
-
-const SCAN_TRUNCATED_WARNING =
-  "Scan reached the 5,000-file limit and stopped early; unmatched results may be incomplete. " +
-  "Narrow the scanned directory or split the check to complete verification.";
 
 /** Lowercase, separator-free form for lenient matching. */
 function normalizeForMatch(name: string): string {
@@ -170,28 +171,6 @@ async function readScannedFile(codeRootDir: string, file: string): Promise<Scann
   }
 }
 
-/** Map inputs through an async worker with bounded concurrency, order-preserving. */
-async function mapWithConcurrency<T, R>(
-  inputs: T[],
-  concurrency: number,
-  worker: (input: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(inputs.length);
-  let next = 0;
-  const runners = Array.from(
-    { length: Math.min(Math.max(concurrency, 1), Math.max(inputs.length, 1)) },
-    async () => {
-      while (next < inputs.length) {
-        const index = next;
-        next += 1;
-        results[index] = await worker(inputs[index]);
-      }
-    },
-  );
-  await Promise.all(runners);
-  return results;
-}
-
 /** Diagram under check: reporting path, raw source, and dialect. */
 export interface DiagramInput {
   relativePath: string;
@@ -203,7 +182,7 @@ export interface DiagramInput {
 async function scanCodebase(
   codeRootDir: string,
 ): Promise<{ scanned: ScannedFile[]; truncated: boolean }> {
-  const { files: codeFiles, truncated } = await collectCodeFiles(codeRootDir, MAX_FILES_SCANNED);
+  const { files: codeFiles, truncated } = await collectCodeFiles(codeRootDir, MAX_SCAN_FILES);
   const scanned = (
     await mapWithConcurrency(codeFiles, MAX_SCAN_CONCURRENCY, (file) =>
       readScannedFile(codeRootDir, file),
@@ -312,7 +291,7 @@ export async function checkConsistency(
     searchedDirectory: codeRootDir,
     filesScanned: scanned.length,
     truncated,
-    scanLimit: MAX_FILES_SCANNED,
+    scanLimit: MAX_SCAN_FILES,
     scanWarning: truncated ? SCAN_TRUNCATED_WARNING : null,
     entities: [...entities],
     matchedEntities: match.matchedEntities,

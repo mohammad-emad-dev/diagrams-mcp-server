@@ -35,18 +35,29 @@ export async function isTsAstAvailable(): Promise<boolean> {
   return (await loadTsModule()) !== null;
 }
 
-/** Parse one source file; null when unavailable, non-TS, or unparseable. */
-export async function parseTsSource(filePath: string, rawText: string): Promise<unknown> {
+/**
+ * Parse one source file; null when unavailable, non-TS, or unparseable.
+ *
+ * `ts` is a pre-resolved compiler: undefined resolves it by dynamic import
+ * (the default), null records that it is not installed, and a module is used
+ * as given. Callers that already resolved the compiler pass it here so one
+ * resolution serves the whole scan.
+ */
+export async function parseTsSource(
+  filePath: string,
+  rawText: string,
+  ts?: TsModule | null,
+): Promise<unknown> {
   const ext = path.extname(filePath).toLowerCase();
   if (!isTsFamilyExtension(ext)) return null;
-  const ts = await loadTsModule();
-  if (!ts) return null;
+  const compiler = ts === undefined ? await loadTsModule() : ts;
+  if (!compiler) return null;
   try {
-    const scriptKind = ext === ".tsx" ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
-    const sourceFile: tsTypes.SourceFile = ts.createSourceFile(
+    const scriptKind = ext === ".tsx" ? compiler.ScriptKind.TSX : compiler.ScriptKind.TS;
+    const sourceFile: tsTypes.SourceFile = compiler.createSourceFile(
       filePath,
       rawText,
-      ts.ScriptTarget.Latest,
+      compiler.ScriptTarget.Latest,
       false,
       scriptKind,
     );

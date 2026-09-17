@@ -11,6 +11,7 @@ import {
   UnsupportedDiagramExtensionError,
 } from "../services/diagramStore.js";
 import { RenderError } from "../services/renderer.js";
+import { ScopeEscapeError } from "../services/scopeResolve.js";
 
 export interface ToolErrorResult {
   content: [{ type: "text"; text: string }];
@@ -62,6 +63,7 @@ export function isExpectedToolError(err: unknown): err is Error {
     err instanceof DiagramValidationError ||
     err instanceof DiagramExistsError ||
     err instanceof UnsupportedDiagramExtensionError ||
+    err instanceof ScopeEscapeError ||
     err instanceof RenderError
   );
 }

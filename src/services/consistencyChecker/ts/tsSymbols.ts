@@ -108,16 +108,23 @@ function visitNode(ts: TsModule, node: tsTypes.Node, declared: Set<string>): voi
   ts.forEachChild(node, (child) => visitNode(ts, child, declared));
 }
 
-/** Collect declared symbol names from a parsed source file. */
-export async function collectTsDeclaredSymbols(sourceFile: unknown): Promise<Set<string>> {
+/**
+ * Collect declared symbol names from a parsed source file. `ts` is a
+ * pre-resolved compiler (see parseTsSource); undefined resolves it by
+ * dynamic import.
+ */
+export async function collectTsDeclaredSymbols(
+  sourceFile: unknown,
+  ts?: TsModule,
+): Promise<Set<string>> {
   const declared = new Set<string>();
   if (!sourceFile || typeof sourceFile !== "object") return declared;
-  const ts = await loadTsModule();
-  if (!ts) return declared;
+  const compiler = ts === undefined ? await loadTsModule() : ts;
+  if (!compiler) return declared;
   const root = sourceFile as tsTypes.SourceFile;
-  if (root.kind !== ts.SyntaxKind.SourceFile || !Array.isArray(root.statements)) {
+  if (root.kind !== compiler.SyntaxKind.SourceFile || !Array.isArray(root.statements)) {
     return declared;
   }
-  visitNode(ts, root, declared);
+  visitNode(compiler, root, declared);
   return declared;
 }
