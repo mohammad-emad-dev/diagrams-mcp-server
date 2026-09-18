@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // MCP server for PlantUML and Mermaid diagrams, over stdio.
-// Exposes list, read, create, update, delete, render, consistency,
+// Exposes list, read, create, update, delete, render, export, consistency,
 // generation, sequence generation, diff, and starter-template tools.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -12,6 +12,7 @@ import { registerDiagramsCreate } from "./tools/diagramsCreate.js";
 import { registerDiagramsUpdate } from "./tools/diagramsUpdate.js";
 import { registerDiagramsDelete } from "./tools/diagramsDelete.js";
 import { registerDiagramsRender } from "./tools/diagramsRender.js";
+import { registerDiagramsExport } from "./tools/diagramsExport.js";
 import { registerDiagramsCheckConsistency } from "./tools/diagramsCheckConsistency.js";
 import { registerDiagramsGenerate } from "./tools/diagramsGenerate.js";
 import { registerDiagramsGenerateSequence } from "./tools/diagramsGenerateSequence.js";
@@ -82,6 +83,7 @@ async function main(): Promise<void> {
   registerDiagramsUpdate(server, ctx);
   registerDiagramsDelete(server, ctx);
   registerDiagramsRender(server, ctx);
+  registerDiagramsExport(server, ctx);
   registerDiagramsCheckConsistency(server, ctx);
   registerDiagramsGenerate(server, ctx);
   registerDiagramsGenerateSequence(server, ctx);

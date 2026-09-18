@@ -31,6 +31,7 @@ I built this after running into the same problem while using AI to work on softw
 | `diagrams_update` | Replace an existing diagram's content |
 | `diagrams_delete` | Delete a diagram (explicit, marked `destructiveHint`) |
 | `diagrams_render` | Render a diagram to SVG/PNG |
+| `diagrams_export` | **Package a stored diagram and its rendered SVG into one self-contained HTML file** — fully offline, no external resources, nothing written to disk |
 | `diagrams_check_consistency` | **Compare class/interface/component names in a diagram against your actual codebase** and flag anything that looks outdated |
 | `diagrams_generate` | **Draft a PlantUML or Mermaid class diagram from a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 | `diagrams_generate_sequence` | **Draft a PlantUML or Mermaid sequence diagram from the message-call patterns in a slice of your codebase** (delivers the *sequence-from-code* roadmap item), returning source text to review and then save with `diagrams_create` |
@@ -46,6 +47,8 @@ I built this after running into the same problem while using AI to work on softw
 `diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
 
 `diagrams_template` is the blank-page tool that precedes all of them: **give it a kind, a dialect, and the entity names, and it hands back a minimal skeleton that already clears every syntax gate.** Boilerplate is where missing `@startuml`/`@enduml` boundaries and wrong starter keywords enter the repo, so one capped, deterministic emitter removes that failure mode: the six skeletons (class, sequence, C4-context × PlantUML, Mermaid) are fixed tables in source, and identical inputs yield byte-identical source in every process. It is pure — no filesystem, no code scanning, no heuristics, no state — so unlike `diagrams_generate` there is no `confidence` field and nothing to be uncertain about: it emits one declaration line per entity plus a TODO hint pointing at where the diagram grows, and nothing more. Member bodies, relations, and styling stay yours to write after the save. The PlantUML C4-context skeleton stays self-contained with plain rectangles, because real C4 shapes need the C4-PlantUML stdlib and this local-first server never fetches it; the Mermaid skeleton uses native `C4Context`. Nothing is ever written: the source comes back in the response, and nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call. The template limits are listed under [Template limits](#template-limits).
+
+`diagrams_export` is the sharing tool that closes the loop: **package a stored diagram and its rendered SVG into one self-contained HTML file** that opens anywhere, inside or outside the repo. It is packaging of two artifacts the server already produces — the stored source and the locally rendered SVG — so it adds no dependency (the HTML is string concatenation) and no new write surface: the tool never writes a file, the HTML comes back as text, and you decide where it lands. The artifact carries nothing external at all: no `src`/`href` URLs, no `@import`, no script, no web font — inline styles are the only styling, and the SVG is inlined as live markup rather than a base64 image, so it stays selectable and survives a strict content-security policy. The diagram's POSIX `relative_path` is the only path in the document. With `include_source` (the default), the source is embedded in a collapsible block built on the native `<details>` element, which needs no JavaScript; set it to `false` for a leaner file. Rendering follows `diagrams_render` exactly, including its CLI requirements and opt-in remote fallback, and `rendered_with` reports which path produced the image (`local-plantuml` / `remote-plantuml` / `mmdc`). A bundle larger than the byte cap is refused outright rather than cut down — `truncated` is always `false`, because a half-rendered artifact is worse than none. The export limits are listed under [Export limits](#export-limits).
 
 ## Pagination and source windows
 
@@ -436,6 +439,16 @@ Every `diagrams_template` call observes these caps. There is no `max_*` argument
 
 Every name must match `/^[A-Za-z_][A-Za-z0-9_]*$/` and no two may repeat — a duplicate would emit two declarations of the same box, so the second occurrence is rejected at its own index. A rejection comes back with `isError: true` and names the offending input; the emitted source always passes the same syntax gate `diagrams_create` applies, so a skeleton can be saved as-is.
 
+### Export limits
+
+Every `diagrams_export` run observes this cap on the finished HTML document:
+
+| Limit | Value | How you see it |
+|---|---|---|
+| Bundle size | 5,000,000 bytes | a larger bundle is refused with `isError: true` naming the diagram and the ceiling; `truncated` is always `false`, so no partial file is ever returned or saved |
+
+The SVG inside the bundle is bounded by what the renderer produced, and the renderer's own limits still apply on the way there. `include_source` is a boolean, not a size argument: the source block is either embedded in full or omitted, because a cut-off source next to a complete diagram would mislead a reader.
+
 ## Example
 
 ```
@@ -484,6 +497,9 @@ src/
 │   │   └── ts/                    # Optional TypeScript AST path (dynamic import)
 │   ├── diff/                      # diagrams_diff comparison
 │   │   └── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
+│   ├── export/                    # diagrams_export bundle builder (pure, no filesystem)
+│   │   ├── htmlBundle.ts          # One self-contained HTML string from SVG + source
+│   │   └── exportGoldens.test.ts  # Exact wrapper structure locked per variant
 │   ├── generate/                  # diagrams_generate entity collection and emitters
 │   │   ├── collectEntities.ts     # Scan a scope into ordered entities + relations
 │   │   └── emitters.ts            # Pure PlantUML/Mermaid class-diagram emitters
@@ -505,6 +521,7 @@ test files need adding there.
 - `diagrams_check_consistency` and `diagrams_generate` only *read* your codebase — they never modify code or diagrams. `diagrams_generate` resolves its `scope` against `PROJECT_ROOT` and refuses (without reading anything) any path that would land outside it; its output is source text you save yourself with `diagrams_create`.
 - `diagrams_diff` is read-only too: stored sides are read through the same traversal-protected store as `diagrams_get`, inline sides never touch the filesystem at all, and input-shape errors are reported before any file is opened. Errors and logs never include diagram source, only the names being reported.
 - `diagrams_template` touches no filesystem at all — no project root, no diagrams directory, no state between calls. It is pure source text in and out, so there is nothing to restrict and nothing to leak; the entity names you pass are the only thing it echoes back.
+- `diagrams_export` reads one diagram through the same traversal-protected store as `diagrams_get` and returns the bundle as text — it writes nothing, so the store's extension allow-list never opens to `.html`. The artifact is built to be shared: it contains no external resource of any kind (no `src`/`href` URLs, no `@import`, no script, no font), and the only path it carries is the diagram's POSIX `relative_path`. Remote PlantUML rendering, when you opt into it, sends diagram source to the configured server; that is the renderer's existing path, unchanged.
 - No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
 - Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
 

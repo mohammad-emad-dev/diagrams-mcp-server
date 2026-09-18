@@ -576,27 +576,27 @@ renderer output.
 
 **Acceptance checklist**
 
-- [ ] `src/tools/diagramsExport.ts` exists and is registered in `src/index.ts`.
-- [ ] The produced HTML is a single file: it contains no `src=`, `href=`, `@import`,
+- [x] `src/tools/diagramsExport.ts` exists and is registered in `src/index.ts`.
+- [x] The produced HTML is a single file: it contains no `src=`, `href=`, `@import`,
       or `<script>` referencing any URL, and no external resource is fetched
       (asserted by a test that greps the output for those patterns).
-- [ ] The SVG is inlined as markup, not base64-in-`img`, so it stays selectable
+- [x] The SVG is inlined as markup, not base64-in-`img`, so it stays selectable
       and themeable; the diagram's POSIX `relative_path` is the only path
       present — no absolute paths anywhere in the bundle (asserted by a test).
-- [ ] A bundle larger than `MAX_EXPORT_HTML_BYTES` returns `isError: true` with an
+- [x] A bundle larger than `MAX_EXPORT_HTML_BYTES` returns `isError: true` with an
       actionable message; `truncated` is never `true` (no partial bundles).
-- [ ] Rendering failures surface through `handleRenderError` with the existing
+- [x] Rendering failures surface through `handleRenderError` with the existing
       `RenderError` messages (missing `mmdc`, missing local `plantuml` with
       remote disabled, remote non-2xx) — no new wording invented here.
-- [ ] A missing diagram returns `Error: No diagram found at '<path>'` via
+- [x] A missing diagram returns `Error: No diagram found at '<path>'` via
       `handleToolError`, before any render attempt.
-- [ ] `include_source: false` omits the `<pre>` block and sets
+- [x] `include_source: false` omits the `<pre>` block and sets
       `source_included: false`; default `true` includes it.
-- [ ] The tool works with `DISABLE_REMOTE_PLANTUML=true` set (the CI test
+- [x] The tool works with `DISABLE_REMOTE_PLANTUML=true` set (the CI test
       environment), asserting no network path is taken.
-- [ ] `README.md` gains a table row noting the offline/self-contained property;
+- [x] `README.md` gains a table row noting the offline/self-contained property;
       `EXPECTED_TOOLS` and the discovery test are updated.
-- [ ] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
+- [x] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
       pass; `node dist/index.js --help` exits 0.
 
 **Test plan**

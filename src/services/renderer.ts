@@ -403,12 +403,29 @@ function overRemoteBodyCap(): RenderError {
   );
 }
 
-export async function renderDiagram(
+/** Which path produced a rendered image, for provenance reporting. */
+export type RenderProvenance = "local-plantuml" | "remote-plantuml" | "mmdc";
+
+export interface RenderResult {
+  /** The rendered image bytes. */
+  buffer: Buffer;
+  /** Which path produced the buffer. */
+  renderedWith: RenderProvenance;
+}
+
+/**
+ * Render source to an image and report which path produced it. The decision
+ * tree is unchanged from the old renderDiagram body; it lives in exactly one
+ * place so a caller that reports provenance (diagrams_export) can never
+ * disagree with what actually rendered. Errors stay the existing RenderErrors,
+ * byte for byte.
+ */
+export async function renderDiagramWithProvenance(
   source: string,
   type: DiagramType,
   format: RenderFormat = "svg",
   deps?: RendererDeps,
-): Promise<Buffer> {
+): Promise<RenderResult> {
   const resolved: Required<RendererDeps> = {
     commandExists: deps?.commandExists ?? commandExists,
     runCommand: deps?.runCommand ?? runCommand,
@@ -416,11 +433,11 @@ export async function renderDiagram(
   };
 
   if (type === "mermaid") {
-    return renderMermaid(source, format, resolved);
+    return { buffer: await renderMermaid(source, format, resolved), renderedWith: "mmdc" };
   }
 
   const local = await renderPlantUmlLocal(source, format, resolved);
-  if (local) return local;
+  if (local) return { buffer: local, renderedWith: "local-plantuml" };
   if (isRemotePlantUmlDisabled()) {
     throw new RenderError(
       "PlantUML rendering requires a local 'plantuml' CLI, which was not found, " +
@@ -430,5 +447,22 @@ export async function renderDiagram(
         "(DISABLE_REMOTE_PLANTUML=true always disables it).",
     );
   }
-  return renderPlantUmlRemote(source, format, resolved);
+  return {
+    buffer: await renderPlantUmlRemote(source, format, resolved),
+    renderedWith: "remote-plantuml",
+  };
+}
+
+/**
+ * Render diagram source to an image buffer. Delegates to
+ * renderDiagramWithProvenance and returns only the buffer, so existing callers
+ * keep their signature and behavior.
+ */
+export async function renderDiagram(
+  source: string,
+  type: DiagramType,
+  format: RenderFormat = "svg",
+  deps?: RendererDeps,
+): Promise<Buffer> {
+  return (await renderDiagramWithProvenance(source, type, format, deps)).buffer;
 }
