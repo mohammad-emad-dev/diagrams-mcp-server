@@ -1,6 +1,6 @@
 # diagrams-mcp-server
 
-> **Technical Preview (V1 Preview, v0.6.0)** — local-first MCP server for
+> **Technical Preview (V1 Preview, v0.7.0)** — local-first MCP server for
 > PlantUML and Mermaid diagrams with architecture drift detection.
 
 [![CI](https://github.com/mohammad-emad-dev/diagrams-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mohammad-emad-dev/diagrams-mcp-server/actions/workflows/ci.yml)
@@ -196,10 +196,10 @@ To install and run this Technical Preview from a local package file, create a
 tarball and install it in a separate consumer project:
 
 ```bash
-npm pack   # runs the prepack build and writes diagrams-mcp-server-0.6.0.tgz
+npm pack   # runs the prepack build and writes diagrams-mcp-server-0.7.0.tgz
 cd /path/to/your/project
 npm init -y                       # if the consumer project has no package.json yet
-npm install /path/to/diagrams-mcp-server-0.6.0.tgz
+npm install /path/to/diagrams-mcp-server-0.7.0.tgz
 npx diagrams-mcp-server --help    # resolves the local install, exits 0
 ```
 
