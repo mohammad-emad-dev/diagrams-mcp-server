@@ -780,3 +780,27 @@ checkboxes count as done.
 - [ ] Boxes in this file are ticked as features ship, and the phase-order table
       above is updated if an order change is ever agreed — this file is the
       phase's single source of truth, not a post-hoc write-up.
+
+---
+
+## V2 follow-ups
+
+Deferred during the phase with reasons recorded in the phase reports. None
+is scheduled; each needs its own order before work starts.
+
+- [ ] **Sanitize renderer SVG before inlining (from Phase 5).** `diagrams_export`
+      inlines renderer output as live markup so it stays selectable — which means
+      a `<script>` inside renderer output would run when the bundle is opened.
+      The diagram source is escaped; the SVG is not. Harden with an allowlist
+      SVG sanitizer (strip `script` elements, event-handler attributes, and
+      non-data-URL external references) plus tests proving a hostile SVG comes
+      out inert while a normal diagram renders unchanged. Threat model note:
+      local-first, own diagrams, local CLIs — acceptable for V1, fix in V2.
+- [ ] **In-repo `.html` saving (from Phase 5).** Needs its own store method, never
+      a loosened extension check on `DiagramStore`.
+- [ ] **Rename verdict via call-site analysis (from Phase 2).** Rename confidence
+      stays `"heuristic"` until this exists.
+- [ ] **Semantic type resolution for sequence participants (from Phase 3).**
+      Unresolved callees are reported, never guessed, until this exists.
+- [ ] **Custom template directory (from Phase 4).** The set stays fixed at three
+      until a deliberate schema change adds a fourth.
