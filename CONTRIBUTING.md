@@ -59,7 +59,7 @@ The bar for calling a language reliable is representative fixtures, documented l
 
 ## Adding or modifying an MCP tool
 
-The ten tools (`diagrams_list`, `diagrams_get`, `diagrams_create`, `diagrams_update`, `diagrams_delete`, `diagrams_render`, `diagrams_check_consistency`, `diagrams_generate`, `diagrams_generate_sequence`, `diagrams_diff`) each live in their own file under `src/tools/`, as a `registerDiagramsX(server, ctx)` function. `src/index.ts` wires them up, and `src/context.ts` builds the shared `ServerContext` once at startup.
+The eleven tools (`diagrams_list`, `diagrams_get`, `diagrams_create`, `diagrams_update`, `diagrams_delete`, `diagrams_render`, `diagrams_check_consistency`, `diagrams_generate`, `diagrams_generate_sequence`, `diagrams_diff`, `diagrams_template`) each live in their own file under `src/tools/`, as a `registerDiagramsX(server, ctx)` function. `src/index.ts` wires them up, and `src/context.ts` builds the shared `ServerContext` once at startup. The registration signature is `(server, ctx)` because nearly every tool needs the store or the project root; a tool that needs neither — `diagrams_template` is the current example, its skeleton tables are pure — drops the `ctx` parameter and says so in a comment, and `src/index.ts` calls it the same way.
 
 For a new or changed tool:
 

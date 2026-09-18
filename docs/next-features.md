@@ -472,28 +472,28 @@ new is added to `files`, and no template file can go missing at install time.
 
 **Acceptance checklist**
 
-- [ ] `src/tools/diagramsTemplate.ts` exists and is registered in `src/index.ts`.
-- [ ] All three templates are emitted in **both** dialects (six emitters), and
+- [x] `src/tools/diagramsTemplate.ts` exists and is registered in `src/index.ts`.
+- [x] All three templates are emitted in **both** dialects (six emitters), and
       every one of the six outputs passes `validateDiagramSource` — asserted in
       a table-driven unit test.
-- [ ] A Mermaid C4-context skeleton uses only `c4Context`/`c4Container`-style
+- [x] A Mermaid C4-context skeleton uses only `c4Context`/`c4Container`-style
       starters accepted by `MERMAID_STARTERS` in `diagramValidator.ts`.
-- [ ] `entities` validation rejects: empty array, more than 20 items, a name
+- [x] `entities` validation rejects: empty array, more than 20 items, a name
       over 60 characters, a name failing the identifier pattern, and duplicate
       names — each with `isError: true` and a message naming the offending input.
-- [ ] `title` over 200 characters or whitespace-only is rejected; an accepted
+- [x] `title` over 200 characters or whitespace-only is rejected; an accepted
       title appears in the source in the dialect-correct form (`title X` for
       PlantUML, `%% title: X` for Mermaid).
-- [ ] `deterministic: true` and a test asserting two identical input sets return
+- [x] `deterministic: true` and a test asserting two identical input sets return
       byte-identical `source` across separate process runs.
-- [ ] `written` is always `false`, and no file under `PROJECT_ROOT` is created
+- [x] `written` is always `false`, and no file under `PROJECT_ROOT` is created
       or modified by a call.
-- [ ] The skeleton set is fixed in source under `src/services/templates/` with
+- [x] The skeleton set is fixed in source under `src/services/templates/` with
       no runtime file reads; `package.json` `files` is unchanged (verified by
       reading the array, not by inference).
-- [ ] `README.md` gains a table row; `EXPECTED_TOOLS` and the discovery test are
+- [x] `README.md` gains a table row; `EXPECTED_TOOLS` and the discovery test are
       updated.
-- [ ] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
+- [x] `npm run build`, `npm test`, `npm run lint`, and `npm run format:check`
       pass; `node dist/index.js --help` exits 0.
 
 **Test plan**
