@@ -1,3 +1,57 @@
+# Release notes — 0.7.0
+
+`diagrams-mcp-server` v0.7.0 is a backward-compatible minor release: no
+existing MCP tool signature changes, no config changes. It grows the server
+from 7 to 12 tools — five additive tools built in one phased wave, each
+local-first, dependency-free, and covered by unit, golden, and stdio
+integration tests. It also folds in the render/store hardening that closed
+the wave's only CI failure.
+
+## New tools
+
+- `diagrams_generate` — drafts a capped class diagram (PlantUML or Mermaid)
+  from a scoped codebase slice; returns source with `written: false` for the
+  agent to save via `diagrams_create`. Reuses the consistency checker's scan
+  stack and TypeScript AST relations.
+- `diagrams_diff` — compares two diagram sources (stored path or inline text
+  per side) reporting added / removed / renamed (renames labeled
+  `confidence: "heuristic"`) plus sequence participant and call deltas.
+- `diagrams_generate_sequence` — drafts a starter sequence diagram from
+  ordered call-graph edges; callback-deferred calls are counted, never
+  sequenced; unresolved callees are reported, never invented.
+- `diagrams_template` — deterministic class / sequence / C4-context skeletons
+  in both dialects, all six passing the same gate `diagrams_create` enforces.
+- `diagrams_export` — packages a stored diagram plus its rendered SVG into one
+  self-contained offline HTML file; over-cap bundles are refused, never cut.
+
+## Render/store hardening
+
+- Windows npm-shim spawning hardened: verbatim-argument gating on real
+  `cmd.exe` targets, no `%` doubling, and `/c`-line wrapping for
+  `cmd.exe /s` quote stripping (the CI-only 8.3-path failure that gated the
+  wave is covered by a real-shim test).
+- `DiagramStore.delete()`/`exists()` now enforce the diagram-extension gate
+  like every other path; `overwrite: true` writes atomically via sibling temp
+  file plus rename.
+
+## Verification status (this release)
+
+- `npm run build` (`tsc`): exit 0. `npm run lint` (zero warnings) and
+  `npm run format:check`: pass.
+- `npm test`: 405 tests across 81 suites — 396 passed, 0 failed,
+  9 skipped (pre-existing environment-conditional skips: symlink creation and
+  permission cases unobservable on Windows/OneDrive). Numbers measured on the
+  release branch; rerun `npm run build` and `npm test` to re-verify.
+
+## Known V2 follow-ups
+
+- Renderer SVG is inlined as live markup in export bundles; a hostile SVG
+  would come out active. Filed in `docs/next-features.md` (V2 follow-ups):
+  allowlist SVG sanitizer plus inert-output tests. Threat model note:
+  local-first, own diagrams, local CLIs — acceptable for V1.
+
+---
+
 # Release notes — 0.6.0
 
 `diagrams-mcp-server` v0.6.0 is a backward-compatible minor release: no MCP
