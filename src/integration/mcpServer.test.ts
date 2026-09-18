@@ -15,6 +15,7 @@ const EXPECTED_TOOLS = [
   "diagrams_create",
   "diagrams_delete",
   "diagrams_diff",
+  "diagrams_export",
   "diagrams_generate",
   "diagrams_generate_sequence",
   "diagrams_get",
@@ -139,7 +140,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 11 tools", async () => {
+  it("discovers all 12 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });

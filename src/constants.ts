@@ -91,3 +91,9 @@ export const MAX_ENTITY_NAME_CHARS = 60;
 // The cap bounds what can be echoed into a single title line, so a title can
 // never wrap and break the emitted source.
 export const MAX_TEMPLATE_TITLE_CHARS = 200;
+
+// Largest HTML bundle diagrams_export returns. A bundle is one whole artifact or
+// nothing at all: over-cap is an error, never a cut file, so a caller never
+// saves a diagram with half its rendering. Matches MAX_REMOTE_BODY_BYTES, the
+// same memory bound the renderer already applies to a fetched SVG.
+export const MAX_EXPORT_HTML_BYTES = 5_000_000;
