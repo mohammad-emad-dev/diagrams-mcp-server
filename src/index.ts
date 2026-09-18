@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // MCP server for PlantUML and Mermaid diagrams, over stdio.
 // Exposes list, read, create, update, delete, render, consistency,
-// generation, sequence generation, and diff tools.
+// generation, sequence generation, diff, and starter-template tools.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -16,6 +16,7 @@ import { registerDiagramsCheckConsistency } from "./tools/diagramsCheckConsisten
 import { registerDiagramsGenerate } from "./tools/diagramsGenerate.js";
 import { registerDiagramsGenerateSequence } from "./tools/diagramsGenerateSequence.js";
 import { registerDiagramsDiff } from "./tools/diagramsDiff.js";
+import { registerDiagramsTemplate } from "./tools/diagramsTemplate.js";
 import { runSetup } from "./setup/index.js";
 
 function printHelp(): void {
@@ -85,6 +86,8 @@ async function main(): Promise<void> {
   registerDiagramsGenerate(server, ctx);
   registerDiagramsGenerateSequence(server, ctx);
   registerDiagramsDiff(server, ctx);
+  // The template tool is pure: it takes no context, so it registers alone.
+  registerDiagramsTemplate(server);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

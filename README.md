@@ -35,6 +35,7 @@ I built this after running into the same problem while using AI to work on softw
 | `diagrams_generate` | **Draft a PlantUML or Mermaid class diagram from a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 | `diagrams_generate_sequence` | **Draft a PlantUML or Mermaid sequence diagram from the message-call patterns in a slice of your codebase** (delivers the *sequence-from-code* roadmap item), returning source text to review and then save with `diagrams_create` |
 | `diagrams_diff` | **Compare two diagram sources — two stored files, or a stored file against inline text — and report added, removed, and renamed entity names** |
+| `diagrams_template` | **Instantiate a minimal, always-valid starter skeleton (class, sequence, or C4-context) in PlantUML or Mermaid** — one declaration per entity, nothing inferred, nothing written |
 
 `diagrams_check_consistency` is a dependency-free heuristic, not a full semantic or AST analysis. It reads entity names from `class`/`interface`/`enum`/`component` declarations, aliases, namespaces, packages, sequence participants, message calls such as `charge(card)`, C4 blocks, and subgraph groupings. It then searches source files for matching identifiers, using declaration patterns for JavaScript/TypeScript, Python, PHP, and Java, and whole-word matching elsewhere. It helps detect common drift, such as a renamed or removed class or a component that has not been implemented. Structured output includes extracted, matched, and unmatched entities, per-entity file evidence, analyzer tiers, and an explicit heuristic confidence warning. The scan limits are listed under [Consistency scan limits](#consistency-scan-limits).
 
@@ -43,6 +44,8 @@ I built this after running into the same problem while using AI to work on softw
 `diagrams_generate_sequence` drafts the other half of the picture: not the boxes, but the **conversation** between them. It reads the message-call patterns in a file or directory under your project root — one participant per scanned file, named by module — and emits ordered `from -> to : message` lines from the caller-to-callee edges the consistency checker's call graph already extracts. **Static call-site order is not runtime order**, and every result says so: a call inside a callback, promise, or listener is counted in `deferred_count` and excluded from the messages, because its real position in the conversation is unknowable from source. Participant mapping is declared-identifier equality only — a callee that no file in the scope declares is listed in `unresolved_callees` rather than attached to an invented participant, because which class owns a method is a type question and out of scope. Like `diagrams_generate` it is read-only and **never writes** — nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call — and every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, with every cap reporting itself in-band (`participants_capped` / `messages_capped` / `*_available` / `*_limit` / `truncated`). The sequence limits are listed under [Sequence limits](#sequence-limits).
 
 `diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
+
+`diagrams_template` is the blank-page tool that precedes all of them: **give it a kind, a dialect, and the entity names, and it hands back a minimal skeleton that already clears every syntax gate.** Boilerplate is where missing `@startuml`/`@enduml` boundaries and wrong starter keywords enter the repo, so one capped, deterministic emitter removes that failure mode: the six skeletons (class, sequence, C4-context × PlantUML, Mermaid) are fixed tables in source, and identical inputs yield byte-identical source in every process. It is pure — no filesystem, no code scanning, no heuristics, no state — so unlike `diagrams_generate` there is no `confidence` field and nothing to be uncertain about: it emits one declaration line per entity plus a TODO hint pointing at where the diagram grows, and nothing more. Member bodies, relations, and styling stay yours to write after the save. The PlantUML C4-context skeleton stays self-contained with plain rectangles, because real C4 shapes need the C4-PlantUML stdlib and this local-first server never fetches it; the Mermaid skeleton uses native `C4Context`. Nothing is ever written: the source comes back in the response, and nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call. The template limits are listed under [Template limits](#template-limits).
 
 ## Pagination and source windows
 
@@ -420,6 +423,19 @@ When the TypeScript compiler is not installed (published installs have no `types
 
 The tool has no caps of its own: both sides are already bounded by the two sources being compared, so every added, removed, and renamed name is reported in full. It reads nothing outside the diagrams root, and input-shape errors (a side given both or neither of its path and content, or inline content in no recognized dialect) are reported before any file is opened.
 
+### Template limits
+
+Every `diagrams_template` call observes these caps. There is no `max_*` argument to raise or lower — a skeleton is fixed scaffolding, so the ceilings below are the only shape it comes in:
+
+| Limit | Value | How you see it |
+|---|---|---|
+| Entities per skeleton | 20 names (`1`–`20`) | `entities_included` reports the count actually emitted, in the order given |
+| Entity name length | 60 characters | each name is emitted bare as a class, participant, or C4 alias, so this is the length that has to stay a legal identifier |
+| Title length | 200 characters | a longer title is rejected rather than truncated; whitespace-only is rejected rather than emitting an empty title line |
+| Template kinds | 3 (`class`, `sequence`, `c4_context`) | the set is fixed in source, so a fourth kind is a schema change, not a value to pass in |
+
+Every name must match `/^[A-Za-z_][A-Za-z0-9_]*$/` and no two may repeat — a duplicate would emit two declarations of the same box, so the second occurrence is rejected at its own index. A rejection comes back with `isError: true` and names the offending input; the emitted source always passes the same syntax gate `diagrams_create` applies, so a skeleton can be saved as-is.
+
 ## Example
 
 ```
@@ -468,9 +484,12 @@ src/
 │   │   └── ts/                    # Optional TypeScript AST path (dynamic import)
 │   ├── diff/                      # diagrams_diff comparison
 │   │   └── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
-│   └── generate/                  # diagrams_generate entity collection and emitters
-│       ├── collectEntities.ts     # Scan a scope into ordered entities + relations
-│       └── emitters.ts            # Pure PlantUML/Mermaid class-diagram emitters
+│   ├── generate/                  # diagrams_generate entity collection and emitters
+│   │   ├── collectEntities.ts     # Scan a scope into ordered entities + relations
+│   │   └── emitters.ts            # Pure PlantUML/Mermaid class-diagram emitters
+│   └── templates/                 # diagrams_template skeleton tables (no filesystem, no state)
+│       ├── skeletons.ts           # Six pure emitters: kind x dialect
+│       └── templateGoldens.test.ts # Exact emitted source per (template, format)
 ├── tools/                         # One MCP tool adapter per file (diagramsList, diagramsGet, …)
 └── integration/
     └── mcpServer.test.ts          # End-to-end server surface tests
@@ -485,6 +504,7 @@ test files need adding there.
 -   All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected. Windows-style `\` separators work as path separators on every platform, so `..\..` traversal is rejected on Linux too.
 - `diagrams_check_consistency` and `diagrams_generate` only *read* your codebase — they never modify code or diagrams. `diagrams_generate` resolves its `scope` against `PROJECT_ROOT` and refuses (without reading anything) any path that would land outside it; its output is source text you save yourself with `diagrams_create`.
 - `diagrams_diff` is read-only too: stored sides are read through the same traversal-protected store as `diagrams_get`, inline sides never touch the filesystem at all, and input-shape errors are reported before any file is opened. Errors and logs never include diagram source, only the names being reported.
+- `diagrams_template` touches no filesystem at all — no project root, no diagrams directory, no state between calls. It is pure source text in and out, so there is nothing to restrict and nothing to leak; the entity names you pass are the only thing it echoes back.
 - No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
 - Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
 

@@ -20,6 +20,7 @@ const EXPECTED_TOOLS = [
   "diagrams_get",
   "diagrams_list",
   "diagrams_render",
+  "diagrams_template",
   "diagrams_update",
 ];
 
@@ -57,6 +58,39 @@ function textOf(result: McpToolResult): string {
   return result.content.map((block) => block.text ?? "").join("\n");
 }
 
+/** Environment for a server rooted at `root`: the one way this file spawns one. */
+function serverEnv(root: string): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  env.PROJECT_ROOT = root;
+  env.DIAGRAMS_DIR = "diagrams";
+  // Belt-and-braces: render is discovery-only here, never networked.
+  env.DISABLE_REMOTE_PLANTUML = "true";
+  return env;
+}
+
+/** Spawn the compiled server against `root` and return a connected client. */
+async function connectServer(root: string): Promise<Client> {
+  const serverPath = path.join(process.cwd(), "dist", "index.js");
+  await fs.access(serverPath);
+
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [serverPath],
+    env: serverEnv(root),
+  });
+  const connected = new Client({
+    name: "diagrams-mcp-integration-test",
+    version: "0.1.0",
+  });
+  await connected.connect(transport);
+  return connected;
+}
+
 describe("MCP stdio integration (dist/index.js)", () => {
   let projectRoot = "";
   let diagramsDir = "";
@@ -92,30 +126,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     await fs.writeFile(sequenceCallerPath, SEQUENCE_CALLER, "utf-8");
     await fs.writeFile(sequenceCalleePath, SEQUENCE_CALLEE, "utf-8");
 
-    const serverPath = path.join(process.cwd(), "dist", "index.js");
-    await fs.access(serverPath);
-
-    const env: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) {
-        env[key] = value;
-      }
-    }
-    env.PROJECT_ROOT = projectRoot;
-    env.DIAGRAMS_DIR = "diagrams";
-    // Belt-and-braces: render is discovery-only here, never networked.
-    env.DISABLE_REMOTE_PLANTUML = "true";
-
-    const transport = new StdioClientTransport({
-      command: process.execPath,
-      args: [serverPath],
-      env,
-    });
-    client = new Client({
-      name: "diagrams-mcp-integration-test",
-      version: "0.1.0",
-    });
-    await client.connect(transport);
+    client = await connectServer(projectRoot);
   });
 
   after(async () => {
@@ -128,7 +139,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 10 tools", async () => {
+  it("discovers all 11 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });
@@ -638,6 +649,89 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal(result.isError, true);
     assert.match(textOf(result), /side 'a'/);
     assert.match(textOf(result), /side 'b'/);
+  });
+
+  it("hands a template skeleton straight to create and gets it back unchanged", async () => {
+    // Snapshot first: the template tool is read-only, so nothing lands in the
+    // diagrams directory until the explicit create below.
+    const before = await callTool("diagrams_list", { type_filter: "all" });
+    const beforeCount = (before.structuredContent as { count: number }).count;
+
+    const templatePath = "models/template-demo.puml";
+    const templated = await callTool("diagrams_template", {
+      template: "class",
+      format: "puml",
+      title: "Template Demo",
+      entities: ["User", "Order"],
+    });
+
+    assert.equal(templated.isError, undefined);
+    const structured = templated.structuredContent as {
+      template: string;
+      format: string;
+      title: string | null;
+      source: string;
+      entities: string[];
+      entities_included: number;
+      deterministic: boolean;
+      written: boolean;
+    };
+    assert.equal(structured.template, "class");
+    assert.equal(structured.format, "puml");
+    assert.equal(structured.title, "Template Demo");
+    assert.deepEqual(structured.entities, ["User", "Order"]);
+    assert.equal(structured.entities_included, 2);
+    assert.equal(structured.deterministic, true);
+    assert.equal(structured.written, false);
+    // The text block is the skeleton itself.
+    assert.equal(textOf(templated), structured.source);
+
+    // The emitted source clears the gate create enforces, so it saves as-is.
+    const created = await callTool("diagrams_create", {
+      relative_path: templatePath,
+      content: structured.source,
+    });
+    assert.equal(created.isError, undefined);
+
+    // And reads back byte for byte: the template-to-store handoff round-trips.
+    const read = await callTool("diagrams_get", { relative_path: templatePath });
+    assert.equal(read.isError, undefined);
+    assert.equal((read.structuredContent as { content: string }).content, structured.source);
+    assert.equal(textOf(read), structured.source);
+
+    await callTool("diagrams_delete", { relative_path: templatePath });
+    const after = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((after.structuredContent as { count: number }).count, beforeCount);
+  });
+
+  it("returns byte-identical source for identical inputs across separate server processes", async () => {
+    const args = {
+      template: "sequence",
+      format: "mermaid",
+      title: "Demo",
+      entities: ["Checkout", "Payment"],
+    };
+    const first = await callTool("diagrams_template", args);
+    assert.equal(first.isError, undefined);
+    const firstSource = (first.structuredContent as { source: string }).source;
+
+    // A second, separately spawned server over the same project root: no state
+    // is carried between the two, so identical inputs must replay exactly.
+    const secondClient = await connectServer(projectRoot);
+    try {
+      const raw = (await secondClient.callTool({
+        name: "diagrams_template",
+        arguments: args,
+      })) as unknown as McpToolResult;
+      assert.equal(raw.isError, undefined);
+      assert.equal(
+        (raw.structuredContent as { source: string }).source,
+        firstSource,
+        "two processes must emit byte-identical source for the same inputs",
+      );
+    } finally {
+      await secondClient.close();
+    }
   });
 
   it("deletes the diagram and leaves the codebase fixture untouched", async () => {

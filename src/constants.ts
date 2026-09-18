@@ -76,3 +76,18 @@ export const MAX_SEQUENCE_PARTICIPANTS = 20;
 // participant cap; a message whose endpoint the participant cap removed is
 // dropped too (never a message to an undeclared box) and counts as capped.
 export const MAX_SEQUENCE_MESSAGES = 50;
+
+// Largest entity list diagrams_template accepts. A skeleton is hand-instantiated
+// scaffolding, not generated content: the cap bounds what an agent can ask for
+// in one call, and the count is echoed back as entities_included.
+export const MAX_TEMPLATE_ENTITIES = 20;
+
+// Longest entity name diagrams_template accepts. Names are emitted bare in both
+// dialects (a class, participant, or C4 alias), so this is the length that has
+// to stay a legal identifier, not a label.
+export const MAX_ENTITY_NAME_CHARS = 60;
+
+// Longest title diagrams_template accepts, before it is normalized to one line.
+// The cap bounds what can be echoed into a single title line, so a title can
+// never wrap and break the emitted source.
+export const MAX_TEMPLATE_TITLE_CHARS = 200;
