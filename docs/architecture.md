@@ -13,8 +13,8 @@ cleanup, local verification results, and remaining release checks.
 MCP client (stdio)
   -> src/index.ts main()            # CLI dispatch: setup | --help | serve
   -> src/context.ts                 # one ServerContext for the process
-  -> src/server.ts                  # createDiagramServer(ctx): builds McpServer, registers 12 tools
-  -> src/tools/diagrams*.ts         # 12 tool adapters, one file per tool
+  -> src/server.ts                  # createDiagramServer(ctx): builds McpServer, registers 13 tools
+  -> src/tools/diagrams*.ts         # 13 tool adapters, one file per tool
   -> src/services/*                 # filesystem, analysis, rendering, emitters
   -> src/tools/toolError.ts         # expected vs. unexpected error mapping
 ```
@@ -22,7 +22,7 @@ MCP client (stdio)
 `main()` serves by: `createServerContext()`, `diagramStore.ensureRootExists()`,
 `createDiagramServer(ctx)`, then `server.connect(new StdioServerTransport())`.
 `createDiagramServer` builds `new McpServer({ name: "diagrams-mcp-server",
-... })`, runs the twelve `registerDiagrams*` calls, and returns the server.
+... })`, runs the thirteen `registerDiagrams*` calls, and returns the server.
 `setup` dispatches to `runSetup` in `src/setup/index.ts` (clients, prompts,
 terminal helpers in the same directory); `--help` / `-h` prints help and exits.
 
@@ -82,6 +82,7 @@ render step is unit-testable without a CLI or the network.
 | `diagrams_generate_sequence` | `diagramsGenerateSequence.ts` |
 | `diagrams_diff`              | `diagramsDiff.ts`             |
 | `diagrams_template`          | `diagramsTemplate.ts`         |
+| `diagrams_list_templates`    | `diagramsListTemplates.ts`    |
 
 Adapters validate input with strict Zod schemas and map failures through
 `toolError.ts`. Successful responses pair `content` with `structuredContent`:
@@ -213,6 +214,8 @@ adapter, including evidence field names, summary branches, and scan warnings.
 
 ## Tests
 
+UNRELEASED template discovery uses `templates/templateCatalog.ts` through `diagramsListTemplates.ts`. `listCustomTemplates` examines at most `MAX_TEMPLATE_SCAN_ENTRIES` (1,000) directory entries plus one lookahead, skips subfolders and symlink files, and returns candidate identifiers without opening their JSON. Discovery and instantiation share `resolveCustomTemplateDirectory` in `customTemplates.ts`. A missing directory gives built-ins only; a redirected directory is rejected. The tool reports partial scans explicitly and writes nothing.
+
 Tests are colocated with the source they cover (`*.test.ts`) and compile to
 `dist/`. `npm run build` runs `scripts/build.mjs`, which cleans the project's
 `dist/` before compiling with TypeScript. `npm test` runs `scripts/test.mjs`,
@@ -222,7 +225,7 @@ exit code. New tests need no package-script edits. Build before testing.
 Lint and formatting checks cover both `src/` and `scripts/`.
 
 `src/integration/mcpServer.test.ts` drives the compiled `dist/index.js`
-over real stdio with the SDK client and asserts the twelve names in
+over real stdio with the SDK client and asserts the thirteen names in
 `EXPECTED_TOOLS`; rendering stays stubbed or discovery-only there.
 
 Renderer tests give `TEMP`, `TMP`, and `TMPDIR` a file-owned temporary

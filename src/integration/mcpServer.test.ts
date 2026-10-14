@@ -21,6 +21,7 @@ const EXPECTED_TOOLS = [
   "diagrams_generate_sequence",
   "diagrams_get",
   "diagrams_list",
+  "diagrams_list_templates",
   "diagrams_render",
   "diagrams_template",
   "diagrams_update",
@@ -141,7 +142,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 12 tools", async () => {
+  it("discovers all 13 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });
@@ -189,6 +190,50 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal(result.structuredContent?.custom_template, "team-model");
     assert.equal(result.structuredContent?.written, false);
     assert.equal(textOf(result), "@startuml\ntitle Team Model\nclass Widget\n@enduml\n");
+  });
+
+  it("lists built-in and custom template candidates over real stdio", async () => {
+    const result = await callTool("diagrams_list_templates", {});
+
+    assert.equal(result.isError, undefined);
+    const structured = result.structuredContent as {
+      built_in: Array<{ template: string; formats: string[] }>;
+      custom: Array<{ template: string; custom_template: string; relative_path: string }>;
+      custom_count: number;
+      entries_scanned: number;
+      scan_limit: number;
+      truncated: boolean;
+      scan_warning: string | null;
+      written: boolean;
+    };
+    assert.deepEqual(
+      structured.built_in.map((entry) => entry.template),
+      ["class", "sequence", "c4_context"],
+    );
+    for (const entry of structured.built_in) {
+      assert.deepEqual(entry.formats, ["puml", "mermaid"]);
+    }
+    assert.ok(
+      structured.custom.some((entry) => entry.custom_template === "team-model"),
+      "the team-model fixture must appear as a candidate",
+    );
+    const teamModel = structured.custom.find((entry) => entry.custom_template === "team-model");
+    assert.equal(teamModel?.template, "custom");
+    assert.equal(teamModel?.relative_path, ".diagrams-templates/team-model.json");
+    assertPosixPath(teamModel?.relative_path ?? "", "custom relative_path");
+    assert.equal(structured.custom_count, structured.custom.length);
+    assert.equal(structured.scan_limit, 1000);
+    assert.equal(structured.truncated, false);
+    assert.equal(structured.scan_warning, null);
+    assert.equal(structured.written, false);
+    assert.ok(textOf(result).includes("team-model"));
+    assert.ok(textOf(result).includes("class"));
+  });
+
+  it("rejects unknown template discovery arguments over real stdio", async () => {
+    const result = await callTool("diagrams_list_templates", { output_dir: "elsewhere" });
+    assert.equal(result.isError, true);
+    assert.match(textOf(result), /output_dir/);
   });
 
   it("creates a diagram with POSIX structured output", async () => {

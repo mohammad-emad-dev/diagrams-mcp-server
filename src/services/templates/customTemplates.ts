@@ -46,12 +46,18 @@ async function readBoundedTemplate(handle: FileHandle, name: string): Promise<st
   return decodeTemplate(buffer.subarray(0, total), name);
 }
 
+export async function resolveCustomTemplateDirectory(projectRoot: string): Promise<string> {
+  const directory = path.join(projectRoot, ".diagrams-templates");
+  if (!(await fs.lstat(directory)).isDirectory())
+    throw new CustomTemplateError(
+      "Custom template directory must be a regular directory, not a symlink.",
+    );
+  return fs.realpath(directory);
+}
+
 async function readTemplate(projectRoot: string, name: string): Promise<string> {
   try {
-    const directory = path.join(projectRoot, ".diagrams-templates");
-    if (!(await fs.lstat(directory)).isDirectory())
-      throw templateFailure(name, "directory must be a regular directory, not a symlink");
-    const root = await fs.realpath(directory);
+    const root = await resolveCustomTemplateDirectory(projectRoot);
     const file = path.join(root, `${name}.json`);
     const before = await fs.lstat(file);
     if (!before.isFile() || before.isSymbolicLink())

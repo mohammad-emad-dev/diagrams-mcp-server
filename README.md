@@ -24,7 +24,7 @@ I built this after running into the same problem while using AI to work on softw
 
 ## Features
 
-Twelve tools in four groups. The read-only drafting tools (`diagrams_generate`, `diagrams_generate_sequence`, `diagrams_template`, `diagrams_export`) never write: they return source text and you save it yourself with `diagrams_create`.
+Thirteen tools in four groups (template discovery is UNRELEASED). The read-only drafting tools (`diagrams_generate`, `diagrams_generate_sequence`, `diagrams_template`, `diagrams_export`) never write: they return source text and you save it yourself with `diagrams_create`.
 
 ### Manage diagrams
 
@@ -54,11 +54,18 @@ Twelve tools in four groups. The read-only drafting tools (`diagrams_generate`, 
 
 | Tool | What it does |
 |---|---|
+| `diagrams_list_templates` | **UNRELEASED: discover built-in kinds and project-local custom-template candidates** without reading template contents or writing files |
 | `diagrams_generate` | **Draft a PlantUML or Mermaid class diagram from a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 | `diagrams_generate_sequence` | **Draft a PlantUML or Mermaid sequence diagram from the message-call patterns in a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 | `diagrams_template`          | **Instantiate a minimal, always-valid starter skeleton (class, sequence, C4-context, or project-local custom) in PlantUML or Mermaid** — one declaration per entity, nothing inferred, nothing written |
 
 ### Tool notes
+
+#### `diagrams_list_templates` (UNRELEASED)
+
+Call with `{}` to discover the three built-in kinds and custom-template candidate names under `<PROJECT_ROOT>/.diagrams-templates`. Each custom result includes `custom_template` and a relative POSIX `relative_path`; use the identifier with `diagrams_template`, which validates the definition, selected dialect, and emitted source. Discovery reads directory entries only, so malformed JSON files can appear as candidates.
+
+The tool writes nothing and does not create a missing template directory. It examines at most 1,000 entries (`MAX_TEMPLATE_SCAN_ENTRIES`), counting non-template entries too, plus one lookahead to detect a cap. A capped scan returns `truncated: true` and `scan_warning`; `custom_count` describes the returned candidates, not a full directory total. Returned names are sorted, but a capped subset depends on filesystem iteration order. Subdirectories, symlink files/directories, invalid identifiers, and extensions other than `.json` are excluded or rejected.
 
 #### `diagrams_check_consistency` It reads entity names from `class`/`interface`/`enum`/`component` declarations, aliases, namespaces, packages, sequence participants, message calls such as `charge(card)`, C4 blocks, and subgraph groupings. It then searches source files for matching identifiers, using declaration patterns for JavaScript/TypeScript, Python, PHP, and Java, and whole-word matching elsewhere. It helps detect common drift, such as a renamed or removed class or a component that has not been implemented. Structured output includes extracted, matched, and unmatched entities, per-entity file evidence, analyzer tiers, and an explicit heuristic confidence warning. The scan limits are listed under [Consistency scan limits](#consistency-scan-limits).
 
@@ -589,8 +596,9 @@ src/
 │   └── templates/                 # diagrams_template skeletons + UNRELEASED custom loader
 │       ├── skeletons.ts           # Six pure built-in emitters: kind x dialect
 │       ├── customTemplates.ts     # UNRELEASED .diagrams-templates/<id>.json loader (+ customTemplates.test.ts)
+│       ├── templateCatalog.ts     # UNRELEASED bounded candidate discovery (+ templateCatalog.test.ts)
 │       └── templateGoldens.test.ts # Exact emitted source per (template, format)
-├── tools/                         # One MCP tool adapter per file (12 tools) + shared toolError; *.test.ts colocated per tool
+├── tools/                         # One MCP tool adapter per file (13 tools) + shared toolError; *.test.ts colocated per tool
 │   ├── diffInput.ts               # diagrams_diff validation and stored/inline side loading
 │   └── diffSummary.ts             # diagrams_diff text summaries
 └── integration/

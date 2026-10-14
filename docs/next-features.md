@@ -7,7 +7,7 @@
 > Original phase baseline: `diagrams-mcp-server` v0.6.0, TypeScript ESM,
 > Node >=18 runtime, Node >=20.19 dev toolchain, 7 MCP tools, zero production
 > dependencies beyond `@modelcontextprotocol/sdk` and `zod`.
-> Current checkout (cleanup handoff): package v0.7.0 with 12 tools registered
+> Cleanup handoff baseline: package v0.7.0 with 12 tools registered
 > in `src/server.ts`, including all 5 tools proposed below
 > (`diagrams_generate`, `diagrams_diff`, `diagrams_generate_sequence`,
 > `diagrams_template`, `diagrams_export`). Checkbox states below are the
