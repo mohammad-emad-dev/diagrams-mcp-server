@@ -84,17 +84,13 @@ export function stripCommentsAndStrings(content: string, family: LanguageFamily)
   return content.replace(new RegExp(patternSource, "g"), " ");
 }
 
-/** One side of an `X as Y` pair, normalized to a bare identifier or "". */
-function takeAliasSide(part: string, side: "alias" | "original"): string {
-  const halves = part.trim().split(/\s+as\s+/);
-  return (side === "alias" ? halves.pop() : halves[0])?.trim() ?? "";
-}
-
 /** Add one comma-list item's alias and original names when they are identifiers. */
 function addCommaListNames(target: Set<string>, name: string): void {
   for (const part of name.split(",")) {
-    for (const side of ["alias", "original"] as const) {
-      const candidate = takeAliasSide(part, side);
+    const halves = part.trim().split(/\s+as\s+/);
+    const alias = halves[halves.length - 1]?.trim() ?? "";
+    const original = halves[0]?.trim() ?? "";
+    for (const candidate of [alias, original]) {
       if (/^[A-Za-z_$][\w$]*$/.test(candidate)) {
         target.add(candidate);
       }

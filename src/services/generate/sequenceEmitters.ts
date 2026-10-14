@@ -12,7 +12,7 @@
 // layer, so what structuredContent reports is exactly what the source renders.
 
 import type { DiagramType } from "../../types.js";
-import type { SequenceMessage } from "./sequence.js";
+import type { SequenceMessage } from "./types.js";
 
 /** True when the name is a legal bare participant token in both dialects. */
 function isBareParticipantName(name: string): boolean {
@@ -111,13 +111,21 @@ export function mermaidParticipantName(name: string, taken: Set<string>): string
 
 /** Emit PlantUML: declarations, then one ordered message per collected call. */
 export function emitPlantUmlSequence(participants: string[], messages: SequenceMessage[]): string {
+  const participantTokens = new Map<string, string>();
+  const participantToken = (name: string): string => {
+    const cached = participantTokens.get(name);
+    if (cached !== undefined) return cached;
+    const token = pumlParticipantName(name);
+    participantTokens.set(name, token);
+    return token;
+  };
   const lines = ["@startuml"];
   for (const name of participants) {
-    lines.push(`participant ${pumlParticipantName(name)}`);
+    lines.push(`participant ${participantToken(name)}`);
   }
   for (const message of messages) {
     lines.push(
-      `${pumlParticipantName(message.from)} -> ${pumlParticipantName(message.to)} : ${message.message}`,
+      `${participantToken(message.from)} -> ${participantToken(message.to)} : ${message.message}`,
     );
   }
   lines.push("@enduml");

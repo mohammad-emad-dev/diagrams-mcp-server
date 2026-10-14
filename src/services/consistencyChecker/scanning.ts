@@ -1,6 +1,7 @@
 // Filesystem scan: ignored directories, code extensions, scan limits,
 // and the recursive directory walker.
 import { promises as fs } from "node:fs";
+import type { Dirent } from "node:fs";
 import path from "node:path";
 
 const DEFAULT_IGNORED_DIRS = new Set([
@@ -86,6 +87,25 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
+async function readDirectoryEntries(dir: string): Promise<Dirent[] | null> {
+  try {
+    return await fs.readdir(dir, { withFileTypes: true });
+  } catch (err: unknown) {
+    // Skip missing/unreadable directories; anything else (I/O errors,
+    // name too long) must surface instead of silently truncating the scan.
+    const skippable =
+      isNodeError(err) &&
+      (err.code === "ENOENT" ||
+        err.code === "EACCES" ||
+        err.code === "EPERM" ||
+        err.code === "ENOTDIR");
+    if (!skippable) {
+      throw err;
+    }
+    return null;
+  }
+}
+
 export async function collectCodeFiles(
   rootDir: string,
   maxFiles: number,
@@ -107,21 +127,8 @@ export async function collectCodeFiles(
     if (isCapped()) {
       return;
     }
-    let entries;
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch (err: unknown) {
-      // Skip missing/unreadable directories; anything else (I/O errors,
-      // name too long) must surface instead of silently truncating the scan.
-      const skippable =
-        isNodeError(err) &&
-        (err.code === "ENOENT" ||
-          err.code === "EACCES" ||
-          err.code === "EPERM" ||
-          err.code === "ENOTDIR");
-      if (!skippable) {
-        throw err;
-      }
+    const entries = await readDirectoryEntries(dir);
+    if (entries === null) {
       return;
     }
     for (const entry of entries) {

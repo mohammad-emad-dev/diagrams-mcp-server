@@ -3,49 +3,41 @@
 // and only falls back to the public render server when explicitly enabled
 // with ALLOW_REMOTE_PLANTUML=true. DISABLE_REMOTE_PLANTUML=true always wins.
 
-import { spawn } from "node:child_process";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
-import zlib from "node:zlib";
-import {
-  MAX_REMOTE_BODY_BYTES,
-  MAX_RENDER_ERROR_CHARS,
-  MAX_RENDER_OUTPUT_CHARS,
-  PLANTUML_SERVER_URL,
-  REMOTE_FETCH_TIMEOUT_MS,
-} from "../constants.js";
 import type { DiagramType } from "../types.js";
+import type { RenderFormat, RendererDeps, RenderResult } from "./renderer/types.js";
+import {
+  commandExists,
+  resolveSpawnTarget,
+  runCommand,
+  type SpawnTarget,
+} from "./renderer/command.js";
+import { RenderError } from "./renderer/error.js";
+import {
+  defaultFetchRemote,
+  encodePlantUmlForUrl,
+  renderPlantUmlRemote,
+} from "./renderer/plantumlRemote.js";
+import { renderMermaid, renderPlantUmlLocal } from "./renderer/local.js";
 
-export type RenderFormat = "svg" | "png";
-
-export class RenderError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "RenderError";
-  }
-}
-
-// Minimal remote-render response shape, kept narrow for tests.
-export interface RemoteRenderResponse {
-  ok: boolean;
-  status: number;
-  contentLength?: number | null;
-  arrayBuffer: () => Promise<ArrayBuffer>;
-}
-
-// Seams for the process/network edges. Omitted fields use the real
-// implementation; callers in production pass nothing.
-export interface RendererDeps {
-  commandExists?: (cmd: string) => Promise<boolean>;
-  runCommand?: (
-    cmd: string,
-    args: string[],
-    timeoutMs?: number,
-  ) => Promise<{ stdout: string; stderr: string }>;
-  fetchRemote?: (url: string) => Promise<RemoteRenderResponse>;
-}
+// The command layer stays re-exported from here so existing imports
+// (toolError.ts, renderer.test.ts) keep the same bindings and class
+// identity without reaching into the submodules. The remote helpers
+// re-export for the same reason.
+export {
+  RenderError,
+  defaultFetchRemote,
+  encodePlantUmlForUrl,
+  runCommand,
+  resolveSpawnTarget,
+  type SpawnTarget,
+};
+export type {
+  RenderFormat,
+  RemoteRenderResponse,
+  RendererDeps,
+  RenderProvenance,
+  RenderResult,
+} from "./renderer/types.js";
 
 // Remote rendering is opt-in: enabled only by ALLOW_REMOTE_PLANTUML=true,
 // and always off when DISABLE_REMOTE_PLANTUML=true. Read per call so
@@ -53,364 +45,6 @@ export interface RendererDeps {
 export function isRemotePlantUmlDisabled(): boolean {
   if (process.env.DISABLE_REMOTE_PLANTUML === "true") return true;
   return process.env.ALLOW_REMOTE_PLANTUML !== "true";
-}
-
-async function commandExists(cmd: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    const checker = spawn(process.platform === "win32" ? "where" : "which", [cmd]);
-    checker.on("error", () => resolve(false));
-    checker.on("close", (code) => resolve(code === 0));
-  });
-}
-
-// Candidate names for one CLI. The bare name comes first, then Windows
-// executable extensions so npm shims (e.g. `mmdc.cmd`) resolve. Detection
-// and execution always use the same candidate that was found.
-function resolveCandidates(cmd: string): string[] {
-  return [cmd, `${cmd}.cmd`, `${cmd}.exe`, `${cmd}.bat`];
-}
-
-// True when the executable itself could not be started.
-function isLaunchFailure(err: unknown): boolean {
-  if (err instanceof Error) {
-    const code = (err as { code?: unknown }).code;
-    if (code === "ENOENT" || code === "EINVAL") return true;
-    return err.message.includes("ENOENT") || err.message.includes("EINVAL");
-  }
-  return false;
-}
-
-type LocalCommandOutcome = "ok" | "missing" | "unlaunchable";
-
-// Run a local CLI using the first candidate that resolves. Falls through
-// to the next candidate on launch failures; other errors propagate.
-async function runLocalCommand(
-  cmd: string,
-  args: string[],
-  deps: Required<RendererDeps>,
-): Promise<LocalCommandOutcome> {
-  let detected = false;
-  for (const candidate of resolveCandidates(cmd)) {
-    if (!(await deps.commandExists(candidate))) continue;
-    detected = true;
-    try {
-      await deps.runCommand(candidate, args);
-      return "ok";
-    } catch (err: unknown) {
-      if (!isLaunchFailure(err)) throw err;
-    }
-  }
-  return detected ? "unlaunchable" : "missing";
-}
-
-// Quote one argv element for the Windows command interpreter.
-// Dual-layer quoting: MSVC C-runtime first, then cmd.exe. Safe chars pass
-// through; everything else is wrapped in double quotes so & | < > ^ stay
-// literal. Embedded quotes become \" (not ""), trailing backslashes double.
-// % is deliberately NOT doubled: inside a quoted argument cmd.exe expands
-// %VAR% regardless, so doubling only corrupts literal percent signs
-// ("100%" -> "100%%") without buying any protection. The line is handed to
-// cmd.exe verbatim (see runCommand), so no escaping of % is possible here.
-function quoteWindowsArg(arg: string): string {
-  if (arg.length === 0) return '""';
-  if (/^[A-Za-z0-9_\-./:\\]+$/.test(arg)) return arg;
-  let escaped = arg.replace(/(\\*)"/g, '$1$1\\"');
-  escaped = escaped.replace(/(\\+)$/, "$1$1");
-  return `"${escaped}"`;
-}
-
-export interface SpawnTarget {
-  cmd: string;
-  args: string[];
-}
-
-// Batch shims (`.cmd`/`.bat`) cannot spawn directly, so on Windows they
-// run through the command interpreter. Everything else spawns unchanged.
-export function resolveSpawnTarget(
-  cmd: string,
-  args: string[],
-  platform: NodeJS.Platform = process.platform,
-): SpawnTarget {
-  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(cmd)) {
-    return { cmd, args };
-  }
-  const line = [cmd, ...args].map(quoteWindowsArg).join(" ");
-  // cmd.exe /d /s /c strips the first and last quote when the command starts
-  // with one. A quoted shim path (8.3 short names like C:\Users\RUNNER~1 on
-  // CI, or any spaced directory) would lose its opening quote together with
-  // the last argument's closing quote, failing with "The filename, directory
-  // name, or volume label syntax is incorrect". An outer wrapper makes the
-  // strip remove only the wrapper, leaving the inner command intact.
-  const commandLine = line.startsWith('"') ? `"${line}"` : line;
-  return {
-    cmd: process.env.ComSpec ?? "cmd.exe",
-    args: ["/d", "/s", "/c", commandLine],
-  };
-}
-
-// Run a renderer CLI and collect stdout/stderr, each capped at
-// MAX_RENDER_OUTPUT_CHARS. Over-limit output stops the child and rejects
-// with a RenderError that never includes captured output. Timeouts are
-// enforced by a timer (not the spawn option) so a lingering descendant
-// holding the pipes cannot delay the error. A non-zero exit rejects with
-// the stderr prefix (at most MAX_RENDER_ERROR_CHARS) so tool output never
-// carries unbounded renderer text.
-export function runCommand(
-  cmd: string,
-  args: string[],
-  timeoutMs = 20_000,
-): Promise<{ stdout: string; stderr: string }> {
-  const target = resolveSpawnTarget(cmd, args);
-  // When resolveSpawnTarget wrapped a .cmd/.bat shim it hand-quoted the
-  // /c line; libuv must pass it through untouched or it re-quotes the
-  // already-quoted path and splits every argument containing a space
-  // (C:\sub dir\in.mmd arrives as three fragments with literal quotes).
-  // Gated on the wrapped case only: a real executable (mmdc.exe) still
-  // needs libuv's own quoting for its spaced arguments.
-  const interpreter = process.env.ComSpec ?? "cmd.exe";
-  const usesInterpreter = process.platform === "win32" && target.cmd === interpreter;
-  return new Promise((resolve, reject) => {
-    const child = spawn(target.cmd, target.args, {
-      windowsHide: true,
-      ...(usesInterpreter ? { windowsVerbatimArguments: true } : {}),
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const settleResolve = (value: { stdout: string; stderr: string }): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(value);
-    };
-    const settleReject = (err: Error): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      reject(err);
-    };
-    const stopChild = (): void => {
-      child.stdout.destroy();
-      child.stderr.destroy();
-      child.kill();
-    };
-    const stopForOverflow = (stream: "stdout" | "stderr"): void => {
-      stopChild();
-      settleReject(
-        new RenderError(
-          `Renderer output exceeded the ${MAX_RENDER_OUTPUT_CHARS}-character ` +
-            `${stream} limit and the renderer was stopped. Check the diagram ` +
-            `syntax or install a working local renderer CLI.`,
-        ),
-      );
-    };
-    const timer: NodeJS.Timeout = setTimeout(() => {
-      stopChild();
-      settleReject(
-        new RenderError(
-          `Renderer timed out after ${timeoutMs}ms and was stopped. ` +
-            `Check the diagram syntax or install a working local renderer CLI.`,
-        ),
-      );
-    }, timeoutMs);
-    const collect = (stream: "stdout" | "stderr", text: string): void => {
-      if (settled) return;
-      const kept = stream === "stdout" ? stdout : stderr;
-      const room = MAX_RENDER_OUTPUT_CHARS - kept.length;
-      if (text.length > room) {
-        // Keep only what fits so returned content never exceeds the cap.
-        if (room > 0) {
-          if (stream === "stdout") stdout += text.slice(0, room);
-          else stderr += text.slice(0, room);
-        }
-        stopForOverflow(stream);
-        return;
-      }
-      if (stream === "stdout") stdout += text;
-      else stderr += text;
-    };
-    child.stdout.on("data", (d) => collect("stdout", d.toString()));
-    child.stderr.on("data", (d) => collect("stderr", d.toString()));
-    child.on("error", (err) => settleReject(err));
-    child.on("close", (code) => {
-      if (code === 0) {
-        settleResolve({ stdout, stderr });
-      } else {
-        const detail =
-          stderr.length > MAX_RENDER_ERROR_CHARS
-            ? `${stderr.slice(0, MAX_RENDER_ERROR_CHARS)}…`
-            : stderr;
-        settleReject(new RenderError(detail || `Command exited with code ${code}`));
-      }
-    });
-  });
-}
-
-async function renderMermaid(
-  source: string,
-  format: RenderFormat,
-  deps: Required<RendererDeps>,
-): Promise<Buffer> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-mcp-"));
-  const inputPath = path.join(tmpDir, "input.mmd");
-  const outputPath = path.join(tmpDir, `output.${format}`);
-
-  try {
-    await fs.writeFile(inputPath, source, "utf-8");
-    const outcome = await runLocalCommand(
-      "mmdc",
-      ["-i", inputPath, "-o", outputPath, "-b", "transparent"],
-      deps,
-    );
-    if (outcome === "missing") {
-      throw new RenderError(
-        "Mermaid rendering requires the 'mmdc' CLI, which is not installed. " +
-          "Install it with: npm install -g @mermaid-js/mermaid-cli",
-      );
-    }
-    if (outcome === "unlaunchable") {
-      throw new RenderError(
-        "Mermaid rendering found an 'mmdc' command that could not be executed. " +
-          "On Windows this usually means only an npm shim is on PATH; " +
-          "reinstall with: npm install -g @mermaid-js/mermaid-cli " +
-          "and ensure the npm global bin directory is on PATH.",
-      );
-    }
-    return await fs.readFile(outputPath);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-}
-
-const deflateRawAsync = promisify(zlib.deflateRaw);
-
-/** PlantUML's "deflate + custom base64" encoding for its HTTP rendering API. */
-// Async so huge sources compress off the event loop instead of stalling
-// the server. Exported as a test seam (same precedent as resolveSpawnTarget).
-export async function encodePlantUmlForUrl(source: string): Promise<string> {
-  const deflated = await deflateRawAsync(Buffer.from(source, "utf-8"), {
-    level: 9,
-  });
-  const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_";
-
-  let result = "";
-  for (let i = 0; i < deflated.length; i += 3) {
-    const b1 = deflated[i];
-    const b2 = i + 1 < deflated.length ? deflated[i + 1] : 0;
-    const b3 = i + 2 < deflated.length ? deflated[i + 2] : 0;
-
-    result += alphabet[b1 >> 2];
-    result += alphabet[((b1 & 0x3) << 4) | (b2 >> 4)];
-    if (i + 1 < deflated.length) {
-      result += alphabet[((b2 & 0xf) << 2) | (b3 >> 6)];
-    }
-    if (i + 2 < deflated.length) {
-      result += alphabet[b3 & 0x3f];
-    }
-  }
-  return result;
-}
-
-async function renderPlantUmlLocal(
-  source: string,
-  format: RenderFormat,
-  deps: Required<RendererDeps>,
-): Promise<Buffer | null> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-mcp-"));
-  const inputPath = path.join(tmpDir, "input.puml");
-
-  try {
-    await fs.writeFile(inputPath, source, "utf-8");
-    const flag = format === "svg" ? "-tsvg" : "-tpng";
-    const outcome = await runLocalCommand("plantuml", [flag, inputPath], deps);
-    if (outcome === "missing") return null;
-    if (outcome === "unlaunchable") {
-      throw new RenderError(
-        "PlantUML rendering found a 'plantuml' command that could not be executed. " +
-          "Install a working local 'plantuml' CLI for offline rendering.",
-      );
-    }
-    const outputPath = path.join(tmpDir, `input.${format}`);
-    return await fs.readFile(outputPath);
-  } finally {
-    await fs.rm(tmpDir, { recursive: true, force: true });
-  }
-}
-
-// Exported as a test seam (same precedent as resolveSpawnTarget).
-export async function defaultFetchRemote(
-  url: string,
-  timeoutMs = REMOTE_FETCH_TIMEOUT_MS,
-): Promise<RemoteRenderResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    const lengthHeader = response.headers.get("content-length");
-    const contentLength = lengthHeader === null ? null : Number(lengthHeader);
-    return {
-      ok: response.ok,
-      status: response.status,
-      contentLength: contentLength === null || Number.isNaN(contentLength) ? null : contentLength,
-      arrayBuffer: () => response.arrayBuffer(),
-    };
-  } catch (err: unknown) {
-    if (err instanceof Error && err.name === "AbortError") {
-      throw new RenderError(
-        `PlantUML rendering request timed out after ${timeoutMs}ms and was stopped. ` +
-          `Install a local 'plantuml' CLI for offline rendering.`,
-      );
-    }
-    throw err;
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function renderPlantUmlRemote(
-  source: string,
-  format: RenderFormat,
-  deps: Required<RendererDeps>,
-): Promise<Buffer> {
-  const encoded = await encodePlantUmlForUrl(source);
-  const url = `${PLANTUML_SERVER_URL}/${format}/${encoded}`;
-
-  const response = await deps.fetchRemote(url);
-  if (!response.ok) {
-    throw new RenderError(
-      `PlantUML rendering server responded with ${response.status}. ` +
-        `Install a local 'plantuml' CLI for offline rendering, or check the diagram syntax.`,
-    );
-  }
-  // Bound the remote body before buffering it: a declared over-cap length
-  // rejects without reading, and the buffered length is re-checked for
-  // missing or lying headers. The error never includes body bytes.
-  const declared = response.contentLength ?? null;
-  if (declared !== null && declared > MAX_REMOTE_BODY_BYTES) {
-    throw overRemoteBodyCap();
-  }
-  const arrayBuffer = await response.arrayBuffer();
-  if (arrayBuffer.byteLength > MAX_REMOTE_BODY_BYTES) {
-    throw overRemoteBodyCap();
-  }
-  return Buffer.from(arrayBuffer);
-}
-
-function overRemoteBodyCap(): RenderError {
-  return new RenderError(
-    `PlantUML rendering response exceeded the ${MAX_REMOTE_BODY_BYTES}-byte ` +
-      `limit and was discarded. Install a local 'plantuml' CLI for offline rendering.`,
-  );
-}
-
-/** Which path produced a rendered image, for provenance reporting. */
-export type RenderProvenance = "local-plantuml" | "remote-plantuml" | "mmdc";
-
-export interface RenderResult {
-  /** The rendered image bytes. */
-  buffer: Buffer;
-  /** Which path produced the buffer. */
-  renderedWith: RenderProvenance;
 }
 
 /**

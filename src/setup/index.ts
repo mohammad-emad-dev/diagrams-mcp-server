@@ -1,7 +1,8 @@
 // Guided installer: registers this server with an MCP client so users
 // skip hand-editing JSON. Orchestrator only: terminal rendering, prompt
-// drivers, and client-config logic live in ./terminal.js, ./prompts.js,
-// and ./clients.js. Usage:
+// drivers, client commands, and configuration live in ./terminal.js,
+// ./prompts.js, ./clients.js, and ./configuration.js. Arguments and
+// project-root policy live in ./arguments.js and ./projectRoot.js. Usage:
 //   npx diagrams-mcp-server setup [--client <name>]
 //     [--project-root <dir>] [--scope global|project] [--yes]
 import { spawn } from "node:child_process";
@@ -11,18 +12,18 @@ import {
   FILE_CLIENTS,
   SETUP_CLIENTS,
   cliAddCommand,
-  ensureProjectRoot,
   findOnPath,
   isSetupClient,
-  parseSetupArgs,
-  shouldBakeProjectRoot,
-  writeFileClientConfig,
 } from "./clients.js";
-import type { FileSetupClient, SetupOptions } from "./clients.js";
+import type { FileSetupClient } from "./clients.js";
+import { parseSetupArgs } from "./arguments.js";
+import type { SetupOptions } from "./arguments.js";
+import { ensureProjectRoot, shouldBakeProjectRoot } from "./projectRoot.js";
+import { writeFileClientConfig } from "./configuration.js";
 import { ask, confirmPrompt, pickClient, pickScope } from "./prompts.js";
 import { box, paint, renderBanner } from "./terminal.js";
 
-const SETUP_VERSION = "0.6.0"; // Keep in sync with package.json (checked at release).
+const SETUP_VERSION = "0.7.0"; // Keep in sync with package.json (checked at release).
 
 function runAddCommand(
   client: "claude-code" | "codex",

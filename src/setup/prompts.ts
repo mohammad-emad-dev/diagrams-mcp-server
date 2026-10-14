@@ -67,8 +67,9 @@ async function selectPrompt(
   process.stdin.resume();
   process.stdout.write("\x1b[?25l");
   let active = initial;
-  const lineCount = renderSelect(message, options, active).split("\n").length;
-  process.stdout.write(`${renderSelect(message, options, active)}\n`);
+  const initialFrame = renderSelect(message, options, active);
+  const lineCount = initialFrame.split("\n").length;
+  process.stdout.write(`${initialFrame}\n`);
   try {
     return await new Promise<number | undefined>((resolve) => {
       const onKey = (_chunk: unknown, key: Keypress): void => {
@@ -116,8 +117,9 @@ export async function confirmPrompt(question: string, initialYes = true): Promis
   process.stdin.resume();
   process.stdout.write("\x1b[?25l");
   let yes = initialYes;
-  const lineCount = renderConfirm(question, yes).split("\n").length;
-  process.stdout.write(`${renderConfirm(question, yes)}\n`);
+  const initialFrame = renderConfirm(question, yes);
+  const lineCount = initialFrame.split("\n").length;
+  process.stdout.write(`${initialFrame}\n`);
   try {
     return await new Promise<boolean>((resolve) => {
       const onKey = (_chunk: unknown, key: Keypress): void => {

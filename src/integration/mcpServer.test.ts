@@ -1,5 +1,6 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -20,6 +21,7 @@ const EXPECTED_TOOLS = [
   "diagrams_generate_sequence",
   "diagrams_get",
   "diagrams_list",
+  "diagrams_list_templates",
   "diagrams_render",
   "diagrams_template",
   "diagrams_update",
@@ -140,9 +142,128 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 12 tools", async () => {
+  it("discovers all 13 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
+  });
+
+  it("advertises the package.json version over stdio", async () => {
+    const raw = await fs.readFile(new URL("../../package.json", import.meta.url), "utf-8");
+    const expected = (JSON.parse(raw) as { version: string }).version;
+    assert.equal(typeof expected, "string");
+    assert.equal(getClient().getServerVersion()?.version, expected);
+  });
+
+  it("prints the package.json version in the setup banner", async () => {
+    const raw = await fs.readFile(new URL("../../package.json", import.meta.url), "utf-8");
+    const expected = (JSON.parse(raw) as { version: string }).version;
+    assert.equal(typeof expected, "string");
+    const setup = spawnSync(
+      process.execPath,
+      ["dist/index.js", "setup", "--client", "version-check-invalid", "--yes"],
+      { cwd: process.cwd(), encoding: "utf-8" },
+    );
+    assert.equal(setup.status, 1);
+    assert.match(setup.stderr, /Unknown client 'version-check-invalid'/);
+    assert.ok(setup.stdout.includes(`v${expected}`));
+  });
+
+  it("loads a project-local custom template over real stdio", async () => {
+    const directory = path.join(projectRoot, ".diagrams-templates");
+    await fs.mkdir(directory);
+    await fs.writeFile(
+      path.join(directory, "team-model.json"),
+      JSON.stringify({
+        puml: {
+          source: "@startuml\ntitle {{title}}\n{{entities}}\n@enduml\n",
+          entity: "class {{name}}",
+        },
+      }),
+    );
+    const result = await callTool("diagrams_template", {
+      template: "custom",
+      custom_template: "team-model",
+      title: "Team Model",
+      entities: ["Widget"],
+    });
+    assert.equal(result.isError, undefined);
+    assert.equal(result.structuredContent?.custom_template, "team-model");
+    assert.equal(result.structuredContent?.written, false);
+    assert.equal(textOf(result), "@startuml\ntitle Team Model\nclass Widget\n@enduml\n");
+  });
+
+  it("lists built-in and custom template candidates over real stdio", async () => {
+    const result = await callTool("diagrams_list_templates", {});
+
+    assert.equal(result.isError, undefined);
+    const structured = result.structuredContent as {
+      built_in: Array<{ template: string; formats: string[] }>;
+      custom: Array<{ template: string; custom_template: string; relative_path: string }>;
+      custom_count: number;
+      entries_scanned: number;
+      scan_limit: number;
+      truncated: boolean;
+      scan_warning: string | null;
+      written: boolean;
+    };
+    assert.deepEqual(
+      structured.built_in.map((entry) => entry.template),
+      ["class", "sequence", "c4_context"],
+    );
+    for (const entry of structured.built_in) {
+      assert.deepEqual(entry.formats, ["puml", "mermaid"]);
+    }
+    assert.ok(
+      structured.custom.some((entry) => entry.custom_template === "team-model"),
+      "the team-model fixture must appear as a candidate",
+    );
+    const teamModel = structured.custom.find((entry) => entry.custom_template === "team-model");
+    assert.equal(teamModel?.template, "custom");
+    assert.equal(teamModel?.relative_path, ".diagrams-templates/team-model.json");
+    assertPosixPath(teamModel?.relative_path ?? "", "custom relative_path");
+    assert.equal(structured.custom_count, structured.custom.length);
+    assert.equal(structured.scan_limit, 1000);
+    assert.equal(structured.truncated, false);
+    assert.equal(structured.scan_warning, null);
+    assert.equal(structured.written, false);
+    assert.ok(textOf(result).includes("team-model"));
+    assert.ok(textOf(result).includes("class"));
+  });
+
+  it("rejects unknown template discovery arguments over real stdio", async () => {
+    const result = await callTool("diagrams_list_templates", { output_dir: "elsewhere" });
+    assert.equal(result.isError, true);
+    assert.match(textOf(result), /output_dir/);
+  });
+
+  it("compares recognized call order only when requested over real stdio", async () => {
+    const a =
+      "@startuml\nparticipant A\nparticipant B\nA -> B: charge()\nA -> B: refund()\n@enduml\n";
+    const b = "sequenceDiagram\nparticipant A\nparticipant B\nA->>B: refund()\nA->>B: charge()\n";
+    const defaultResult = await callTool("diagrams_diff", { a_content: a, b_content: b });
+    assert.equal(defaultResult.isError, undefined);
+    assert.equal(defaultResult.structuredContent?.is_same, true);
+    assert.equal(Object.hasOwn(defaultResult.structuredContent ?? {}, "call_order"), false);
+    const orderedResult = await callTool("diagrams_diff", {
+      a_content: a,
+      b_content: b,
+      compare_call_order: true,
+    });
+    assert.equal(orderedResult.isError, undefined);
+    assert.equal(orderedResult.structuredContent?.is_same, false);
+    assert.deepEqual(orderedResult.structuredContent?.call_order, {
+      a: ["charge", "refund"],
+      b: ["refund", "charge"],
+      changed: true,
+    });
+    assert.match(textOf(orderedResult), /message-call order changed/);
+    const invalid = await callTool("diagrams_diff", {
+      a_content: a,
+      b_content: b,
+      compare_call_order: "true",
+    });
+    assert.equal(invalid.isError, true);
+    assert.match(textOf(invalid), /compare_call_order/);
   });
 
   it("creates a diagram with POSIX structured output", async () => {
@@ -758,5 +879,250 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal(reread.isError, true);
 
     assert.equal(await fs.readFile(codeFixturePath, "utf-8"), CODE_FIXTURE);
+  });
+
+  it("rejects unknown create/update/delete arguments without mutating diagrams", async () => {
+    const guardPath = "models/strict-guard.puml";
+    const blockedCreatePath = "models/strict-create-blocked.puml";
+    const beforeList = await callTool("diagrams_list", { type_filter: "all" });
+    const beforeCount = (beforeList.structuredContent as { count: number }).count;
+
+    const badCreate = await callTool("diagrams_create", {
+      relative_path: blockedCreatePath,
+      content: DIAGRAM_V1,
+      bogus_unknown_field: "boom",
+    });
+    assert.equal(badCreate.isError, true);
+    assert.match(textOf(badCreate), /bogus_unknown_field/);
+    assert.ok(!textOf(badCreate).includes(projectRoot));
+    assert.ok(!textOf(badCreate).includes(DIAGRAM_V1));
+    await assert.rejects(
+      fs.access(path.join(diagramsDir, "models", "strict-create-blocked.puml")),
+      { code: "ENOENT" },
+    );
+    const afterBadCreate = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((afterBadCreate.structuredContent as { count: number }).count, beforeCount);
+
+    const created = await callTool("diagrams_create", {
+      relative_path: guardPath,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+
+    const badUpdate = await callTool("diagrams_update", {
+      relative_path: guardPath,
+      content: DIAGRAM_V2,
+      bogus_unknown_field: "boom",
+    });
+    assert.equal(badUpdate.isError, true);
+    assert.match(textOf(badUpdate), /bogus_unknown_field/);
+    assert.ok(!textOf(badUpdate).includes(projectRoot));
+    assert.ok(!textOf(badUpdate).includes(DIAGRAM_V1));
+    assert.ok(!textOf(badUpdate).includes(DIAGRAM_V2));
+    const reread = await callTool("diagrams_get", { relative_path: guardPath });
+    assert.equal(reread.isError, undefined);
+    assert.equal((reread.structuredContent as { content: string }).content, DIAGRAM_V1);
+
+    const badDelete = await callTool("diagrams_delete", {
+      relative_path: guardPath,
+      bogus_unknown_field: "boom",
+    });
+    assert.equal(badDelete.isError, true);
+    assert.match(textOf(badDelete), /bogus_unknown_field/);
+    assert.ok(!textOf(badDelete).includes(projectRoot));
+    const stillThere = await callTool("diagrams_get", { relative_path: guardPath });
+    assert.equal(stillThere.isError, undefined);
+
+    const cleaned = await callTool("diagrams_delete", { relative_path: guardPath });
+    assert.equal(cleaned.isError, undefined);
+    const finalList = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((finalList.structuredContent as { count: number }).count, beforeCount);
+  });
+
+  it("rejects unknown arguments for read-only discovery tools", async () => {
+    const fixture = "models/strict-read.puml";
+    const created = await callTool("diagrams_create", {
+      relative_path: fixture,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+    try {
+      const badList = await callTool("diagrams_list", {
+        type_filter: "all",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badList.isError, true);
+      assert.match(textOf(badList), /bogus_unknown_field/);
+      assert.ok(!textOf(badList).includes(projectRoot));
+
+      const badGet = await callTool("diagrams_get", {
+        relative_path: fixture,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badGet.isError, true);
+      assert.match(textOf(badGet), /bogus_unknown_field/);
+      assert.ok(!textOf(badGet).includes(projectRoot));
+      assert.ok(!textOf(badGet).includes(DIAGRAM_V1));
+
+      const badTemplates = await callTool("diagrams_list_templates", {
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badTemplates.isError, true);
+      assert.match(textOf(badTemplates), /bogus_unknown_field/);
+      assert.ok(!textOf(badTemplates).includes(projectRoot));
+
+      const badConsistency = await callTool("diagrams_check_consistency", {
+        relative_path: fixture,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badConsistency.isError, true);
+      assert.match(textOf(badConsistency), /bogus_unknown_field/);
+      assert.ok(!textOf(badConsistency).includes(projectRoot));
+
+      const listDefault = await callTool("diagrams_list", {});
+      assert.equal(listDefault.isError, undefined);
+      assert.equal((listDefault.structuredContent as { count: number }).count, 1);
+
+      const getDefault = await callTool("diagrams_get", { relative_path: fixture });
+      assert.equal(getDefault.isError, undefined);
+      assert.equal((getDefault.structuredContent as { content: string }).content, DIAGRAM_V1);
+    } finally {
+      await callTool("diagrams_delete", { relative_path: fixture });
+    }
+  });
+
+  it("rejects unknown arguments for generation, template, and diff tools", async () => {
+    const diffPath = "models/strict-diff.puml";
+    const created = await callTool("diagrams_create", {
+      relative_path: diffPath,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+    try {
+      const before = await callTool("diagrams_list", { type_filter: "all" });
+      const beforeCount = (before.structuredContent as { count: number }).count;
+
+      const badGenerate = await callTool("diagrams_generate", {
+        scope: "src-code",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badGenerate.isError, true);
+      assert.match(textOf(badGenerate), /bogus_unknown_field/);
+      assert.ok(!textOf(badGenerate).includes(projectRoot));
+
+      const badSequence = await callTool("diagrams_generate_sequence", {
+        scope: "src-sequence",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badSequence.isError, true);
+      assert.match(textOf(badSequence), /bogus_unknown_field/);
+      assert.ok(!textOf(badSequence).includes(projectRoot));
+
+      const badTemplate = await callTool("diagrams_template", {
+        template: "class",
+        entities: ["User"],
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badTemplate.isError, true);
+      assert.match(textOf(badTemplate), /bogus_unknown_field/);
+      assert.ok(!textOf(badTemplate).includes(projectRoot));
+
+      const badDiff = await callTool("diagrams_diff", {
+        a_content: DIAGRAM_V1,
+        b_relative_path: diffPath,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badDiff.isError, true);
+      assert.match(textOf(badDiff), /bogus_unknown_field/);
+      assert.ok(!textOf(badDiff).includes(projectRoot));
+      assert.ok(!textOf(badDiff).includes(DIAGRAM_V1));
+
+      const after = await callTool("diagrams_list", { type_filter: "all" });
+      assert.equal((after.structuredContent as { count: number }).count, beforeCount);
+
+      const templated = await callTool("diagrams_template", {
+        template: "class",
+        entities: ["User"],
+      });
+      assert.equal(templated.isError, undefined);
+      assert.equal((templated.structuredContent as { format: string }).format, "puml");
+    } finally {
+      await callTool("diagrams_delete", { relative_path: diffPath });
+    }
+  });
+
+  it("rejects unknown render/export arguments before renderer invocation", async () => {
+    const fixture = "models/strict-render.puml";
+    const created = await callTool("diagrams_create", {
+      relative_path: fixture,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+    try {
+      const badRender = await callTool("diagrams_render", {
+        relative_path: fixture,
+        format: "svg",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badRender.isError, true);
+      assert.match(textOf(badRender), /bogus_unknown_field/);
+      assert.ok(!textOf(badRender).includes(projectRoot));
+      assert.ok(!textOf(badRender).includes(DIAGRAM_V1));
+      assert.ok(!/mmdc|plantuml|rendering requires/i.test(textOf(badRender)));
+
+      const badExport = await callTool("diagrams_export", {
+        relative_path: fixture,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badExport.isError, true);
+      assert.match(textOf(badExport), /bogus_unknown_field/);
+      assert.ok(!textOf(badExport).includes(projectRoot));
+      assert.ok(!textOf(badExport).includes(DIAGRAM_V1));
+      assert.ok(!/mmdc|plantuml|rendering requires/i.test(textOf(badExport)));
+    } finally {
+      await callTool("diagrams_delete", { relative_path: fixture });
+    }
+    const relisted = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((relisted.structuredContent as { count: number }).count, 0);
+  });
+
+  it("recognizes short operation names in consistency and call-order comparison over stdio", async () => {
+    const directory = path.join(projectRoot, "src-short-calls");
+    await fs.mkdir(directory);
+    await fs.writeFile(
+      path.join(directory, "operations.js"),
+      "export class A {}\nexport class B {}\nexport function f() {}\n",
+      "utf-8",
+    );
+    const a =
+      "@startuml\nparticipant A\nparticipant B\n' A -> B: lineGhost()\n" +
+      "/'\nA -> B: blockGhost()\n'/\nA -> B: f()\nA -> B: g()\n@enduml\n";
+    const b =
+      "sequenceDiagram\nparticipant A\nparticipant B\n%% A->>B: mermaidGhost()\n" +
+      "A->>B: g()\nA->>B: f()\n";
+    const relativePath = "models/short-calls.puml";
+    const created = await callTool("diagrams_create", { relative_path: relativePath, content: a });
+    assert.equal(created.isError, undefined);
+    const checked = await callTool("diagrams_check_consistency", { relative_path: relativePath });
+    assert.equal(checked.isError, undefined);
+    const matched = checked.structuredContent?.matched_entities as string[];
+    const unmatched = checked.structuredContent?.unmatched_entities as string[];
+    assert.ok(matched.includes("f"));
+    assert.ok(unmatched.includes("g"));
+    assert.ok(!unmatched.includes("lineGhost"));
+    assert.ok(!unmatched.includes("blockGhost"));
+    const compared = await callTool("diagrams_diff", {
+      a_content: a,
+      b_content: b,
+      compare_call_order: true,
+    });
+    assert.equal(compared.isError, undefined);
+    assert.deepEqual(compared.structuredContent?.call_order, {
+      a: ["f", "g"],
+      b: ["g", "f"],
+      changed: true,
+    });
+    const deleted = await callTool("diagrams_delete", { relative_path: relativePath });
+    assert.equal(deleted.isError, undefined);
   });
 });

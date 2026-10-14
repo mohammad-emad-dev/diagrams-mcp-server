@@ -4,9 +4,14 @@
 import { constants as fsConstants, promises as fs } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
-import { EXTENSION_TO_TYPE, MAX_TITLE_SCAN_BYTES, toPosixPath } from "../constants.js";
+import { toPosixPath } from "../constants.js";
 import type { DiagramFile, DiagramType } from "../types.js";
 import { validateDiagramSource } from "./diagramValidator.js";
+import {
+  diagramTypeFromPath,
+  extractDiagramTitle,
+  readDiagramTitlePrefix,
+} from "./store/diagramMetadata.js";
 
 export { DiagramValidationError } from "./diagramValidator.js";
 
@@ -140,42 +145,6 @@ export class DiagramStore {
     }
   }
 
-  private detectType(filePath: string): DiagramType | null {
-    const ext = path.extname(filePath).toLowerCase();
-    return EXTENSION_TO_TYPE[ext] ?? null;
-  }
-
-  // Best-effort title from the scanned file prefix. Titles past the
-  // window read as null; a title line cut at the window edge keeps its
-  // scanned part with a "…" prefix (D-007) so it never passes as exact.
-  private extractTitle(prefix: string, type: DiagramType, truncated: boolean): string | null {
-    const pattern = type === "plantuml" ? /^\s*title\s+(.+)$/m : /^\s*%%\s*title:\s*(.+)$/m;
-    const match = prefix.match(pattern);
-    if (!match?.[1]) return null;
-    const title = match[1].trim();
-    const end = (match.index ?? 0) + match[0].length;
-    const cut = truncated && end >= prefix.length;
-    return cut ? `…${title}` : title;
-  }
-
-  // First bytes of a file through its already-open NOFOLLOW handle, so
-  // title extraction never buffers a whole diagram and never re-opens
-  // the path (no TOCTOU between the open and the read).
-  private async readTitlePrefix(
-    handle: FileHandle,
-    size: number,
-  ): Promise<{ text: string; truncated: boolean }> {
-    const length = Math.min(size, MAX_TITLE_SCAN_BYTES);
-    const buffer = Buffer.alloc(length);
-    let offset = 0;
-    while (offset < length) {
-      const { bytesRead } = await handle.read(buffer, offset, length - offset, offset);
-      if (bytesRead === 0) break;
-      offset += bytesRead;
-    }
-    return { text: buffer.toString("utf-8", 0, offset), truncated: size > offset };
-  }
-
   async ensureRootExists(): Promise<void> {
     await fs.mkdir(this.root, { recursive: true });
   }
@@ -198,18 +167,22 @@ export class DiagramStore {
           // Skip symlinks; reads and writes reject them too.
           continue;
         } else if (entry.isFile()) {
-          const type = this.detectType(entry.name);
+          const type = diagramTypeFromPath(entry.name);
           if (!type) continue;
           try {
             const handle = await fs.open(fullPath, fsConstants.O_RDONLY | NOFOLLOW);
             try {
               const stat = await handle.stat();
-              const prefix = await this.readTitlePrefix(handle, stat.size);
+              const prefix = await readDiagramTitlePrefix(handle, stat.size);
               results.push({
                 relativePath: toPosixPath(path.relative(this.root, fullPath)),
                 absolutePath: fullPath,
                 type,
-                title: this.extractTitle(prefix.text, type, prefix.truncated),
+                title: extractDiagramTitle({
+                  prefixText: prefix.text,
+                  diagramType: type,
+                  wasTruncated: prefix.truncated,
+                }),
                 sizeBytes: stat.size,
                 modifiedAt: stat.mtime.toISOString(),
               });
@@ -234,7 +207,7 @@ export class DiagramStore {
   async read(relativePath: string): Promise<{ content: string; type: DiagramType }> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
-    const type = this.detectType(absolutePath);
+    const type = diagramTypeFromPath(absolutePath);
     if (!type) {
       throw new UnsupportedDiagramExtensionError(toPosixPath(relativePath));
     }
@@ -264,7 +237,7 @@ export class DiagramStore {
   async exists(relativePath: string): Promise<boolean> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
-    const type = this.detectType(absolutePath);
+    const type = diagramTypeFromPath(absolutePath);
     if (!type) {
       // Same gate as read()/write(): a non-diagram path is a contract
       // violation, not an absence. Returning false would imply the caller
@@ -301,7 +274,7 @@ export class DiagramStore {
   ): Promise<void> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
-    const type = this.detectType(absolutePath);
+    const type = diagramTypeFromPath(absolutePath);
     if (!type) {
       throw new UnsupportedDiagramExtensionError(toPosixPath(relativePath));
     }
@@ -324,42 +297,61 @@ export class DiagramStore {
     // over the target: O_TRUNC zeroed the original at open time, so a
     // failed write (ENOSPC, EIO, crash) left it truncated or empty. Rename
     // lands on the old or the new content, never a partial middle state.
-    const targetPath = options.overwrite
-      ? await this.writeToTempFile(parent, content, relativePath)
-      : absolutePath;
     if (!options.overwrite) {
-      const base = fsConstants.O_WRONLY | fsConstants.O_CREAT | NOFOLLOW;
-      let handle;
-      try {
-        // NOFOLLOW: a concurrent link loses with ELOOP instead of
-        // redirecting the write outside. EXCL keeps the atomic-create
-        // guarantee; a directory fails with EISDIR like before.
-        handle = await fs.open(absolutePath, base | fsConstants.O_EXCL, 0o666);
-      } catch (err: unknown) {
-        if (isNodeError(err) && err.code === "ELOOP") {
-          throw new PathTraversalError(toPosixPath(relativePath));
-        }
-        if (isNodeError(err) && (err.code === "EEXIST" || err.code === "EISDIR")) {
-          throw new DiagramExistsError(toPosixPath(relativePath));
-        }
-        throw err;
-      }
-      try {
-        await handle.writeFile(content, "utf-8");
-      } finally {
-        await handle.close();
-      }
+      await this.createDiagramFile({ absolutePath, relativePath, content });
       return;
     }
+    await this.replaceDiagramFile({ absolutePath, parent, relativePath, content });
+  }
+
+  private async createDiagramFile(request: {
+    absolutePath: string;
+    relativePath: string;
+    content: string;
+  }): Promise<void> {
+    const base = fsConstants.O_WRONLY | fsConstants.O_CREAT | NOFOLLOW;
+    let handle;
+    try {
+      // NOFOLLOW: a concurrent link loses with ELOOP instead of
+      // redirecting the write outside. EXCL keeps the atomic-create
+      // guarantee; a directory fails with EISDIR like before.
+      handle = await fs.open(request.absolutePath, base | fsConstants.O_EXCL, 0o666);
+    } catch (err: unknown) {
+      if (isNodeError(err) && err.code === "ELOOP") {
+        throw new PathTraversalError(toPosixPath(request.relativePath));
+      }
+      if (isNodeError(err) && (err.code === "EEXIST" || err.code === "EISDIR")) {
+        throw new DiagramExistsError(toPosixPath(request.relativePath));
+      }
+      throw err;
+    }
+    try {
+      await handle.writeFile(request.content, "utf-8");
+    } finally {
+      await handle.close();
+    }
+  }
+
+  private async replaceDiagramFile(request: {
+    absolutePath: string;
+    parent: string;
+    relativePath: string;
+    content: string;
+  }): Promise<void> {
+    const targetPath = await this.writeToTempFile(
+      request.parent,
+      request.content,
+      request.relativePath,
+    );
     // The temp file was written and closed off the target path, so this
     // rename is the only step that touches the diagram. On failure the
     // temp file is removed and the original is left untouched.
     try {
-      await fs.rename(targetPath, absolutePath);
+      await fs.rename(targetPath, request.absolutePath);
     } catch (err: unknown) {
       await fs.rm(targetPath, { force: true }).catch(() => {});
       if (isNodeError(err) && err.code === "ELOOP") {
-        throw new PathTraversalError(toPosixPath(relativePath));
+        throw new PathTraversalError(toPosixPath(request.relativePath));
       }
       throw err;
     }
@@ -408,7 +400,7 @@ export class DiagramStore {
   async delete(relativePath: string): Promise<void> {
     const absolutePath = this.resolveSafe(relativePath);
     await this.assertNoSymlinkEscape(absolutePath);
-    const type = this.detectType(absolutePath);
+    const type = diagramTypeFromPath(absolutePath);
     if (!type) {
       // Matches read(): the store deletes diagrams only, so an
       // unrecognized extension must fail before anything reaches disk.

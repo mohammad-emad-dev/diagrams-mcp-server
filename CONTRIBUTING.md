@@ -17,7 +17,7 @@ CI builds and tests on Node 20.x and 22.x (see `.github/workflows/ci.yml`).
 git clone https://github.com/mohammad-emad-dev/diagrams-mcp-server.git
 cd diagrams-mcp-server
 npm ci        # reproducible install from package-lock.json; prefer this over npm install
-npm run build # compiles src/ to dist/ with tsc
+npm run build # cleans dist/ and compiles src/ with tsc
 npm start     # runs node dist/index.js over stdio
 ```
 
@@ -33,13 +33,13 @@ Two environment variables control what the server sees:
 Run all four, in this order:
 
 ```bash
-npm run lint          # ESLint over src/, zero warnings allowed
-npm run format:check  # Prettier check over src/
-npm run build         # tsc, must exit 0
-npm test              # node --test over the compiled test files listed in package.json (build first: tests run from dist/; add new test files to that list)
+npm run lint          # ESLint over src/ and scripts/, zero warnings allowed
+npm run format:check  # Prettier check over src/ and scripts/
+npm run build         # clean dist/ and run tsc, must exit 0
+npm test              # discover compiled *.test.js under dist/ and run node --test
 ```
 
-Lint applies the TypeScript recommended rules to everything under `src/`. The format check enforces the Prettier style (100 columns, double quotes, semicolons). The build type-checks and emits `dist/`, and the tests run against that compiled output, so a stale `dist/` gives stale results — always rebuild before testing. CI runs the same four steps.
+Lint covers `src/` and `scripts/`. The format check enforces the Prettier style (100 columns, double quotes, semicolons). `scripts/build.mjs` removes the project's `dist/` before type-checking and compiling, so deleted or moved source files leave no stale output. `scripts/test.mjs` discovers compiled `*.test.js` recursively and runs them with `node --test`; new colocated tests need no package-script edits. Always build before testing. CI runs the same four steps.
 
 ## Adding a language fixture
 
@@ -59,7 +59,7 @@ The bar for calling a language reliable is representative fixtures, documented l
 
 ## Adding or modifying an MCP tool
 
-The twelve tools (`diagrams_list`, `diagrams_get`, `diagrams_create`, `diagrams_update`, `diagrams_delete`, `diagrams_render`, `diagrams_export`, `diagrams_check_consistency`, `diagrams_generate`, `diagrams_generate_sequence`, `diagrams_diff`, `diagrams_template`) each live in their own file under `src/tools/`, as a `registerDiagramsX(server, ctx)` function. `src/index.ts` wires them up, and `src/context.ts` builds the shared `ServerContext` once at startup. The registration signature is `(server, ctx)` because nearly every tool needs the store or the project root; a tool that needs neither — `diagrams_template` is the current example, its skeleton tables are pure — drops the `ctx` parameter and says so in a comment, and `src/index.ts` calls it the same way. A tool that renders but must stay unit-testable without a CLI — `diagrams_export`, which builds on `renderDiagramWithProvenance` — reads its optional `ctx.rendererDeps` seam, left unset in production so the real CLIs and fetch are used.
+The twelve tools (`diagrams_list`, `diagrams_get`, `diagrams_create`, `diagrams_update`, `diagrams_delete`, `diagrams_render`, `diagrams_export`, `diagrams_check_consistency`, `diagrams_generate`, `diagrams_generate_sequence`, `diagrams_diff`, `diagrams_template`) each live in their own file under `src/tools/`, as a `registerDiagramsX(server, ctx)` function. `src/server.ts` wires them up via `createDiagramServer` (see `docs/architecture.md` for the current CLI → composition → tools → services boundaries), and `src/context.ts` builds the shared `ServerContext` once at startup. The registration signature is `(server, ctx)` because nearly every tool needs the store or the project root; a tool that needs neither — `diagrams_template` is the current example, its skeleton tables are pure — drops the `ctx` parameter and says so in a comment, and `createDiagramServer` in `src/server.ts` calls it the same way. A tool that renders but must stay unit-testable without a CLI — `diagrams_export`, which builds on `renderDiagramWithProvenance` — reads its optional `ctx.rendererDeps` seam, left unset in production so the real CLIs and fetch are used.
 
 For a new or changed tool:
 
@@ -67,7 +67,7 @@ For a new or changed tool:
 2. Validate input with a strict Zod schema (`.strict()`), with a `z.infer` type for the handler. Keep filesystem writes inside the configured diagrams directory and reuse the store's path guards.
 3. Return both `content` (text) and `structuredContent`, and keep them consistent: the text block must equal the main content field. Failures come back as `Error: ...` text with `isError: true`. Never surface a raw stack trace.
 4. Write the tool description as the contract MCP clients rely on: when to use the tool, when not to, the args, the return shape, and every error string.
-5. Add unit tests next to the source (`*.test.ts` files compile to `dist/` and run under `node --test`). If the tool changes the server surface, add an integration case in `src/integration/mcpServer.test.ts` too.
+5. Add unit tests next to the source (`*.test.ts` files compile to `dist/` and are discovered automatically by `npm test`). If the tool changes the server surface, add an integration case in `src/integration/mcpServer.test.ts` too (including `EXPECTED_TOOLS`).
 
 ## Security and privacy
 

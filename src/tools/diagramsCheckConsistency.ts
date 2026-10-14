@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
+import type { ConsistencyCheckResult } from "../types.js";
 import { toPosixPath } from "../constants.js";
 import { checkConsistency } from "../services/consistencyChecker/index.js";
 import { handleToolError } from "./toolError.js";
@@ -15,6 +16,57 @@ const InputSchema = z
   .strict();
 
 type Input = z.infer<typeof InputSchema>;
+
+function formatConsistencyResponse({
+  relativePath,
+  result,
+}: {
+  relativePath: string;
+  result: ConsistencyCheckResult;
+}) {
+  const displayPath = toPosixPath(relativePath);
+  const output = {
+    diagram_path: toPosixPath(result.diagramPath),
+    entities_found: result.entitiesFound,
+    entities_matched: result.entitiesMatched,
+    entities_unmatched: result.entitiesUnmatched,
+    files_scanned: result.filesScanned,
+    searched_directory: result.searchedDirectory,
+    truncated: result.truncated,
+    scan_limit: result.scanLimit,
+    scan_warning: result.scanWarning,
+    entities: result.entities,
+    matched_entities: result.matchedEntities,
+    unmatched_entities: result.unmatchedEntities,
+    analyzers: result.analyzers,
+    confidence: result.confidence,
+    heuristic_warning: result.heuristicWarning,
+    evidence: result.evidence.map((entry) => ({
+      name: entry.name,
+      matched: entry.matched,
+      analyzers: entry.analyzers,
+      matched_files: entry.matchedFiles,
+      matched_file_count: entry.matchedFileCount,
+    })),
+    issues: result.issues,
+  };
+
+  const truncationNote =
+    result.truncated && result.scanWarning ? ` Warning: ${result.scanWarning}` : "";
+  const summaryText =
+    result.entitiesFound === 0
+      ? `No checkable class/interface/component names found in '${displayPath}'.${truncationNote}`
+      : result.issues.length === 0
+        ? `All ${result.entitiesFound} entities in '${displayPath}' were found in the codebase (${result.filesScanned} files scanned). No drift detected.${truncationNote}`
+        : `${result.issues.length} of ${result.entitiesFound} entities in '${displayPath}' were NOT found in the codebase:\n` +
+          result.issues.map((i) => `- ${i.name}: ${i.issue}`).join("\n") +
+          truncationNote;
+
+  return {
+    content: [{ type: "text" as const, text: summaryText }],
+    structuredContent: output,
+  };
+}
 
 export function registerDiagramsCheckConsistency(server: McpServer, ctx: ServerContext): void {
   server.registerTool(
@@ -79,7 +131,7 @@ Error Handling:
   - Returns "Error: No diagram found at '<path>'" if the diagram file doesn't exist
   - An empty "issues" array with entities_found=0 means no checkable entities were found in the diagram, not that everything matched
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -95,48 +147,7 @@ Error Handling:
           ctx.codeRootDir,
         );
 
-        const displayPath = toPosixPath(params.relative_path);
-        const output = {
-          diagram_path: toPosixPath(result.diagramPath),
-          entities_found: result.entitiesFound,
-          entities_matched: result.entitiesMatched,
-          entities_unmatched: result.entitiesUnmatched,
-          files_scanned: result.filesScanned,
-          searched_directory: result.searchedDirectory,
-          truncated: result.truncated,
-          scan_limit: result.scanLimit,
-          scan_warning: result.scanWarning,
-          entities: result.entities,
-          matched_entities: result.matchedEntities,
-          unmatched_entities: result.unmatchedEntities,
-          analyzers: result.analyzers,
-          confidence: result.confidence,
-          heuristic_warning: result.heuristicWarning,
-          evidence: result.evidence.map((entry) => ({
-            name: entry.name,
-            matched: entry.matched,
-            analyzers: entry.analyzers,
-            matched_files: entry.matchedFiles,
-            matched_file_count: entry.matchedFileCount,
-          })),
-          issues: result.issues,
-        };
-
-        const truncationNote =
-          result.truncated && result.scanWarning ? ` Warning: ${result.scanWarning}` : "";
-        const summaryText =
-          result.entitiesFound === 0
-            ? `No checkable class/interface/component names found in '${displayPath}'.${truncationNote}`
-            : result.issues.length === 0
-              ? `All ${result.entitiesFound} entities in '${displayPath}' were found in the codebase (${result.filesScanned} files scanned). No drift detected.${truncationNote}`
-              : `${result.issues.length} of ${result.entitiesFound} entities in '${displayPath}' were NOT found in the codebase:\n` +
-                result.issues.map((i) => `- ${i.name}: ${i.issue}`).join("\n") +
-                truncationNote;
-
-        return {
-          content: [{ type: "text" as const, text: summaryText }],
-          structuredContent: output,
-        };
+        return formatConsistencyResponse({ relativePath: params.relative_path, result });
       } catch (err: unknown) {
         return handleToolError("diagrams_check_consistency", err);
       }

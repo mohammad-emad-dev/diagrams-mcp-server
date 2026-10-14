@@ -10,6 +10,8 @@
 // them, and only when the compiler resolved. The consistency checker asks
 // for declarations only, so its results are unchanged.
 
+import { collectTsCalls } from "./tsCalls.js";
+import type { TsCallAnalysis } from "./tsCalls.js";
 import { collectTsHeritage } from "./tsHeritage.js";
 import type { HeritageEdge } from "./tsHeritage.js";
 import { collectTsDeclaredSymbols } from "./tsSymbols.js";
@@ -23,6 +25,8 @@ export interface TsFileAnalysis {
   strict: boolean;
   /** Heritage edges; empty unless relations were requested. */
   relations: HeritageEdge[];
+  /** Ordered calls; present only when includeCalls was requested and parsing succeeded. */
+  callGraph?: TsCallAnalysis;
 }
 
 /** Caller-supplied compiler and analysis switches; all optional. */
@@ -35,9 +39,11 @@ export interface TsAnalysisOptions {
   ts?: TsModule | null;
   /** Collect extends/implements edges alongside declarations. */
   includeRelations?: boolean;
+  /** Collect ordered call edges and callable operations alongside declarations. */
+  includeCalls?: boolean;
 }
 
-/** Analyze one file; never throws, falls back to `{ empty, strict false }`. */
+/** Missing compiler or unparseable source falls back; unexpected visitor errors propagate. */
 export async function analyzeTsFile(
   rawText: string,
   ext: string,
@@ -59,5 +65,9 @@ export async function analyzeTsFile(
   const declared = await collectTsDeclaredSymbols(sourceFile, compiler);
   const relations =
     options?.includeRelations === true ? collectTsHeritage(sourceFile, compiler) : [];
+  if (options?.includeCalls === true) {
+    const callGraph = collectTsCalls(sourceFile, compiler);
+    return { declared, strict: true, relations, callGraph };
+  }
   return { declared, strict: true, relations };
 }

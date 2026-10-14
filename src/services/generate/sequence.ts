@@ -2,17 +2,18 @@
 // caller->callee edges found in a codebase slice into a starter sequence
 // diagram.
 //
-// Reuses the consistency checker's ordered call graph (extractCallEdges) and
-// the generate tool's scan stack, so "what is a call" and "what is declared"
-// mean the same thing here as in diagrams_check_consistency and
-// diagrams_generate. This is the generative flip side of the same evidence —
-// and the same honesty: static call-site order is not runtime order, so a
-// call inside a callback or promise is counted in deferredCount and excluded
-// from the emitted messages rather than sequenced by where the parser saw it.
+// Reuses the consistency checker's ordered call graph (AST edges when the
+// TypeScript compiler resolves, extractCallEdges otherwise) and the generate
+// tool's scan stack, so "what is a call" and "what is declared" mean the same
+// thing here as in diagrams_check_consistency and diagrams_generate. This is
+// the generative flip side of the same evidence — and the same honesty:
+// static call-site order is not runtime order, so a call inside a callback
+// or promise is counted in deferredCount and excluded from the emitted
+// messages rather than sequenced by where the parser saw it.
 //
-// Participant resolution is declared-identifier equality only: a callee with
-// no declaring file in the scope is reported in unresolvedCallees, never
-// attached to an invented participant (which class owns the method is a
+// Participant resolution is case-insensitive declared-identifier matching: a
+// callee with no declaring file in the scope is reported in unresolvedCallees,
+// never attached to an invented participant (which class owns the method is a
 // type question, and out of scope).
 
 import { promises as fs } from "node:fs";
@@ -36,61 +37,11 @@ import {
 } from "../consistencyChecker/scanning.js";
 import type { CallEdge } from "../consistencyChecker/sequence/callGraph.js";
 import { extractCallEdges } from "../consistencyChecker/sequence/callGraph.js";
-import { mapParticipants } from "../consistencyChecker/sequence/participantMapping.js";
 import { listScopeFiles } from "./scopeFiles.js";
-import type { GenerateDeps } from "./collectEntities.js";
+import type { SequenceCollectionResult, SequenceMessage, SequenceOptions } from "./types.js";
 import { emitSequenceDiagram, mermaidParticipantName } from "./sequenceEmitters.js";
 
-/** One ordered message in the generated sequence. */
-export interface SequenceMessage {
-  /** Participant sending the message (the file the call site lives in). */
-  from: string;
-  /** Participant receiving it (the file declaring the called operation). */
-  to: string;
-  /** Called operation name, as written at the call site. */
-  message: string;
-  /** 1-based line number of the call site. */
-  line: number;
-  /** Always false in output: deferred calls are excluded, never sequenced. */
-  via_callback: boolean;
-}
-
-export interface SequenceCollectionResult {
-  /** Participants in emission order, already capped and dialect-named. */
-  participants: string[];
-  /** Distinct participants in candidate messages, before the cap. */
-  participantsAvailable: number;
-  /** Participants dropped by the cap. */
-  participantsDropped: number;
-  /** Messages in source order, already capped. */
-  messages: SequenceMessage[];
-  /** Candidate messages before the caps, may exceed the emitted count. */
-  messagesAvailable: number;
-  /** Messages dropped by the participant cap or the message cap. */
-  messagesDropped: number;
-  /** Call sites inside a callback/promise: counted, never sequenced. */
-  deferredCount: number;
-  /** Callee names with no declaring participant in the scope. */
-  unresolvedCallees: string[];
-  filesScanned: number;
-  truncated: boolean;
-  scanLimit: number;
-  scanWarning: string | null;
-  /** True when the TypeScript AST backed this collection. */
-  tsAstAvailable: boolean;
-  /** Emitted source; identical to the tool's text block. */
-  source: string;
-}
-
-export interface SequenceOptions {
-  /** Output dialect; names are quoted (PlantUML) or sanitized (Mermaid). */
-  format?: "puml" | "mermaid";
-  /** Overrides for the emitted caps; tests use small values. */
-  maxParticipants?: number;
-  maxMessages?: number;
-  /** Compiler override; see GenerateDeps. */
-  deps?: GenerateDeps;
-}
+export type { SequenceCollectionResult, SequenceMessage, SequenceOptions };
 
 interface ScannedSequenceFile {
   /** Absolute path; only used for emission ordering. */
@@ -134,7 +85,7 @@ function emptyResult(format: "puml" | "mermaid"): SequenceCollectionResult {
   };
 }
 
-/** Read and analyze one file; null when unreadable, oversized, or unparseable. */
+/** Unreadable and oversized files are skipped; unexpected failures propagate. */
 async function readSequenceFile(
   file: string,
   compiler: TsModule | null,
@@ -150,9 +101,14 @@ async function readSequenceFile(
     // AST names first (they ignore import specifiers, so an imported
     // operation does not make this file look like its declarer); the
     // heuristic union fills shapes the visitor does not read.
+    let astEdges: CallEdge[] | null = null;
     if (isTsFamilyExtension(ext)) {
-      const analysis = await analyzeTsFile(raw, ext, file, { ts: compiler });
+      const analysis = await analyzeTsFile(raw, ext, file, { ts: compiler, includeCalls: true });
       for (const name of analysis.declared) operations.add(name);
+      if (analysis.callGraph) {
+        for (const name of analysis.callGraph.operations) operations.add(name);
+        astEdges = analysis.callGraph.edges;
+      }
     }
     for (const name of extractDeclaredIdentifiers(stripped, family)) operations.add(name);
 
@@ -160,7 +116,7 @@ async function readSequenceFile(
       absolutePath: file,
       moduleName: path.basename(file, ext),
       operations,
-      edges: extractCallEdges(stripped),
+      edges: astEdges ?? extractCallEdges(stripped),
     };
   } catch (err: unknown) {
     // Skip unreadable files; unexpected failures must surface instead of
@@ -198,12 +154,23 @@ function buildParticipantRegistry(scanned: ScannedSequenceFile[]): ParticipantRe
   return registry;
 }
 
-/** First participant declaring `name`, by declared-identifier equality; else null. */
-function resolveParticipant(registry: ParticipantRegistryEntry[], name: string): string | null {
+type OperationIndex = Map<string, string>;
+
+// Build after merging same-basename files. An earlier folded match must keep
+// precedence even when a later participant declares the exact-case name.
+function buildOperationIndex(registry: ParticipantRegistryEntry[]): OperationIndex {
+  const index: OperationIndex = new Map();
   for (const entry of registry) {
-    if (mapParticipants([name], entry.operations)[0]?.mapsTo !== null) return entry.name;
+    for (const name of entry.operations) {
+      const key = name.toLowerCase();
+      if (!index.has(key)) index.set(key, entry.name);
+    }
   }
-  return null;
+  return index;
+}
+
+function resolveParticipant(index: OperationIndex, name: string): string | null {
+  return index.get(name.toLowerCase()) ?? null;
 }
 
 /** Distinct participant names in candidate order (a sender comes first). */
@@ -248,10 +215,50 @@ function applyDialectNames(
   };
 }
 
+function collectCandidateMessages(
+  scanned: ScannedSequenceFile[],
+  operationIndex: OperationIndex,
+): { candidates: SequenceMessage[]; unresolvedCallees: string[]; deferredCount: number } {
+  const candidates: SequenceMessage[] = [];
+  const unresolvedCallees: string[] = [];
+  const seenUnresolved = new Set<string>();
+  let deferredCount = 0;
+
+  for (const file of scanned) {
+    for (const edge of file.edges) {
+      // A deferred call is counted, never sequenced: its runtime order is
+      // unknowable from source, so emitting it would invent an order.
+      if (edge.viaCallback) {
+        deferredCount += 1;
+        continue;
+      }
+      const to = resolveParticipant(operationIndex, edge.callee);
+      if (to === null) {
+        if (!seenUnresolved.has(edge.callee)) {
+          seenUnresolved.add(edge.callee);
+          unresolvedCallees.push(edge.callee);
+        }
+        continue;
+      }
+      // The call site physically lives in this file; the caller resolves
+      // through the same index when it declares the enclosing operation.
+      const from = resolveParticipant(operationIndex, edge.caller) ?? file.moduleName;
+      candidates.push({
+        from,
+        to,
+        message: edge.callee,
+        line: edge.line,
+        via_callback: false,
+      });
+    }
+  }
+
+  return { candidates, unresolvedCallees, deferredCount };
+}
+
 /**
- * Collect a sequence from a resolved scope. Never throws: unreadable files
- * and a missing compiler both degrade to fewer messages, and every cap
- * reports itself in-band.
+ * Collect a sequence from a resolved scope. Unreadable files are skipped and
+ * a missing compiler uses heuristic declarations. Unexpected failures propagate.
  */
 export async function collectSequence(
   scopePath: string,
@@ -280,39 +287,11 @@ export async function collectSequence(
   scanned.sort((a, b) => toPosixPath(a.absolutePath).localeCompare(toPosixPath(b.absolutePath)));
 
   const registry = buildParticipantRegistry(scanned);
-  const candidates: SequenceMessage[] = [];
-  const unresolvedCallees: string[] = [];
-  const seenUnresolved = new Set<string>();
-  let deferredCount = 0;
-
-  for (const file of scanned) {
-    for (const edge of file.edges) {
-      // A deferred call is counted, never sequenced: its runtime order is
-      // unknowable from source, so emitting it would invent an order.
-      if (edge.viaCallback) {
-        deferredCount += 1;
-        continue;
-      }
-      const to = resolveParticipant(registry, edge.callee);
-      if (to === null) {
-        if (!seenUnresolved.has(edge.callee)) {
-          seenUnresolved.add(edge.callee);
-          unresolvedCallees.push(edge.callee);
-        }
-        continue;
-      }
-      // The call site physically lives in this file; the caller resolves
-      // through the same index when it declares the enclosing operation.
-      const from = resolveParticipant(registry, edge.caller) ?? file.moduleName;
-      candidates.push({
-        from,
-        to,
-        message: edge.callee,
-        line: edge.line,
-        via_callback: false,
-      });
-    }
-  }
+  const operationIndex = buildOperationIndex(registry);
+  const { candidates, unresolvedCallees, deferredCount } = collectCandidateMessages(
+    scanned,
+    operationIndex,
+  );
 
   // Participants are the parties to the sequenced conversation, in the order
   // they first send or receive; a file with no calls is not a participant.

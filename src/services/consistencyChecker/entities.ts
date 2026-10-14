@@ -36,11 +36,13 @@ function cleanDiagramName(raw: string): string | null {
   return last.length > 0 ? last : null;
 }
 
-/** Shared name sink: dedupe set plus diagram-name cleaning adder. */
-function makeEntitySink(): {
+/** Shared name sink used by the grammar collectors: dedupe set plus cleaning adder. */
+type EntitySink = {
   names: Set<string>;
   addClean: (raw: string | undefined) => void;
-} {
+};
+
+function makeEntitySink(): EntitySink {
   const names = new Set<string>();
   const addClean = (raw: string | undefined): void => {
     if (!raw) return;
@@ -50,17 +52,9 @@ function makeEntitySink(): {
   return { names, addClean };
 }
 
-// Message calls like `charge(card)`; plain labels are ignored. Shared by both
-// dialects. Module-level /g regex, so lastIndex is reset on every call below.
-const MESSAGE_CALL_REGEX = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]{1,})\s*\(/g;
-
 /** Collect message-call entities from source into a shared sink. */
 function collectMessageCalls(source: string, addClean: (raw: string | undefined) => void): void {
-  MESSAGE_CALL_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = MESSAGE_CALL_REGEX.exec(source)) !== null) {
-    addClean(match[1]);
-  }
+  for (const name of orderedMessageCallNames(source)) addClean(name);
 }
 
 /** Message-call names (`charge` in `: charge(card)`), shared by both dialects. */
@@ -68,6 +62,71 @@ export function extractMessageCalls(source: string): string[] {
   const { names, addClean } = makeEntitySink();
   collectMessageCalls(source, addClean);
   return Array.from(names);
+}
+
+/**
+ * Shared lazy call scanner. Whole-line comments and line-leading PlantUML
+ * blocks are skipped; trailing content after a block closes is scanned.
+ * Inline blocks and note bodies are outside this heuristic's scope.
+ * Each invocation owns its regex and block state, including early exits.
+ */
+function* orderedMessageCallNames(source: string): Generator<string> {
+  const regex = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  let inBlockComment = false;
+  let lineStart = 0;
+  while (lineStart < source.length) {
+    const newline = source.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? source.length : newline;
+    let segment = source.slice(lineStart, lineEnd);
+    lineStart = lineEnd + 1;
+
+    while (segment.length > 0) {
+      if (inBlockComment) {
+        const close = segment.indexOf("'/");
+        if (close === -1) break;
+        inBlockComment = false;
+        segment = segment.slice(close + 2);
+        continue;
+      }
+
+      const trimmed = segment.trimStart();
+      if (trimmed.startsWith("'") || trimmed.startsWith("%%")) break;
+      if (trimmed.startsWith("/'")) {
+        inBlockComment = true;
+        segment = trimmed.slice(2);
+        continue;
+      }
+
+      regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(segment)) !== null) {
+        const cleaned = cleanDiagramName(match[1] ?? "");
+        if (cleaned) yield cleaned;
+      }
+      break;
+    }
+  }
+}
+
+/**
+ * Message-call names in extraction order, repetitions kept, bounded by limit.
+ * Stops after limit + 1 recognized calls: `calls` never exceeds `limit` and
+ * `exceeded` reports whether another recognized call remained. Recognized
+ * means the shared grammar matched and the name cleaned to a non-empty
+ * identifier; plain labels never count. Never builds a full match array.
+ */
+export function extractOrderedMessageCalls(
+  source: string,
+  limit: number,
+): { calls: string[]; exceeded: boolean } {
+  const calls: string[] = [];
+  let recognized = 0;
+  for (const name of orderedMessageCallNames(source)) {
+    recognized += 1;
+    if (recognized > limit) return { calls, exceeded: true };
+    calls.push(name);
+  }
+  return { calls, exceeded: false };
 }
 
 /** Run one participant regex to completion, collecting display names and aliases. */
@@ -98,93 +157,119 @@ export function extractMermaidParticipants(source: string): string[] {
   );
 }
 
-/** Candidate entity names from PlantUML source. */
-function extractEntitiesFromPlantUml(source: string): string[] {
-  const { names, addClean } = makeEntitySink();
-  let match: RegExpExecArray | null;
-
-  // Type declarations: class, interface, enum, record, struct, and friends.
+function collectPlantUmlDeclarations(source: string, sink: EntitySink): void {
   const declRegex =
     /^\s*(?:abstract\s+)?(?:class|interface|enum|record|struct|annotation|entity)\s+"?([A-Za-z_][A-Za-z0-9_]*)"?/gm;
+  let match: RegExpExecArray | null;
   while ((match = declRegex.exec(source)) !== null) {
-    names.add(match[1]);
+    sink.names.add(match[1]);
   }
+}
 
-  // Aliased declarations (`class "Name" as Alias`).
+function collectPlantUmlAliases(source: string, sink: EntitySink): void {
   const aliasRegex =
     /^\s*(?:abstract\s+)?(?:class|interface|enum|record|struct|annotation|entity)\b[^\n{]*?\bas\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
+  let match: RegExpExecArray | null;
   while ((match = aliasRegex.exec(source)) !== null) {
-    names.add(match[1]);
+    sink.names.add(match[1]);
   }
+}
 
-  // Namespace/package/module blocks.
+function collectPlantUmlNamespaces(source: string, sink: EntitySink): void {
   const blockRegex = /^\s*(?:namespace|package|module)\s+([A-Za-z_][\w.\\/]*)/gm;
+  let match: RegExpExecArray | null;
   while ((match = blockRegex.exec(source)) !== null) {
-    addClean(match[1]);
+    sink.addClean(match[1]);
   }
+}
 
-  // Components, with optional aliases.
+function collectPlantUmlComponents(source: string, sink: EntitySink): void {
   const componentRegex =
     /^\s*component\s+(?:\[([^\]]+)\]|"([^"]+)"|([A-Za-z_][\w.\\/]*))(?:\s+as\s+([A-Za-z_][A-Za-z0-9_]*))?/gm;
+  let match: RegExpExecArray | null;
   while ((match = componentRegex.exec(source)) !== null) {
-    addClean(match[1]);
-    addClean(match[2]);
-    addClean(match[3]);
-    if (match[4]) names.add(match[4]);
+    sink.addClean(match[1]);
+    sink.addClean(match[2]);
+    sink.addClean(match[3]);
+    if (match[4]) sink.names.add(match[4]);
   }
+}
+
+/** Candidate entity names from PlantUML source. */
+function extractEntitiesFromPlantUml(source: string): string[] {
+  const sink = makeEntitySink();
+  collectPlantUmlDeclarations(source, sink);
+  collectPlantUmlAliases(source, sink);
+  collectPlantUmlNamespaces(source, sink);
+  collectPlantUmlComponents(source, sink);
 
   // Sequence participants and actors, with optional aliases.
-  for (const name of extractPlantUmlParticipants(source)) names.add(name);
+  for (const name of extractPlantUmlParticipants(source)) sink.names.add(name);
 
-  collectMessageCalls(source, addClean);
+  collectMessageCalls(source, sink.addClean);
 
-  return Array.from(names);
+  return Array.from(sink.names);
+}
+
+function collectMermaidClasses(source: string, sink: EntitySink): void {
+  const classRegex = /^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
+  let match: RegExpExecArray | null;
+  while ((match = classRegex.exec(source)) !== null) {
+    sink.names.add(match[1]);
+  }
+}
+
+function collectMermaidAnnotations(source: string, sink: EntitySink): void {
+  const annotationRegex = /<<\s*[^<>]*?>>\s*([A-Za-z_][A-Za-z0-9_]*)/gm;
+  let match: RegExpExecArray | null;
+  while ((match = annotationRegex.exec(source)) !== null) {
+    sink.names.add(match[1]);
+  }
+}
+
+function collectMermaidNamespaces(source: string, sink: EntitySink): void {
+  const namespaceRegex = /^\s*namespace\s+([A-Za-z_][\w.]*)/gm;
+  let match: RegExpExecArray | null;
+  while ((match = namespaceRegex.exec(source)) !== null) {
+    sink.addClean(match[1]);
+  }
+}
+
+function collectMermaidC4(source: string, sink: EntitySink): void {
+  const c4Regex =
+    /\b(?:Container|Component|System|ExternalSystem|Person)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)/g;
+  let match: RegExpExecArray | null;
+  while ((match = c4Regex.exec(source)) !== null) {
+    sink.names.add(match[1]);
+  }
+}
+
+function collectMermaidSubgraphs(source: string, sink: EntitySink): void {
+  const subgraphRegex = /^\s*subgraph\s+(?:"([^"]+)"|\[([^\]]+)\]|([A-Za-z_][\w-]*))/gm;
+  let match: RegExpExecArray | null;
+  while ((match = subgraphRegex.exec(source)) !== null) {
+    sink.addClean(match[1]);
+    sink.addClean(match[2]);
+    sink.addClean(match[3]);
+  }
 }
 
 /** Candidate entity names from Mermaid source. */
 function extractEntitiesFromMermaid(source: string): string[] {
-  const { names, addClean } = makeEntitySink();
-  let match: RegExpExecArray | null;
-
-  // Class declarations.
-  const classRegex = /^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)/gm;
-  while ((match = classRegex.exec(source)) !== null) {
-    names.add(match[1]);
-  }
-
-  // Annotations like `<<interface>> Name`.
-  const annotationRegex = /<<\s*[^<>]*?>>\s*([A-Za-z_][A-Za-z0-9_]*)/gm;
-  while ((match = annotationRegex.exec(source)) !== null) {
-    names.add(match[1]);
-  }
-
-  // Namespace blocks.
-  const namespaceRegex = /^\s*namespace\s+([A-Za-z_][\w.]*)/gm;
-  while ((match = namespaceRegex.exec(source)) !== null) {
-    addClean(match[1]);
-  }
+  const sink = makeEntitySink();
+  collectMermaidClasses(source, sink);
+  collectMermaidAnnotations(source, sink);
+  collectMermaidNamespaces(source, sink);
 
   // Sequence participants and actors, with optional aliases.
-  for (const name of extractMermaidParticipants(source)) names.add(name);
+  for (const name of extractMermaidParticipants(source)) sink.names.add(name);
 
-  // C4 containers, components, systems, and people.
-  const c4Regex =
-    /\b(?:Container|Component|System|ExternalSystem|Person)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)/g;
-  while ((match = c4Regex.exec(source)) !== null) {
-    names.add(match[1]);
-  }
+  collectMermaidC4(source, sink);
+  collectMermaidSubgraphs(source, sink);
 
-  // Subgraph groupings.
-  const subgraphRegex = /^\s*subgraph\s+(?:"([^"]+)"|\[([^\]]+)\]|([A-Za-z_][\w-]*))/gm;
-  while ((match = subgraphRegex.exec(source)) !== null) {
-    addClean(match[1]);
-    addClean(match[2]);
-    addClean(match[3]);
-  }
+  collectMessageCalls(source, sink.addClean);
 
-  collectMessageCalls(source, addClean);
-
-  return Array.from(names);
+  return Array.from(sink.names);
 }
 
 export function extractEntities(source: string, type: DiagramType): string[] {

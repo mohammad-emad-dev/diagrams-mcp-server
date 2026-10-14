@@ -7,6 +7,8 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { DiagramStore } from "../services/diagramStore.js";
 import { registerDiagramsDiff } from "./diagramsDiff.js";
+import { InputSchema } from "./diffInput.js";
+import { MAX_DIFF_ORDER_CALLS } from "../constants.js";
 
 interface CapturedToolResult {
   content: [{ type: "text"; text: string }];
@@ -70,7 +72,64 @@ describe("diagrams_diff", () => {
   });
 
   afterEach(async () => {
+    assert.equal(path.dirname(tmpRoot), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(tmpRoot).startsWith("diagrams-diff-"));
     await fs.rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("compares repeated recognized calls when enabled and preserves the default result", async () => {
+    const a = "@startuml\nAlice -> Bob: charge()\nAlice -> Bob: charge()\n@enduml";
+    const b = "sequenceDiagram\nAlice->>Bob: charge()\n";
+    const enabled = await tool.handler(
+      InputSchema.parse({ a_content: a, b_content: b, compare_call_order: true }),
+    );
+    assert.equal(enabled.isError, undefined);
+    assert.equal(enabled.structuredContent?.is_same, false);
+    assert.deepEqual(enabled.structuredContent?.call_order, {
+      a: ["charge", "charge"],
+      b: ["charge"],
+      changed: true,
+    });
+    assert.match(enabled.content[0].text, /message-call order changed/);
+    const omitted = await tool.handler(InputSchema.parse({ a_content: a, b_content: b }));
+    assert.equal(omitted.isError, undefined);
+    assert.equal(omitted.structuredContent?.is_same, true);
+    assert.equal(Object.hasOwn(omitted.structuredContent ?? {}, "call_order"), false);
+  });
+
+  it("reports unchanged recognized order when argument values differ", async () => {
+    const params = {
+      a_content: "@startuml\nA -> B: charge(100)\nA -> B: refund(50)\n@enduml",
+      b_content: "sequenceDiagram\nA->>B: charge(200)\nA->>B: refund(25)\n",
+      compare_call_order: true,
+    };
+    const response = await tool.handler(InputSchema.parse(params));
+    assert.equal(response.isError, undefined);
+    assert.equal(response.structuredContent?.is_same, true);
+    assert.deepEqual(response.structuredContent?.call_order, {
+      a: ["charge", "refund"],
+      b: ["charge", "refund"],
+      changed: false,
+    });
+    assert.match(response.content[0].text, /message-call order unchanged/);
+    assert.equal(InputSchema.safeParse({ ...params, compare_call_order: "true" }).success, false);
+  });
+
+  it("rejects an over-limit side without returning partial call arrays or source", async () => {
+    const source = "sequenceDiagram\n" + "A->>B: charge()\n".repeat(MAX_DIFF_ORDER_CALLS + 1);
+    const response = await tool.handler(
+      InputSchema.parse({
+        a_content: "@startuml\nA -> B: charge()\n@enduml",
+        b_content: source,
+        compare_call_order: true,
+      }),
+    );
+    assert.equal(response.isError, true);
+    assert.match(response.content[0].text, /side 'b'/);
+    assert.ok(response.content[0].text.includes(String(MAX_DIFF_ORDER_CALLS)));
+    assert.equal(response.structuredContent, undefined);
+    assert.ok(!response.content[0].text.includes(source));
+    assert.ok(!response.content[0].text.includes("sequenceDiagram"));
   });
 
   it("reports an added entity with POSIX paths and read-only annotations", async () => {
@@ -336,12 +395,7 @@ describe("diagrams_diff", () => {
 // root as a result of any call.
 async function listAllFiles(dir: string, base = dir): Promise<string[]> {
   const found: string[] = [];
-  let entries: import("node:fs").Dirent[];
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return found;
-  }
+  const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     const absolute = path.join(dir, entry.name);
     if (entry.isDirectory()) {

@@ -3,21 +3,9 @@
 // Exposes list, read, create, update, delete, render, export, consistency,
 // generation, sequence generation, diff, and starter-template tools.
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { createServerContext } from "./context.js";
-import { registerDiagramsList } from "./tools/diagramsList.js";
-import { registerDiagramsGet } from "./tools/diagramsGet.js";
-import { registerDiagramsCreate } from "./tools/diagramsCreate.js";
-import { registerDiagramsUpdate } from "./tools/diagramsUpdate.js";
-import { registerDiagramsDelete } from "./tools/diagramsDelete.js";
-import { registerDiagramsRender } from "./tools/diagramsRender.js";
-import { registerDiagramsExport } from "./tools/diagramsExport.js";
-import { registerDiagramsCheckConsistency } from "./tools/diagramsCheckConsistency.js";
-import { registerDiagramsGenerate } from "./tools/diagramsGenerate.js";
-import { registerDiagramsGenerateSequence } from "./tools/diagramsGenerateSequence.js";
-import { registerDiagramsDiff } from "./tools/diagramsDiff.js";
-import { registerDiagramsTemplate } from "./tools/diagramsTemplate.js";
+import { createDiagramServer } from "./server.js";
 import { runSetup } from "./setup/index.js";
 
 function printHelp(): void {
@@ -72,24 +60,7 @@ async function main(): Promise<void> {
   const ctx = createServerContext();
   await ctx.diagramStore.ensureRootExists();
 
-  const server = new McpServer({
-    name: "diagrams-mcp-server",
-    version: "0.6.0",
-  });
-
-  registerDiagramsList(server, ctx);
-  registerDiagramsGet(server, ctx);
-  registerDiagramsCreate(server, ctx);
-  registerDiagramsUpdate(server, ctx);
-  registerDiagramsDelete(server, ctx);
-  registerDiagramsRender(server, ctx);
-  registerDiagramsExport(server, ctx);
-  registerDiagramsCheckConsistency(server, ctx);
-  registerDiagramsGenerate(server, ctx);
-  registerDiagramsGenerateSequence(server, ctx);
-  registerDiagramsDiff(server, ctx);
-  // The template tool is pure: it takes no context, so it registers alone.
-  registerDiagramsTemplate(server);
+  const server = createDiagramServer(ctx);
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -3,10 +3,9 @@
 // filesystem, no state, no dependencies — so the same input always yields the
 // same bytes, and the wrapper is locked by exportGoldens.test.ts.
 //
-// The artifact has to work fully offline and survive a strict CSP, so it pulls
-// in nothing: no src/href URLs, no @import, no script, no web font, no
-// base64-in-img. The SVG is inlined as live markup (not a data URL) so it stays
-// selectable and themeable, and inline <style> is the only styling. The
+// Renderer markup is isolated in an SVG image, rather than parsed into the
+// HTML document. SVG image processing disables scripts and external resources.
+// A restrictive CSP also limits the wrapper to inline styles and data images. The
 // collapsible source block is a native <details> element, which needs no
 // script.
 //
@@ -32,31 +31,28 @@ export interface BundleInput {
 export interface ExportBundle {
   /** The complete HTML document. */
   html: string;
-  /** Character length of the SVG as it was inlined (after preamble stripping). */
+  /** Character length of the SVG image source after preamble stripping. */
   svgChars: number;
 }
 
-/**
- * Escape text for HTML element and attribute content. The ampersand goes first
- * so an input containing a literal "&amp;" is not double-escaped into
- * "&amp;amp;". Source goes through this before it lands in <pre><code>, so a
- * diagram containing "<" or "-->" cannot break out of the block.
- */
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+// Preserve literal entity spellings as text: "&amp;" becomes "&amp;amp;".
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return value.replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] as string);
 }
 
 /**
- * Renderer SVG usually opens with an XML declaration and sometimes a DOCTYPE.
- * Neither is valid inside an HTML document (both are bogus-comment or
- * doctype-token territory for the parser), so they are dropped here and the
- * drawing itself is untouched. What remains starts at the <svg> element, which
- * is what the golden locks and what the inlined character count measures.
+ * Keep the export's existing normalization of XML declarations and DOCTYPEs
+ * so switching to image encoding preserves the reported SVG character count.
+ * The drawing itself is untouched. The character count measures the image source,
+ * before its UTF-8 bytes are encoded for the data URL.
  */
 function stripSvgPreamble(svg: string): string {
   return svg.replace(/^\s*<\?xml[^>]*\?>\s*/i, "").replace(/^\s*<!DOCTYPE[^>]*>\s*/i, "");
@@ -70,7 +66,7 @@ const BUNDLE_CSS = [
   "h1{font-size:1.25rem;word-break:break-word}",
   "p.meta{margin:0 0 1.5rem;color:#555;font-size:.9rem}",
   "main.diagram{overflow:auto;border:1px solid #ddd;padding:1rem;background:#fff}",
-  "main.diagram svg{max-width:100%;height:auto}",
+  "main.diagram img{max-width:100%;height:auto}",
   "details.source{margin-top:2rem;border-top:1px solid #ccc;padding-top:1rem}",
   "details.source pre{margin:0;padding:1rem;background:#f5f5f5;overflow:auto;" +
     "font-size:.85rem;line-height:1.4}",
@@ -82,7 +78,7 @@ function dialectName(diagramType: DiagramType): string {
 }
 
 /**
- * Build the bundle. The SVG is inlined verbatim as markup; the source, when
+ * Build the bundle. The SVG is encoded as an isolated image; the source, when
  * present, is escaped and wrapped in a native <details> disclosure. Both the
  * <title> and the <h1> carry the POSIX relative path, which is the only path
  * in the document.
@@ -90,13 +86,17 @@ function dialectName(diagramType: DiagramType): string {
 export function buildExportBundle(input: BundleInput): ExportBundle {
   const posixPath = toPosixPath(input.relativePath);
   const escapedPath = escapeHtml(posixPath);
-  const inlinedSvg = stripSvgPreamble(input.svg);
+  const imageSvg = stripSvgPreamble(input.svg);
+  const imageData = Buffer.from(imageSvg, "utf-8").toString("base64");
 
   const head = [
     "<!DOCTYPE html>",
     '<html lang="en">',
     "<head>",
     '<meta charset="utf-8">',
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; ' +
+      "img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'" +
+      '">',
     `<title>${escapedPath}</title>`,
     "<style>",
     BUNDLE_CSS,
@@ -106,10 +106,10 @@ export function buildExportBundle(input: BundleInput): ExportBundle {
     "<header>",
     `<h1>${escapedPath}</h1>`,
     `<p class="meta">${dialectName(input.diagramType)} diagram exported from ` +
-      `diagrams-mcp-server, rendered with ${input.renderedWith}.</p>`,
+      `diagrams-mcp-server, rendered with ${escapeHtml(input.renderedWith)}.</p>`,
     "</header>",
     '<main class="diagram">',
-    inlinedSvg,
+    `<img alt="${escapedPath}" src="data:image/svg+xml;base64,${imageData}">`,
     "</main>",
   ];
 
@@ -128,6 +128,6 @@ export function buildExportBundle(input: BundleInput): ExportBundle {
 
   return {
     html: head.join("\n"),
-    svgChars: inlinedSvg.length,
+    svgChars: imageSvg.length,
   };
 }

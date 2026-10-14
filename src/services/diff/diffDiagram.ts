@@ -17,6 +17,8 @@ import {
   extractPlantUmlParticipants,
 } from "../consistencyChecker/entities.js";
 import { normalizeForMatch } from "../nameNormalize.js";
+import { compareCallOrder } from "./callOrder.js";
+import type { CallOrderComparison } from "./callOrder.js";
 
 /** One side of a comparison: source text and its dialect. */
 export interface DiffSide {
@@ -52,8 +54,15 @@ export interface DiffResult {
   participants_removed: string[];
   calls_added: string[];
   calls_removed: string[];
-  /** True iff added, removed, and renamed are all empty. */
+  /** Ordered recognized calls, present only when call-order comparison runs. */
+  call_order?: CallOrderComparison;
+  /** Entity names unchanged, plus unchanged call order when comparison is enabled. */
   is_same: boolean;
+}
+
+/** Optional recognized-message-call order comparison for diffDiagrams. */
+export interface DiffOptions {
+  compareCallOrder?: boolean;
 }
 
 /** Entity names for one side, distinct and in extraction order. */
@@ -96,6 +105,7 @@ function pairRenames(
   const renamed: RenamedEntity[] = [];
   const usedAdded = new Set<number>();
   const indexesByKey = new Map<string, number[]>();
+  const nextCandidateOffsetByKey = new Map<string, number>();
   added.forEach((entity, index) => {
     const key = normalizeForMatch(entity.name);
     if (key.length === 0) return;
@@ -111,11 +121,13 @@ function pairRenames(
   for (const removedEntry of removed) {
     const key = normalizeForMatch(removedEntry.name);
     const candidates = key.length > 0 ? indexesByKey.get(key) : undefined;
-    const unused = candidates?.find((index) => !usedAdded.has(index));
+    const nextCandidateOffset = nextCandidateOffsetByKey.get(key) ?? 0;
+    const unused = candidates?.[nextCandidateOffset];
     if (unused === undefined) {
       remainingRemoved.push(removedEntry);
       continue;
     }
+    nextCandidateOffsetByKey.set(key, nextCandidateOffset + 1);
     usedAdded.add(unused);
     renamed.push({
       from: removedEntry.name,
@@ -131,9 +143,15 @@ function pairRenames(
 /**
  * Compare two diagram sources. Pure: same inputs always yield the same
  * result, and nothing is read or written. Cross-dialect comparisons are
- * allowed; each side is extracted with its own dialect's syntax.
+ * allowed; each side is extracted with its own dialect's syntax. Without
+ * options the result shape is exactly the entity-set comparison; with
+ * { compareCallOrder: true } the result also carries the ordered
+ * recognized-call comparison, and a changed order alone makes is_same false.
  */
-export function diffDiagrams(sideA: DiffSide, sideB: DiffSide): DiffResult {
+export function diffDiagrams(sideA: DiffSide, sideB: DiffSide, options?: DiffOptions): DiffResult {
+  const order = options?.compareCallOrder
+    ? compareCallOrder(sideA.source, sideB.source)
+    : undefined;
   const namesA = entitiesOf(sideA);
   const namesB = entitiesOf(sideB);
   const setA = new Set(namesA);
@@ -153,6 +171,9 @@ export function diffDiagrams(sideA: DiffSide, sideB: DiffSide): DiffResult {
   const callsA = extractMessageCalls(sideA.source);
   const callsB = extractMessageCalls(sideB.source);
 
+  const entitiesSame =
+    remainingAdded.length === 0 && remainingRemoved.length === 0 && renamed.length === 0;
+
   return {
     added: remainingAdded,
     removed: remainingRemoved,
@@ -163,6 +184,7 @@ export function diffDiagrams(sideA: DiffSide, sideB: DiffSide): DiffResult {
     participants_removed: difference(participantsA, new Set(participantsB)),
     calls_added: difference(callsB, new Set(callsA)),
     calls_removed: difference(callsA, new Set(callsB)),
-    is_same: remainingAdded.length === 0 && remainingRemoved.length === 0 && renamed.length === 0,
+    is_same: entitiesSame && !order?.changed,
+    ...(order ? { call_order: order } : {}),
   };
 }

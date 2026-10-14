@@ -17,14 +17,6 @@ export interface OrderFinding {
   detail: string;
 }
 
-/**
- * Compare diagram message order against ordered code call edges.
- *
- * Contract: identical order is a match; same calls in a different order are
- * a divergence naming the first out-of-order message; messages matching only
- * callback edges are callback-notes; when mappings exist but all are null,
- * ordering is unevaluable and yields a single unmapped-skip.
- */
 /** Single unevaluable-ordering finding. */
 function unmappedSkip(): OrderFinding[] {
   return [
@@ -37,21 +29,23 @@ function unmappedSkip(): OrderFinding[] {
   ];
 }
 
-/** Split edges into ordered direct calls and callback-only names. */
+/** Split edges into first-seen direct-call positions and callback-only names. */
 function partitionEdges(edges: CallEdge[]): {
-  codeOrder: string[];
+  firstPosition: Map<string, number>;
   callbackNames: Set<string>;
 } {
-  const codeOrder: string[] = [];
+  const firstPosition = new Map<string, number>();
   const callbackNames = new Set<string>();
+  let directIndex = 0;
   for (const edge of edges) {
     if (edge.viaCallback) {
       callbackNames.add(edge.callee);
     } else {
-      codeOrder.push(edge.callee);
+      if (!firstPosition.has(edge.callee)) firstPosition.set(edge.callee, directIndex);
+      directIndex += 1;
     }
   }
-  return { codeOrder, callbackNames };
+  return { firstPosition, callbackNames };
 }
 
 interface TriagedMessages {
@@ -62,13 +56,13 @@ interface TriagedMessages {
 /** Sort messages into order-comparable ones and callback notes. */
 function triageMessages(
   diagramMessages: string[],
-  codeSet: Set<string>,
+  firstPosition: Map<string, number>,
   callbackNames: Set<string>,
 ): TriagedMessages {
   const comparable: string[] = [];
   const notes: OrderFinding[] = [];
   for (const message of diagramMessages) {
-    if (codeSet.has(message)) {
+    if (firstPosition.has(message)) {
       comparable.push(message);
     } else if (callbackNames.has(message)) {
       notes.push({
@@ -83,11 +77,7 @@ function triageMessages(
 }
 
 /** Walk comparable messages in diagram order; divergence naming the outlier. */
-function walkOrder(comparable: string[], codeOrder: string[]): OrderFinding | null {
-  const firstPosition = new Map<string, number>();
-  codeOrder.forEach((name, index) => {
-    if (!firstPosition.has(name)) firstPosition.set(name, index);
-  });
+function walkOrder(comparable: string[], firstPosition: Map<string, number>): OrderFinding | null {
   let maxSeen = -1;
   for (const message of comparable) {
     const position = firstPosition.get(message) ?? -1;
@@ -104,6 +94,14 @@ function walkOrder(comparable: string[], codeOrder: string[]): OrderFinding | nu
   return null;
 }
 
+/**
+ * Compare diagram message order against ordered code call edges.
+ *
+ * Contract: identical order is a match; same calls in a different order are
+ * a divergence naming the first out-of-order message; messages matching only
+ * callback edges are callback-notes; when mappings exist but all are null,
+ * ordering is unevaluable and yields a single unmapped-skip.
+ */
 export function compareMessageOrder(
   diagramMessages: string[],
   edges: CallEdge[],
@@ -112,10 +110,10 @@ export function compareMessageOrder(
   if (mappings.length > 0 && mappings.every((mapping) => mapping.mapsTo === null)) {
     return unmappedSkip();
   }
-  const { codeOrder, callbackNames } = partitionEdges(edges);
-  const { comparable, notes } = triageMessages(diagramMessages, new Set(codeOrder), callbackNames);
+  const { firstPosition, callbackNames } = partitionEdges(edges);
+  const { comparable, notes } = triageMessages(diagramMessages, firstPosition, callbackNames);
   if (comparable.length === 0) return notes;
-  const divergence = walkOrder(comparable, codeOrder);
+  const divergence = walkOrder(comparable, firstPosition);
   if (divergence) return [divergence, ...notes];
   return [
     ...notes,

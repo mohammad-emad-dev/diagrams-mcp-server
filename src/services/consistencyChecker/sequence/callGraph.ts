@@ -63,11 +63,6 @@ function matchDefName(line: string): string | null {
   return null;
 }
 
-/** True when the text before a call puts it on a deferred path. */
-function isCallbackContext(before: string, line: string): boolean {
-  return before.includes("=>") || CALLBACK_WRAPPER_REGEX.test(line);
-}
-
 /** True when a call-like match is construction or a keyword. */
 function isSkippedCall(line: string, name: string, index: number): boolean {
   if (CALL_KEYWORDS.has(name)) return true;
@@ -75,9 +70,14 @@ function isSkippedCall(line: string, name: string, index: number): boolean {
 }
 
 /** Call edges on one line attributed to the current caller. */
-function extractLineCalls(line: string, lineNumber: number, caller: string): CallEdge[] {
+function extractLineCalls(
+  line: string,
+  lineNumber: number,
+  caller: string,
+  defName: string | null,
+): CallEdge[] {
   const edges: CallEdge[] = [];
-  const defName = matchDefName(line);
+  const hasCallbackWrapper = CALLBACK_WRAPPER_REGEX.test(line);
   CALL_SITE_REGEX.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = CALL_SITE_REGEX.exec(line)) !== null) {
@@ -86,7 +86,7 @@ function extractLineCalls(line: string, lineNumber: number, caller: string): Cal
     edges.push({
       caller,
       callee: name,
-      viaCallback: isCallbackContext(line.slice(0, match.index), line),
+      viaCallback: line.slice(0, match.index).includes("=>") || hasCallbackWrapper,
       line: lineNumber,
     });
   }
@@ -102,7 +102,7 @@ export function extractCallEdges(stripped: string): CallEdge[] {
     const line = lines[index];
     const defName = matchDefName(line);
     if (defName) caller = defName;
-    edges.push(...extractLineCalls(line, index + 1, caller));
+    edges.push(...extractLineCalls(line, index + 1, caller, defName));
   }
   return edges;
 }

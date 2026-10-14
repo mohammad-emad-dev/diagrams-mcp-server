@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { MAX_SEQUENCE_MESSAGES, MAX_SEQUENCE_PARTICIPANTS, toPosixPath } from "../constants.js";
-import type { GenerateDeps } from "../services/generate/collectEntities.js";
+import type { GenerateDeps, SequenceCollectionResult } from "../services/generate/types.js";
 import { collectSequence } from "../services/generate/sequence.js";
 import { MAX_SCAN_FILES } from "../services/consistencyChecker/scanning.js";
 import { validateDiagramSource } from "../services/diagramValidator.js";
@@ -60,7 +60,9 @@ const HEURISTIC_WARNING =
   "Static call-site order is not runtime order: messages are emitted in the order the reader met " +
   "the call, which says nothing about what happens at run time. A call inside a callback, promise, " +
   "or listener is unknowable from source and is counted in deferred_count instead of being sequenced. " +
-  "Participant mapping is declared-identifier equality only — there is no type resolution, so a callee " +
+  "TypeScript uses AST call sites when its compiler is available, otherwise heuristic extraction. " +
+  "Participant mapping uses case-insensitive operation names and the first declaring file — " +
+  "there is no type resolution, so a callee " +
   "no file in the scope declares is listed in unresolved_callees rather than attached to a guessed " +
   "participant. Message arguments, cross-language calls, and dynamic dispatch are out of scope. Treat " +
   "the result as a draft to review, then save it with diagrams_create.";
@@ -68,6 +70,52 @@ const HEURISTIC_WARNING =
 /** Map the wire dialect to the store's diagram type. */
 function diagramTypeFor(format: "puml" | "mermaid"): "plantuml" | "mermaid" {
   return format === "puml" ? "plantuml" : "mermaid";
+}
+
+interface SequenceResultRequest {
+  scope: string;
+  format: "puml" | "mermaid";
+  participantLimit: number;
+  messageLimit: number;
+  collected: SequenceCollectionResult;
+}
+
+function formatSequenceResult({
+  scope,
+  format,
+  participantLimit,
+  messageLimit,
+  collected,
+}: SequenceResultRequest) {
+  const output = {
+    scope,
+    format,
+    source: collected.source,
+    participants: collected.participants,
+    participants_included: collected.participants.length,
+    participants_available: collected.participantsAvailable,
+    participants_capped: collected.participantsDropped > 0,
+    participant_limit: participantLimit,
+    messages: collected.messages,
+    messages_included: collected.messages.length,
+    messages_available: collected.messagesAvailable,
+    messages_capped: collected.messagesDropped > 0,
+    message_limit: messageLimit,
+    deferred_count: collected.deferredCount,
+    unresolved_callees: collected.unresolvedCallees,
+    files_scanned: collected.filesScanned,
+    truncated: collected.truncated,
+    scan_limit: collected.scanLimit,
+    scan_warning: collected.scanWarning,
+    confidence: "heuristic" as const,
+    heuristic_warning: HEURISTIC_WARNING,
+    written: false as const,
+  };
+
+  return {
+    content: [{ type: "text" as const, text: collected.source }],
+    structuredContent: output,
+  };
 }
 
 export function registerDiagramsGenerateSequence(
@@ -135,7 +183,7 @@ Error Handling:
   - A scope with no code files is not an error: participants and messages are empty, and the emitted source is a valid empty diagram
   - Emitted source always passes the same syntax gate diagrams_create enforces; an emission that cannot is reported as an unexpected internal error
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,
@@ -165,35 +213,13 @@ Error Handling:
         // diagrams_create enforces, so the output can be saved as-is.
         validateDiagramSource(collected.source, diagramType);
 
-        const output = {
+        return formatSequenceResult({
           scope: toPosixPath(scope.relativePath),
           format: params.format,
-          source: collected.source,
-          participants: collected.participants,
-          participants_included: collected.participants.length,
-          participants_available: collected.participantsAvailable,
-          participants_capped: collected.participantsDropped > 0,
-          participant_limit: participantLimit,
-          messages: collected.messages,
-          messages_included: collected.messages.length,
-          messages_available: collected.messagesAvailable,
-          messages_capped: collected.messagesDropped > 0,
-          message_limit: messageLimit,
-          deferred_count: collected.deferredCount,
-          unresolved_callees: collected.unresolvedCallees,
-          files_scanned: collected.filesScanned,
-          truncated: collected.truncated,
-          scan_limit: collected.scanLimit,
-          scan_warning: collected.scanWarning,
-          confidence: "heuristic" as const,
-          heuristic_warning: HEURISTIC_WARNING,
-          written: false as const,
-        };
-
-        return {
-          content: [{ type: "text" as const, text: collected.source }],
-          structuredContent: output,
-        };
+          participantLimit,
+          messageLimit,
+          collected,
+        });
       } catch (err: unknown) {
         return handleToolError("diagrams_generate_sequence", err);
       }
