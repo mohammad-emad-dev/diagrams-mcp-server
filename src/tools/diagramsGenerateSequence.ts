@@ -60,7 +60,9 @@ const HEURISTIC_WARNING =
   "Static call-site order is not runtime order: messages are emitted in the order the reader met " +
   "the call, which says nothing about what happens at run time. A call inside a callback, promise, " +
   "or listener is unknowable from source and is counted in deferred_count instead of being sequenced. " +
-  "Participant mapping is declared-identifier equality only — there is no type resolution, so a callee " +
+  "TypeScript uses AST call sites when its compiler is available, otherwise heuristic extraction. " +
+  "Participant mapping uses case-insensitive operation names and the first declaring file — " +
+  "there is no type resolution, so a callee " +
   "no file in the scope declares is listed in unresolved_callees rather than attached to a guessed " +
   "participant. Message arguments, cross-language calls, and dynamic dispatch are out of scope. Treat " +
   "the result as a draft to review, then save it with diagrams_create.";

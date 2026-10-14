@@ -92,6 +92,11 @@ export const MAX_ENTITY_NAME_CHARS = 60;
 // never wrap and break the emitted source.
 export const MAX_TEMPLATE_TITLE_CHARS = 200;
 
+// Custom template reads and expansion are bounded independently of entity caps.
+export const MAX_CUSTOM_TEMPLATE_BYTES = 65_536;
+export const MAX_CUSTOM_TEMPLATE_NAME_CHARS = 64;
+export const MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS = 1_000_000;
+
 // Largest HTML bundle diagrams_export returns. A bundle is one whole artifact or
 // nothing at all: over-cap is an error, never a cut file, so a caller never
 // saves a diagram with half its rendering. Matches MAX_REMOTE_BODY_BYTES, the

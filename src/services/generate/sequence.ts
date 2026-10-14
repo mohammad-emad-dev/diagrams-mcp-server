@@ -2,13 +2,14 @@
 // caller->callee edges found in a codebase slice into a starter sequence
 // diagram.
 //
-// Reuses the consistency checker's ordered call graph (extractCallEdges) and
-// the generate tool's scan stack, so "what is a call" and "what is declared"
-// mean the same thing here as in diagrams_check_consistency and
-// diagrams_generate. This is the generative flip side of the same evidence —
-// and the same honesty: static call-site order is not runtime order, so a
-// call inside a callback or promise is counted in deferredCount and excluded
-// from the emitted messages rather than sequenced by where the parser saw it.
+// Reuses the consistency checker's ordered call graph (AST edges when the
+// TypeScript compiler resolves, extractCallEdges otherwise) and the generate
+// tool's scan stack, so "what is a call" and "what is declared" mean the same
+// thing here as in diagrams_check_consistency and diagrams_generate. This is
+// the generative flip side of the same evidence — and the same honesty:
+// static call-site order is not runtime order, so a call inside a callback
+// or promise is counted in deferredCount and excluded from the emitted
+// messages rather than sequenced by where the parser saw it.
 //
 // Participant resolution is case-insensitive declared-identifier matching: a
 // callee with no declaring file in the scope is reported in unresolvedCallees,
@@ -100,9 +101,14 @@ async function readSequenceFile(
     // AST names first (they ignore import specifiers, so an imported
     // operation does not make this file look like its declarer); the
     // heuristic union fills shapes the visitor does not read.
+    let astEdges: CallEdge[] | null = null;
     if (isTsFamilyExtension(ext)) {
-      const analysis = await analyzeTsFile(raw, ext, file, { ts: compiler });
+      const analysis = await analyzeTsFile(raw, ext, file, { ts: compiler, includeCalls: true });
       for (const name of analysis.declared) operations.add(name);
+      if (analysis.callGraph) {
+        for (const name of analysis.callGraph.operations) operations.add(name);
+        astEdges = analysis.callGraph.edges;
+      }
     }
     for (const name of extractDeclaredIdentifiers(stripped, family)) operations.add(name);
 
@@ -110,7 +116,7 @@ async function readSequenceFile(
       absolutePath: file,
       moduleName: path.basename(file, ext),
       operations,
-      edges: extractCallEdges(stripped),
+      edges: astEdges ?? extractCallEdges(stripped),
     };
   } catch (err: unknown) {
     // Skip unreadable files; unexpected failures must surface instead of

@@ -5,10 +5,8 @@
 // the shared syntax validator (asserted by the golden tests, never assumed at
 // runtime).
 //
-// The set is fixed at three templates here in source, not as data on disk: a
-// fourth template is a deliberate schema change, and the published payload
-// keeps shipping only dist/, README.md, and LICENSE, so no template file can
-// go missing at install time.
+// Built-in templates remain fixed in source and require no installed data files.
+// Project-local custom templates are handled separately by customTemplates.ts.
 //
 // PlantUML has no built-in C4 context shape without the C4-PlantUML stdlib,
 // which this local-first server never fetches (rendering is a local CLI and

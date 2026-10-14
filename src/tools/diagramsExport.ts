@@ -87,7 +87,7 @@ export function registerDiagramsExport(server: McpServer, ctx: ServerContext): v
     "diagrams_export",
     {
       title: "Export Diagram as a Self-Contained HTML File",
-      description: `Package a stored PlantUML or Mermaid diagram and its rendered SVG into one self-contained HTML file you can share or open outside the repo. The SVG is inlined as live markup (selectable and themeable, not a base64 image), inline styles are the only styling, and the diagram source is embedded in a collapsible block when include_source is set — so the artifact works fully offline, carries no external resource of any kind (no src/href URLs, no @import, no script, no fonts), and survives a strict content-security policy.
+      description: `Package a stored PlantUML or Mermaid diagram and its rendered SVG into one self-contained HTML file you can share or open outside the repo. The SVG is encoded as a data image, so renderer markup is not parsed into the HTML DOM. SVG image processing disables scripts and external resource loading. A restrictive content security policy allows only data images and inline wrapper styles. SVG text is not selectable in the exported image. Diagram source is escaped in a native collapsible block when include_source is set, and the artifact works offline without new dependencies.
 
 Rendering uses the same path and the same rules as diagrams_render: Mermaid requires the local 'mmdc' CLI with no fallback, and PlantUML prefers a local 'plantuml' CLI, falling back to the configured remote server only when ALLOW_REMOTE_PLANTUML=true and DISABLE_REMOTE_PLANTUML is not 'true'. Remote PlantUML rendering sends diagram source to that server over HTTPS.
 
@@ -104,7 +104,7 @@ Returns:
     "diagram_type": "plantuml" | "mermaid",
     "format": "html",
     "bytes": number,                         // UTF-8 byte length of the returned HTML
-    "svg_chars": number,                     // characters of the inlined SVG
+    "svg_chars": number,                     // image source characters after XML preamble stripping, before base64 encoding
     "source_included": boolean,              // whether the source block was embedded
     "truncated": false,                      // always false; over-cap is an error, never a cut file
     "rendered_with": "local-plantuml" | "remote-plantuml" | "mmdc"

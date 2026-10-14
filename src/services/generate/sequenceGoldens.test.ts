@@ -27,11 +27,18 @@ const CALLER =
   "import { charge } from './payment.js';\n\nexport function checkout() {\n  charge();\n}\n";
 const CALLEE = "export function charge() {\n  return 1;\n}\n";
 
-// The only call sits inside an arrow function. extractCallEdges flags a call
-// as deferred from its own line, so the arrow must be on the call's line for
-// the deferral to register; the message is then counted, never sequenced.
+// The callback sits in a multiline arrow argument. The AST defers any call
+// inside an inline function/arrow argument even when the wrapper and the
+// call are on different lines; the wrapper itself stays deferred so
+// scheduling is never sequenced as activity.
 const SCHEDULER =
-  "export function schedule() {\n  const done = () => charge();\n  return done;\n}\n";
+  "export function schedule() {\n  setTimeout(() => {\n    charge();\n  }, 10);\n}\n";
+
+// A cross-file method call: Payment.pay is a class method, not a top-level
+// function, so only the AST operation set knows this file declares "pay".
+// The heuristic union (class names only) leaves it unresolved.
+const METHOD_CALLER = "export function checkout() {\n  service.pay();\n}\n";
+const METHOD_CALLEE = "export class Payment {\n  pay() {\n    return 1;\n  }\n  idle() {}\n}\n";
 
 describe("sequence goldens", () => {
   let tmpRoot: string;
@@ -105,13 +112,67 @@ describe("sequence goldens", () => {
 
     assert.deepEqual(result.messages, []);
     assert.equal(result.messagesAvailable, 0);
-    assert.equal(result.deferredCount, 1);
-    // Nothing was sequenced, so no participant is declared; the empty diagram
-    // is still valid source a caller can hand to diagrams_create.
+    // The wrapper and the call inside its multiline arrow are both deferred;
+    // nothing is sequenced, so no participant is declared.
+    assert.equal(result.deferredCount, 2);
     assert.deepEqual(result.participants, []);
     assert.equal(result.participantsAvailable, 0);
     validateDiagramSource(result.source, "plantuml");
     assert.equal(result.source, "@startuml\n@enduml\n");
+  });
+
+  it("counts the same multiline callback as deferred in Mermaid", async () => {
+    const result = await collectSequence(callbackRoot, { format: "mermaid" });
+
+    assert.deepEqual(result.messages, []);
+    assert.equal(result.deferredCount, 2);
+    assert.deepEqual(result.participants, []);
+    validateDiagramSource(result.source, "mermaid");
+    assert.equal(result.source, "sequenceDiagram\n");
+  });
+
+  for (const format of ["puml", "mermaid"] as const) {
+    it(`resolves a cross-file method call via AST operations (${format})`, async () => {
+      const scope = path.join(tmpRoot, `method-${format}`);
+      await writeFiles(scope, { "checkout.ts": METHOD_CALLER, "payment.ts": METHOD_CALLEE });
+      const result = await collectSequence(scope, { format });
+
+      assert.deepEqual(result.participants, ["checkout", "payment"]);
+      assert.deepEqual(result.messages, [
+        { from: "checkout", to: "payment", message: "pay", line: 2, via_callback: false },
+      ]);
+      assert.equal(result.deferredCount, 0);
+      assert.deepEqual(result.unresolvedCallees, []);
+      validateDiagramSource(result.source, format === "puml" ? "plantuml" : "mermaid");
+    });
+  }
+
+  it("leaves the method call unresolved when the compiler is missing", async () => {
+    const scope = path.join(tmpRoot, "method-fallback");
+    await writeFiles(scope, { "checkout.ts": METHOD_CALLER, "payment.ts": METHOD_CALLEE });
+    const result = await collectSequence(scope, {
+      format: "puml",
+      deps: { loadTsModule: async () => null },
+    });
+
+    assert.deepEqual(result.messages, []);
+    // Without the compiler the regex path mistakes the method definitions
+    // themselves for call sites, so both names surface as unresolved; with
+    // the AST only the real service.pay() site exists and it resolves.
+    assert.deepEqual(result.unresolvedCallees, ["pay", "idle"]);
+    assert.deepEqual(result.participants, []);
+  });
+
+  it("keeps function calls sequenced when the compiler is missing", async () => {
+    const result = await collectSequence(tmpRoot, {
+      format: "puml",
+      deps: { loadTsModule: async () => null },
+    });
+
+    assert.deepEqual(result.participants, ["checkout", "payment"]);
+    assert.deepEqual(result.messages, [
+      { from: "checkout", to: "payment", message: "charge", line: 4, via_callback: false },
+    ]);
   });
 
   const resolutionCases: Array<{

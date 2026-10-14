@@ -51,7 +51,7 @@ and first write, while subsequent key events still render the updated state.
   its evidence types, `AnalyzerTier` (`reliable` / `experimental` / `generic`).
 - `src/constants.ts` — `toPosixPath`, `EXTENSION_TO_TYPE` (`.puml`, `.plantuml`,
   `.mmd`, `.mermaid`), `TYPE_TO_EXTENSION`, `DEFAULT_DIAGRAMS_DIR`, and the
-  `MAX_*` caps for pagination, rendering, generation, templates, and export.
+  `MAX_*` caps for pagination, rendering, generation, templates (incl. UNRELEASED `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000), and export.
 - `src/tools/toolError.ts` — `handleToolError` / `handleRenderError`: expected
   domain errors (`DiagramNotFoundError`, `PathTraversalError`,
   `DiagramValidationError`, `DiagramExistsError`,
@@ -62,9 +62,10 @@ and first write, while subsequent key events still render the updated state.
 ## Tools (`src/tools/`)
 
 One adapter per tool, each exporting `registerDiagrams*(server, ctx)` — except
-`diagramsTemplate.ts`, whose `registerDiagramsTemplate(server)` takes no
-context because the skeleton tables are pure (no store, no project root, no
-state). `diagramsExport.ts` reads the optional `ctx.rendererDeps` seam so the
+`diagramsTemplate.ts`, whose `registerDiagramsTemplate(server, ctx?)` takes an
+optional context: built-in skeletons are pure (no store, no project root, no
+state), while `template="custom"` reads one file under `ctx.codeRootDir`.
+`createDiagramServer` passes `ctx` through. `diagramsExport.ts` reads the optional `ctx.rendererDeps` seam so the
 render step is unit-testable without a CLI or the network.
 
 | Tool                         | Adapter                       |
@@ -176,18 +177,18 @@ adapter, including evidence field names, summary branches, and scan warnings.
   `tsHeritage.ts` separates AST traversal from class/interface clause
   collection. Invalid root shapes return no edges; unexpected visitor
   failures propagate through `analyzeTsFile`.
-  Participant mapping prefers an exact identifier, then the first declared
-  identifier with the same lowercase form. Its lookup is rebuilt per call,
+  UNRELEASED (not in published 0.7.0): `ts/tsCalls.ts` collects ordered AST call edges plus callable operations via optional `includeCalls` in `tsIndex.ts` (methods/accessors/property-held functions; `f()`, `obj.m()`, `obj["m"]()`; enclosing-caller reset; multiline callback deferral). Missing compiler, non-TS extensions, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner matching with no semantic type resolution.
+  Participant mapping uses case-insensitive operation names and the first
+  declaring participant in file order. Its lookup is rebuilt per call,
   so changes to the declaration set are visible to the next call.
 - `diff/diffDiagram.ts` — pure added/removed/renamed comparison of two
   sources; rename pairing uses `normalizeForMatch` and carries
   `confidence: "heuristic"`. A cursor per normalized name consumes added
   candidates in order, avoiding repeated scans of already-used candidates.
-- `export/htmlBundle.ts` — pure builder: an HTML wrapper around SVG plus
-  optional source. It escapes path and source text in one pass, preserving
+- `export/htmlBundle.ts` — pure builder: an HTML wrapper around an SVG-as-image plus
+  optional source. UNRELEASED (not in published 0.7.0): the stripped SVG source is base64-encoded into `<img src="data:image/svg+xml;base64,...">`, never parsed as live markup; scripts/external resources are disabled by SVG-image processing under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation is the boundary — no sanitization or removal of encoded markup is claimed. It escapes path, source, and provenance in one pass, preserving
   literal entity spellings. The wrapper adds inline CSS and no scripts or
-  fetched styles; renderer SVG markup is inlined without sanitization after
-  stripping its XML declaration and DOCTYPE. No filesystem operations.
+  fetched styles; `svgChars` is the decoded source length after XML-declaration/DOCTYPE strip, not the base64 length. No filesystem operations.
 - `generate/` — `collectEntities.ts` (scope scan to ordered entities plus
   evidenced relations), `emitters.ts` (class-diagram emitters),
   `sequence.ts` (candidate-message construction, participant/message caps,
@@ -205,10 +206,10 @@ adapter, including evidence field names, summary branches, and scan warnings.
   Sequence generation builds its operation lookup after merging files that
   share a participant name. The first participant declaring a lowercase
   operation name wins, including when a later participant has an exact-case
-  match. Candidate caller and callee lookups reuse that index.
-- `templates/skeletons.ts` — six pure emitters (class, sequence, C4-context
+  match. Candidate caller and callee lookups reuse that index. UNRELEASED: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
+- `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
-  byte-identical output.
+  byte-identical output. UNRELEASED (not in published 0.7.0): `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
 
 ## Tests
 
@@ -242,9 +243,8 @@ directory so parallel test workers cannot interfere with cleanup assertions.
 ## Adding or changing a tool
 
 1. Put the MCP adapter in `src/tools/diagramsX.ts` as
-   `registerDiagramsX(server, ctx)` (drop `ctx` only when the tool needs
-   neither store nor project root, as `diagrams_template` does) and register
-   it from `createDiagramServer` in `src/server.ts`.
+   `registerDiagramsX(server, ctx)` (use optional `ctx?` only when built-ins are pure and one mode needs the project root, as `diagrams_template` does for custom templates) and register
+   it from `createDiagramServer` in `src/server.ts` (which passes `ctx`).
 2. Put the logic in `src/services/`; parser and filesystem code does not
    belong in the registration file.
 3. Validate input with a strict Zod schema (`.strict()`); keep writes inside

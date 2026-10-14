@@ -10,7 +10,7 @@ import { DiagramStore } from "../services/diagramStore.js";
 import { validateDiagramSource } from "../services/diagramValidator.js";
 import { diagramsTemplateInputSchema, registerDiagramsTemplate } from "./diagramsTemplate.js";
 
-// The tool is read-only and touches no filesystem: this snapshot proves no file
+// The tool is read-only: this snapshot proves no file
 // appears under the project root (or the diagrams root) as a result of a call.
 async function listAllFiles(dir: string, base = dir): Promise<string[]> {
   const found: string[] = [];
@@ -119,7 +119,59 @@ describe("diagrams_template", () => {
   });
 
   afterEach(async () => {
+    assert.equal(path.dirname(projectRoot), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(projectRoot).startsWith("template-tool-"));
     await fs.rm(projectRoot, { recursive: true, force: true });
+  });
+
+  it("loads custom templates through the public tool without writing files", async () => {
+    const directory = path.join(projectRoot, ".diagrams-templates");
+    await fs.mkdir(directory);
+    await fs.writeFile(
+      path.join(directory, "model.json"),
+      JSON.stringify({
+        puml: {
+          source: "@startuml\ntitle {{title}}\n{{entities}}\n@enduml\n",
+          entity: "class {{name}}",
+        },
+        mermaid: { source: "classDiagram\n%% {{title}}\n{{entities}}\n", entity: "class {{name}}" },
+      }),
+    );
+    const before = await listAllFiles(projectRoot);
+    const tool = captureTool(registerDiagramsTemplate, ctx);
+    for (const format of ["puml", "mermaid"]) {
+      const result = await callHandler(tool, {
+        template: "custom",
+        custom_template: "model",
+        format,
+        title: "  Custom\n Model ",
+        entities: ["B", "A"],
+      });
+      assert.equal(result.isError, undefined);
+      assert.equal(result.structuredContent?.custom_template, "model");
+      assert.equal(result.structuredContent?.title, "Custom Model");
+      assert.equal(result.structuredContent?.written, false);
+      assert.ok(result.content[0].text.includes("class B\nclass A"));
+      validateDiagramSource(result.content[0].text, format === "puml" ? "plantuml" : "mermaid");
+    }
+    assert.deepEqual(await listAllFiles(projectRoot), before);
+    for (const args of [
+      { template: "custom", entities: ["A"] },
+      { template: "class", custom_template: "model", entities: ["A"] },
+      { template: "custom", custom_template: "missing", entities: ["A"] },
+    ]) {
+      const result = await callHandler(tool, args);
+      assert.equal(result.isError, true);
+      assert.ok(!result.content[0].text.includes(projectRoot));
+    }
+    assert.equal(
+      diagramsTemplateInputSchema.safeParse({
+        template: "custom",
+        custom_template: "../escape",
+        entities: ["A"],
+      }).success,
+      false,
+    );
   });
 
   it("registers read-only, non-destructive, idempotent, and closed-world", () => {

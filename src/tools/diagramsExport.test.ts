@@ -109,7 +109,7 @@ function offlineDeps(fetchRemote?: RendererDeps["fetchRemote"]): RendererDeps {
 /** True when `html` is free of anything a browser would fetch. */
 function hasNoExternalResources(html: string): boolean {
   return (
-    !/src\s*=/i.test(html) &&
+    !/src\s*=\s*["'](?!data:image\/svg\+xml;base64,)/i.test(html) &&
     !/href\s*=/i.test(html) &&
     !/@import/i.test(html) &&
     !/<script[\s>]/i.test(html) &&
@@ -206,7 +206,10 @@ describe("diagrams_export", () => {
     assert.ok(html.startsWith("<!DOCTYPE html>\n"), "the bundle is one HTML document");
     assert.ok(html.trimEnd().endsWith("</html>"));
     assert.ok(html.includes(`<title>${PUML_PATH}</title>`));
-    assert.ok(html.includes(SVG), "the SVG is inlined as markup");
+    assert.ok(
+      html.includes(Buffer.from(SVG, "utf-8").toString("base64")),
+      "the SVG is embedded as a data image",
+    );
     assert.ok(
       html.includes("<pre><code>") && html.includes(PUML_SOURCE.trimEnd()),
       "the source block is embedded",
@@ -275,7 +278,10 @@ describe("diagrams_export", () => {
     const html = without.content[0].text;
     assert.ok(!html.includes("<details"), "no source disclosure when disabled");
     assert.ok(!html.includes(PUML_SOURCE.trimEnd()), "no diagram source in the body");
-    assert.ok(html.includes(SVG), "the SVG is still inlined");
+    assert.ok(
+      html.includes(Buffer.from(SVG, "utf-8").toString("base64")),
+      "the SVG image is still embedded",
+    );
   });
 
   it("escapes source markup so it cannot break out of the block", async () => {

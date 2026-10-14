@@ -12,6 +12,7 @@ import {
 } from "../services/diagramStore.js";
 import { RenderError } from "../services/renderer.js";
 import { ScopeEscapeError } from "../services/scopeResolve.js";
+import { CustomTemplateError } from "../services/templates/customTemplates.js";
 
 export interface ToolErrorResult {
   content: [{ type: "text"; text: string }];
@@ -64,7 +65,8 @@ export function isExpectedToolError(err: unknown): err is Error {
     err instanceof DiagramExistsError ||
     err instanceof UnsupportedDiagramExtensionError ||
     err instanceof ScopeEscapeError ||
-    err instanceof RenderError
+    err instanceof RenderError ||
+    err instanceof CustomTemplateError
   );
 }
 

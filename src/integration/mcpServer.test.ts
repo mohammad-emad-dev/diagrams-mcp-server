@@ -167,6 +167,30 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.ok(setup.stdout.includes(`v${expected}`));
   });
 
+  it("loads a project-local custom template over real stdio", async () => {
+    const directory = path.join(projectRoot, ".diagrams-templates");
+    await fs.mkdir(directory);
+    await fs.writeFile(
+      path.join(directory, "team-model.json"),
+      JSON.stringify({
+        puml: {
+          source: "@startuml\ntitle {{title}}\n{{entities}}\n@enduml\n",
+          entity: "class {{name}}",
+        },
+      }),
+    );
+    const result = await callTool("diagrams_template", {
+      template: "custom",
+      custom_template: "team-model",
+      title: "Team Model",
+      entities: ["Widget"],
+    });
+    assert.equal(result.isError, undefined);
+    assert.equal(result.structuredContent?.custom_template, "team-model");
+    assert.equal(result.structuredContent?.written, false);
+    assert.equal(textOf(result), "@startuml\ntitle Team Model\nclass Widget\n@enduml\n");
+  });
+
   it("creates a diagram with POSIX structured output", async () => {
     const result = await callTool("diagrams_create", {
       relative_path: DIAGRAM_PATH,

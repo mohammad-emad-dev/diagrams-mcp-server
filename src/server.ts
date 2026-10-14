@@ -30,8 +30,7 @@ export function createDiagramServer(ctx: ServerContext): McpServer {
   registerDiagramsGenerate(server, ctx);
   registerDiagramsGenerateSequence(server, ctx);
   registerDiagramsDiff(server, ctx);
-  // The template tool is pure: it takes no context, so it registers alone.
-  registerDiagramsTemplate(server);
+  registerDiagramsTemplate(server, ctx);
 
   return server;
 }
