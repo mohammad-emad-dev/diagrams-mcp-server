@@ -1,5 +1,6 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -143,6 +144,27 @@ describe("MCP stdio integration (dist/index.js)", () => {
   it("discovers all 12 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
+  });
+
+  it("advertises the package.json version over stdio", async () => {
+    const raw = await fs.readFile(new URL("../../package.json", import.meta.url), "utf-8");
+    const expected = (JSON.parse(raw) as { version: string }).version;
+    assert.equal(typeof expected, "string");
+    assert.equal(getClient().getServerVersion()?.version, expected);
+  });
+
+  it("prints the package.json version in the setup banner", async () => {
+    const raw = await fs.readFile(new URL("../../package.json", import.meta.url), "utf-8");
+    const expected = (JSON.parse(raw) as { version: string }).version;
+    assert.equal(typeof expected, "string");
+    const setup = spawnSync(
+      process.execPath,
+      ["dist/index.js", "setup", "--client", "version-check-invalid", "--yes"],
+      { cwd: process.cwd(), encoding: "utf-8" },
+    );
+    assert.equal(setup.status, 1);
+    assert.match(setup.stderr, /Unknown client 'version-check-invalid'/);
+    assert.ok(setup.stdout.includes(`v${expected}`));
   });
 
   it("creates a diagram with POSIX structured output", async () => {

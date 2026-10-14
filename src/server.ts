@@ -16,7 +16,7 @@ import { registerDiagramsTemplate } from "./tools/diagramsTemplate.js";
 export function createDiagramServer(ctx: ServerContext): McpServer {
   const server = new McpServer({
     name: "diagrams-mcp-server",
-    version: "0.6.0",
+    version: "0.7.0",
   });
 
   registerDiagramsList(server, ctx);

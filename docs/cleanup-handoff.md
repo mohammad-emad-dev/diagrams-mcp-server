@@ -17,24 +17,30 @@ checkout. Its V2 follow-ups remain unscheduled candidates for future work.
 
 ## Verification
 
-Final local checks passed on Windows with Node v26.7.0:
+The cleanup baseline passed local checks on Windows with Node v26.7.0. After
+the version metadata fix, all checks below also passed on Windows with
+Node v20.20.2 and v22.23.3:
 
 - Lint, formatting, and a clean build.
-- 442 tests: 433 passed, 9 skipped, 0 failed.
+- 444 tests: 435 passed, 9 skipped, 0 failed.
 - Server and setup CLI help smoke checks.
 - Package dry run: 66 shipped files, with compiled tests excluded.
 - Git whitespace/error checks.
 
-The configured Ubuntu/Windows CI matrix on Node 20 and 22 was not run in this
-local session. Earlier refactor checks also compared outputs and emitted
-JavaScript against pre-change snapshots; those checks supplement the test suite.
+The Ubuntu/Windows CI matrix on Node 20 and 22 is defined in
+`.github/workflows/ci.yml`; its remote results are separate from this local
+validation record. Local Linux validation was unavailable because the Docker
+Linux engine did not start. Earlier refactor checks also compared outputs and
+emitted JavaScript against pre-change snapshots; those checks supplement the
+test suite.
 
 ## Handoff notes
 
-Changes remain uncommitted. Runtime behavior and public contracts were preserved
-through the cleanup; no dependencies were added. Existing local configuration
-and the pre-existing `.agents/` directory were retained.
+The cleanup baseline is saved in commit `ed1c6c7`. Runtime behavior and public
+contracts were preserved through that cleanup; no dependencies were added.
+Existing local configuration and the pre-existing `.agents/` directory were
+retained; `.agents/` was not included in the baseline commit.
 
-Release preparation still needs to reconcile the existing package version
-(`0.7.0`) with server/setup metadata (`0.6.0`). That metadata was deliberately
-left unchanged during behavior-preserving cleanup.
+A separate readiness fix reconciles package, MCP server, and setup banner
+metadata to `0.7.0`. Public integration tests compare both advertised versions
+with `package.json`; the setup check exits before configuration changes.
