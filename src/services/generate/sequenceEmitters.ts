@@ -1,5 +1,5 @@
 // Pure sequence-diagram emitters for diagrams_generate_sequence. No
-// filesystem and no options beyond the collected participants and messages:
+// filesystem; the optional call-parentheses flag changes only message labels:
 // the same input always yields the same source text, and every emitted
 // source passes the shared syntax validator (asserted by the golden tests,
 // never assumed at runtime).
@@ -110,7 +110,11 @@ export function mermaidParticipantName(name: string, taken: Set<string>): string
 }
 
 /** Emit PlantUML: declarations, then one ordered message per collected call. */
-export function emitPlantUmlSequence(participants: string[], messages: SequenceMessage[]): string {
+export function emitPlantUmlSequence(
+  participants: string[],
+  messages: SequenceMessage[],
+  includeCallParentheses = false,
+): string {
   const participantTokens = new Map<string, string>();
   const participantToken = (name: string): string => {
     const cached = participantTokens.get(name);
@@ -124,22 +128,26 @@ export function emitPlantUmlSequence(participants: string[], messages: SequenceM
     lines.push(`participant ${participantToken(name)}`);
   }
   for (const message of messages) {
-    lines.push(
-      `${participantToken(message.from)} -> ${participantToken(message.to)} : ${message.message}`,
-    );
+    const label = includeCallParentheses ? `${message.message}()` : message.message;
+    lines.push(`${participantToken(message.from)} -> ${participantToken(message.to)} : ${label}`);
   }
   lines.push("@enduml");
   return `${lines.join("\n")}\n`;
 }
 
 /** Emit Mermaid sequenceDiagram: declarations, then ordered messages. */
-export function emitMermaidSequence(participants: string[], messages: SequenceMessage[]): string {
+export function emitMermaidSequence(
+  participants: string[],
+  messages: SequenceMessage[],
+  includeCallParentheses = false,
+): string {
   const lines = ["sequenceDiagram"];
   for (const name of participants) {
     lines.push(`participant ${name}`);
   }
   for (const message of messages) {
-    lines.push(`${message.from}->>${message.to}: ${message.message}`);
+    const label = includeCallParentheses ? `${message.message}()` : message.message;
+    lines.push(`${message.from}->>${message.to}: ${label}`);
   }
   return `${lines.join("\n")}\n`;
 }
@@ -148,8 +156,9 @@ export function emitSequenceDiagram(
   type: DiagramType,
   participants: string[],
   messages: SequenceMessage[],
+  includeCallParentheses = false,
 ): string {
   return type === "plantuml"
-    ? emitPlantUmlSequence(participants, messages)
-    : emitMermaidSequence(participants, messages);
+    ? emitPlantUmlSequence(participants, messages, includeCallParentheses)
+    : emitMermaidSequence(participants, messages, includeCallParentheses);
 }

@@ -103,6 +103,10 @@ export interface SequenceOptions {
   /** Overrides for the emitted caps; tests use small values. */
   maxParticipants?: number;
   maxMessages?: number;
+  /**
+   * When true, emitted message names append `()`; structured messages stay bare.
+   */
+  includeCallParentheses?: boolean;
   /** Compiler override; see GenerateDeps. */
   deps?: GenerateDeps;
 }

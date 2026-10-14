@@ -694,6 +694,55 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal(await fs.readFile(sequenceCallerPath, "utf-8"), SEQUENCE_CALLER);
   });
 
+  it("generates call labels recognized by consistency and cross-format diffs over stdio", async () => {
+    const sources: string[] = [];
+    for (const format of ["puml", "mermaid"] as const) {
+      const generated = await callTool("diagrams_generate_sequence", {
+        scope: "src-sequence",
+        format,
+        include_call_parentheses: true,
+      });
+      assert.equal(generated.isError, undefined);
+      const source = generated.structuredContent?.source as string;
+      assert.equal(textOf(generated), source);
+      assert.match(source, /: charge\(\)/);
+      const messages = generated.structuredContent?.messages as Array<{ message: string }>;
+      assert.deepEqual(
+        messages.map((message) => message.message),
+        ["charge"],
+      );
+      sources.push(source);
+
+      const relativePath = `models/generated-call-labels.${format === "puml" ? "puml" : "mmd"}`;
+      const created = await callTool("diagrams_create", {
+        relative_path: relativePath,
+        content: source,
+      });
+      assert.equal(created.isError, undefined);
+      try {
+        const checked = await callTool("diagrams_check_consistency", {
+          relative_path: relativePath,
+        });
+        assert.equal(checked.isError, undefined);
+        assert.ok((checked.structuredContent?.matched_entities as string[]).includes("charge"));
+      } finally {
+        const deleted = await callTool("diagrams_delete", { relative_path: relativePath });
+        assert.equal(deleted.isError, undefined);
+      }
+    }
+    const compared = await callTool("diagrams_diff", {
+      a_content: sources[0],
+      b_content: sources[1],
+      compare_call_order: true,
+    });
+    assert.equal(compared.isError, undefined);
+    assert.deepEqual(compared.structuredContent?.call_order, {
+      a: ["charge"],
+      b: ["charge"],
+      changed: false,
+    });
+  });
+
   it("diffs a stored diagram against inline previous-version text", async () => {
     // Create, update, then diff: the stored v2 gains a whole class, which is
     // the level the tool compares (members are out of scope), so the diff of
