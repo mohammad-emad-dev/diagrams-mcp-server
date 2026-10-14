@@ -1,6 +1,6 @@
 name: Publish
 
-# Runs only on version tags (e.g. v0.2.0). Push with:
+# Runs on version tags or manual recovery of an existing tag. Push with:
 #   git tag v0.2.0 && git push origin v0.2.0
 # The tag must match the version in package.json (without the "v").
 
@@ -8,6 +8,13 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to recover (e.g. v0.8.0)"
+        required: true
+        type: string
+        default: "v0.8.0"
 
 permissions:
   contents: read
@@ -16,8 +23,22 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      SELECTED_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      - name: Validate tag format
+        env:
+          TAG_TO_CHECK: ${{ env.SELECTED_TAG }}
+        run: |
+          if ! [[ "$TAG_TO_CHECK" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid tag '$TAG_TO_CHECK'. Expected exact format vN.N.N (e.g. v0.8.0)."
+            exit 1
+          fi
+          echo "Tag '$TAG_TO_CHECK' format is valid."
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/tags/${{ env.SELECTED_TAG }}
 
       - name: Use Node.js 20.x
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -27,11 +48,13 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Check tag matches package.json version
+        env:
+          EXPECTED_TAG: ${{ env.SELECTED_TAG }}
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_VERSION="${EXPECTED_TAG#v}"
           PKG_VERSION="$(node -p "require('./package.json').version")"
           if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION"
+            echo "Tag $EXPECTED_TAG does not match package.json version $PKG_VERSION"
             exit 1
           fi
 
@@ -42,9 +65,36 @@ jobs:
           PKG_VERSION="$(node -p "require('./package.json').version")"
           if npm view "$PKG_NAME@$PKG_VERSION" version 2>/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "Version $PKG_VERSION is already on the registry — publish steps will skip."
+            echo "Version $PKG_VERSION is already on npm — npm publish will skip; MCP registration is checked separately."
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if MCP version already registered
+        id: mcp_published
+        run: |
+          MCP_NAME="$(node -p "require('./server.json').name")"
+          MCP_VERSION="$(node -p "require('./server.json').version")"
+          ENCODED_NAME="$(node -e "console.log(encodeURIComponent(process.argv[1]))" "$MCP_NAME")"
+          ENCODED_VERSION="$(node -e "console.log(encodeURIComponent(process.argv[1]))" "$MCP_VERSION")"
+          REG_URL="https://registry.modelcontextprotocol.io/v0.1/servers/${ENCODED_NAME}/versions/${ENCODED_VERSION}"
+          HTTP_CODE="$(curl -sS -o /tmp/mcp-response.json -w "%{http_code}" "$REG_URL")"
+          if [ "$HTTP_CODE" = "200" ]; then
+            REG_NAME="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/mcp-response.json','utf8')).server.name")"
+            REG_VERSION="$(node -p "JSON.parse(require('fs').readFileSync('/tmp/mcp-response.json','utf8')).server.version")"
+            if [ "$REG_NAME" != "$MCP_NAME" ] || [ "$REG_VERSION" != "$MCP_VERSION" ]; then
+              echo "Registry 200 response mismatch: expected $MCP_NAME@$MCP_VERSION, got $REG_NAME@$REG_VERSION"
+              exit 1
+            fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "MCP $MCP_NAME@$MCP_VERSION is already registered — MCP publish steps will skip."
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "MCP $MCP_NAME@$MCP_VERSION not found in registry — MCP publish steps will run."
+          else
+            echo "Failed to check MCP registry: HTTP $HTTP_CODE for $REG_URL"
+            cat /tmp/mcp-response.json
+            exit 1
           fi
 
       - name: Install dependencies
@@ -76,15 +126,31 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Download mcp-publisher
-        if: steps.published.outputs.exists != 'true'
+        if: steps.mcp_published.outputs.exists != 'true'
         run: |
-          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" -o mcp-publisher.tar.gz
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_linux_amd64.tar.gz" -o mcp-publisher.tar.gz
           tar xz -f mcp-publisher.tar.gz mcp-publisher
 
       - name: Authenticate to MCP Registry
-        if: steps.published.outputs.exists != 'true'
+        if: steps.mcp_published.outputs.exists != 'true'
         run: ./mcp-publisher login github-oidc
 
       - name: Publish to MCP Registry
-        if: steps.published.outputs.exists != 'true'
-        run: ./mcp-publisher publish
+        if: steps.mcp_published.outputs.exists != 'true'
+        run: |
+          attempt=1
+          max_attempts=5
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "MCP publish attempt $attempt of $max_attempts..."
+            if ./mcp-publisher publish; then
+              echo "MCP publish succeeded on attempt $attempt."
+              exit 0
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "MCP publish failed after $max_attempts attempts."
+              exit 1
+            fi
+            echo "MCP publish attempt $attempt failed; retrying in 15s..."
+            sleep 15
+            attempt=$((attempt + 1))
+          done
