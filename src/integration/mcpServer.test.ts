@@ -236,6 +236,36 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.match(textOf(result), /output_dir/);
   });
 
+  it("compares recognized call order only when requested over real stdio", async () => {
+    const a =
+      "@startuml\nparticipant A\nparticipant B\nA -> B: charge()\nA -> B: refund()\n@enduml\n";
+    const b = "sequenceDiagram\nparticipant A\nparticipant B\nA->>B: refund()\nA->>B: charge()\n";
+    const defaultResult = await callTool("diagrams_diff", { a_content: a, b_content: b });
+    assert.equal(defaultResult.isError, undefined);
+    assert.equal(defaultResult.structuredContent?.is_same, true);
+    assert.equal(Object.hasOwn(defaultResult.structuredContent ?? {}, "call_order"), false);
+    const orderedResult = await callTool("diagrams_diff", {
+      a_content: a,
+      b_content: b,
+      compare_call_order: true,
+    });
+    assert.equal(orderedResult.isError, undefined);
+    assert.equal(orderedResult.structuredContent?.is_same, false);
+    assert.deepEqual(orderedResult.structuredContent?.call_order, {
+      a: ["charge", "refund"],
+      b: ["refund", "charge"],
+      changed: true,
+    });
+    assert.match(textOf(orderedResult), /message-call order changed/);
+    const invalid = await callTool("diagrams_diff", {
+      a_content: a,
+      b_content: b,
+      compare_call_order: "true",
+    });
+    assert.equal(invalid.isError, true);
+    assert.match(textOf(invalid), /compare_call_order/);
+  });
+
   it("creates a diagram with POSIX structured output", async () => {
     const result = await callTool("diagrams_create", {
       relative_path: DIAGRAM_PATH,

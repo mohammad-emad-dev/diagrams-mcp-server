@@ -87,6 +87,8 @@ UNRELEASED (not in published 0.7.0): TypeScript files additionally use AST-backe
 
 `diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
 
+UNRELEASED `diagrams_diff` option: set `compare_call_order: true` to compare recognized message-call names in source order, preserving repeated calls. The response adds `call_order: { a, b, changed }`; `is_same` also accounts for this comparison. Each side is limited to 10,000 recognized calls (`MAX_DIFF_ORDER_CALLS`), and an over-limit comparison returns an error rather than partial arrays. It reuses the existing heuristic call grammar (for example, `charge()`); plain labels such as `charge`, endpoints, arguments, control flow, and runtime order are outside this comparison. Omit the option for the existing name-based diff. This is not in published v0.7.0.
+
 #### `diagrams_template`
 
 `diagrams_template` is the blank-page tool that precedes all of them: **give it a kind, a dialect, and the entity names, and it hands back a minimal skeleton that already clears every syntax gate.** The three built-in kinds (class, sequence, C4-context × PlantUML, Mermaid) are fixed tables in `src/services/templates/skeletons.ts` — pure, no filesystem, no code scan, identical inputs yield byte-identical source. Unlike `diagrams_generate` there is no `confidence` field: one declaration per entity plus a TODO hint, nothing more. The PlantUML C4-context skeleton stays self-contained with plain rectangles (no C4-PlantUML stdlib fetch); Mermaid uses native `C4Context`. Nothing is ever written: the source comes back in the response until you save it with `diagrams_create`. The template limits are listed under [Template limits](#template-limits).
@@ -586,7 +588,8 @@ src/
 │   │       ├── tsIndex.ts / tsHeritage.ts  # Index and extends/implements edges (+ tsIndex.test.ts, tsGoldens.test.ts)
 │   │       └── tsCalls.ts         # UNRELEASED AST call edges for sequences via optional includeCalls (+ tsCalls.test.ts)
 │   ├── diff/                      # diagrams_diff comparison
-│   │   └── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
+│   │   ├── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
+│   │   └── callOrder.ts           # UNRELEASED bounded recognized call-order comparison
 │   ├── export/                    # diagrams_export bundle builder (pure, no filesystem)
 │   │   ├── htmlBundle.ts          # SVG-as-image HTML wrapper + CSP from SVG + source
 │   │   └── exportGoldens.test.ts  # Exact wrapper structure locked per variant

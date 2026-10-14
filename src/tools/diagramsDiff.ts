@@ -1,10 +1,11 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
+import { MAX_DIFF_ORDER_CALLS } from "../constants.js";
 import { diffDiagrams } from "../services/diff/diffDiagram.js";
 import { handleToolError } from "./toolError.js";
 import { InputSchema, inlineDialectErrors, readSide, sideShapeErrors } from "./diffInput.js";
 import type { Input } from "./diffInput.js";
-import { summaryChanged, summaryIdentical } from "./diffSummary.js";
+import { summaryCallOrder, summaryChanged, summaryIdentical } from "./diffSummary.js";
 
 const HEURISTIC_WARNING =
   "Rename detection is name-similarity, not semantic identity: a removed name pairs with an " +
@@ -26,6 +27,7 @@ This is the review-time companion to diagrams_check_consistency: that tool asks 
 Each side supplies exactly one of a path or inline content, so unstaged edits can be diffed without a round trip. Rename detection pairs a removed name with an added one only when they are identical once lowercased and stripped of separators, and every rename carries confidence: "heuristic" — similarity is not semantic identity.
 
 Args:
+  - compare_call_order (boolean, default false): Also compare recognized message-call names in order, preserving repetitions. Each side is capped at ${MAX_DIFF_ORDER_CALLS} calls; over-limit comparison is refused. Plain labels, endpoints, arguments and control flow are excluded.
   - a_relative_path (string, optional): Side a as a path relative to the diagrams root
   - a_content (string, optional): Side a as inline source text (dialect detected from the source)
   - b_relative_path (string, optional): Side b as a path relative to the diagrams root
@@ -48,7 +50,8 @@ Returns:
     "participants_removed": string[],
     "calls_added": string[],
     "calls_removed": string[],
-    "is_same": boolean,                            // true iff added, removed, and renamed are all empty
+    "is_same": boolean,                            // entity names unchanged, and call order unchanged when comparison is enabled
+    "call_order": { "a": string[], "b": string[], "changed": boolean }, // present only when compare_call_order=true
     "confidence": "heuristic",
     "heuristic_warning": string
   }
@@ -56,12 +59,14 @@ Returns:
   A paired rename leaves the added/removed lists, so no change is reported twice. The two sides may use different dialects; each is read with its own syntax.
 
 Examples:
+  - Use when: "Did the order or repetition of message calls change?" -> compare_call_order=true with the two diagram sources
   - Use when: "What changed in this diagram since my last edit?" -> a_relative_path="models/order.puml", b_content="<edited source>"
   - Use when: "Compare the stored diagram against the version in my buffer" -> a_relative_path="system/flow.mmd", b_content="<buffer source>"
   - Don't use when: You want to know whether the diagram still matches the code (use diagrams_check_consistency)
   - Don't use when: You want member-level, layout, or style differences (out of scope; this tool compares declared names only)
 
 Error Handling:
+  - CallOrderLimitError rejects enabled comparisons exceeding ${MAX_DIFF_ORDER_CALLS} recognized calls on either side, without returning partial arrays or source text
   - Returns "Error: Invalid side 'a'|'b': supply exactly one of ..." when a side supplies both or neither of its path and content
   - Returns "Error: Invalid side 'a'|'b' content: not a recognizable ..." when inline content is neither PlantUML nor Mermaid
   - Returns "Error: No diagram found at '<path>'" when a stored side does not exist
@@ -90,15 +95,18 @@ Error Handling:
       try {
         const a = await readSide(ctx, "a", params);
         const b = await readSide(ctx, "b", params);
-        const diff = diffDiagrams(a.sideInput, b.sideInput);
+        const diff = diffDiagrams(a.sideInput, b.sideInput, {
+          compareCallOrder: params.compare_call_order,
+        });
+        const summary = diff.is_same
+          ? summaryIdentical(a.report, b.report, diff.unchanged_count)
+          : summaryChanged(a.report, b.report, diff);
 
         return {
           content: [
             {
               type: "text" as const,
-              text: diff.is_same
-                ? summaryIdentical(a.report, b.report, diff.unchanged_count)
-                : summaryChanged(a.report, b.report, diff),
+              text: diff.call_order ? `${summary}\n${summaryCallOrder(diff.call_order)}` : summary,
             },
           ],
           structuredContent: {
@@ -115,7 +123,11 @@ Error Handling:
             calls_removed: diff.calls_removed,
             is_same: diff.is_same,
             confidence: "heuristic",
-            heuristic_warning: HEURISTIC_WARNING,
+            heuristic_warning: diff.call_order
+              ? HEURISTIC_WARNING +
+                " Call-order comparison uses recognized call-name order and repetitions only; it ignores arguments, endpoints, plain labels, and control flow. It does not prove runtime order."
+              : HEURISTIC_WARNING,
+            ...(diff.call_order ? { call_order: diff.call_order } : {}),
           },
         };
       } catch (err: unknown) {

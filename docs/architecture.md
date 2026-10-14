@@ -214,9 +214,11 @@ adapter, including evidence field names, summary branches, and scan warnings.
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
   byte-identical output. UNRELEASED (not in published 0.7.0): `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
 
-## Tests
+UNRELEASED `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
 
 UNRELEASED template discovery uses `templates/templateCatalog.ts` through `diagramsListTemplates.ts`. `listCustomTemplates` examines at most `MAX_TEMPLATE_SCAN_ENTRIES` (1,000) directory entries plus one lookahead, skips subfolders and symlink files, and returns candidate identifiers without opening their JSON. Discovery and instantiation share `resolveCustomTemplateDirectory` in `customTemplates.ts`. A missing directory gives built-ins only; a redirected directory is rejected. The tool reports partial scans explicitly and writes nothing.
+
+## Tests
 
 Tests are colocated with the source they cover (`*.test.ts`) and compile to
 `dist/`. `npm run build` runs `scripts/build.mjs`, which cleans the project's

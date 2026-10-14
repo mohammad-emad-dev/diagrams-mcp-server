@@ -8,6 +8,12 @@ const INLINE_LABEL = "<inline>";
 
 export const InputSchema = z
   .object({
+    compare_call_order: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Compare recognized message-call names in order, including repetitions (default: false). Plain labels, arguments, endpoints and control flow are not compared.",
+      ),
     a_relative_path: z
       .string()
       .min(1)

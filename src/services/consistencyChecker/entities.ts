@@ -72,6 +72,37 @@ export function extractMessageCalls(source: string): string[] {
   return Array.from(names);
 }
 
+/** Cleaned message-call names in extraction order, repetitions kept. */
+function* orderedMessageCallNames(source: string): Generator<string> {
+  // matchAll clones the shared grammar, so the module regex lastIndex is
+  // never touched and repeated calls cannot leak parser state.
+  for (const match of source.matchAll(MESSAGE_CALL_REGEX)) {
+    const cleaned = cleanDiagramName(match[1] ?? "");
+    if (cleaned) yield cleaned;
+  }
+}
+
+/**
+ * Message-call names in extraction order, repetitions kept, bounded by limit.
+ * Stops after limit + 1 recognized calls: `calls` never exceeds `limit` and
+ * `exceeded` reports whether another recognized call remained. Recognized
+ * means the shared grammar matched and the name cleaned to a non-empty
+ * identifier; plain labels never count. Never builds a full match array.
+ */
+export function extractOrderedMessageCalls(
+  source: string,
+  limit: number,
+): { calls: string[]; exceeded: boolean } {
+  const calls: string[] = [];
+  let recognized = 0;
+  for (const name of orderedMessageCallNames(source)) {
+    recognized += 1;
+    if (recognized > limit) return { calls, exceeded: true };
+    calls.push(name);
+  }
+  return { calls, exceeded: false };
+}
+
 /** Run one participant regex to completion, collecting display names and aliases. */
 function collectParticipants(source: string, participantRegex: RegExp): string[] {
   const { names, addClean } = makeEntitySink();

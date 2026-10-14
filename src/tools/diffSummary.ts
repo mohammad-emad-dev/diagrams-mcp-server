@@ -5,6 +5,16 @@ function listOrNone(names: string[]): string {
   return names.length > 0 ? names.join(", ") : "(none)";
 }
 
+export function summaryCallOrder(
+  order: NonNullable<ReturnType<typeof diffDiagrams>["call_order"]>,
+): string {
+  return [
+    `Recognized message-call order ${order.changed ? "changed" : "unchanged"}.`,
+    `  a: ${order.a.length > 0 ? order.a.join(" -> ") : "(none)"}`,
+    `  b: ${order.b.length > 0 ? order.b.join(" -> ") : "(none)"}`,
+  ].join("\n");
+}
+
 export function summaryIdentical(a: SideReport, b: SideReport, unchangedCount: number): string {
   return (
     `No differences between '${a.source}' and '${b.source}': both declare the same ` +
