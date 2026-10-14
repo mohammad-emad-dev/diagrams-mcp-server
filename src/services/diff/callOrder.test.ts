@@ -39,6 +39,11 @@ function repeatCallSource(count: number): string {
   return `@startuml\nparticipant A\nparticipant B\n${lines.join("\n")}\n@enduml\n`;
 }
 
+function repeatSingleCallSource(count: number): string {
+  const lines = new Array<string>(count).fill("A -> B: f(x)");
+  return `@startuml\nparticipant A\nparticipant B\n${lines.join("\n")}\n@enduml\n`;
+}
+
 /** Run a comparison expected to throw and return its message. */
 function captureLimitMessage(sourceA: string, sourceB: string): string {
   try {
@@ -57,12 +62,12 @@ describe("call order", () => {
     assert.equal(exceeded, false);
   });
 
-  it("ignores plain labels and single-character names like the shared grammar", () => {
+  it("recognizes single-character names while still ignoring plain labels", () => {
     const source = "@startuml\nA -> B: hello world\nA -> B: a(x)\nA -> B: charge(card)\n@enduml\n";
     const { calls, exceeded } = extractOrderedMessageCalls(source, MAX_DIFF_ORDER_CALLS);
-    assert.deepEqual(calls, ["charge"]);
+    assert.deepEqual(calls, ["a", "charge"]);
     assert.equal(exceeded, false);
-    assert.deepEqual(extractMessageCalls(source), ["charge"]);
+    assert.deepEqual(extractMessageCalls(source), ["a", "charge"]);
   });
 
   it("does not represent argument differences in the ordered names", () => {
@@ -103,6 +108,33 @@ describe("call order", () => {
     assert.deepEqual(swappedRepeat.a, ["place", "cancel", "place"]);
     assert.deepEqual(swappedRepeat.b, ["place", "place", "cancel"]);
     assert.equal(swappedRepeat.changed, true);
+  });
+
+  it("flags reordered single-character calls as changed", () => {
+    const compared = compareCallOrder(
+      "@startuml\nA -> B: f(x)\nA -> B: g(y)\n@enduml\n",
+      "@startuml\nA -> B: g(y)\nA -> B: f(x)\n@enduml\n",
+    );
+    assert.deepEqual(compared.a, ["f", "g"]);
+    assert.deepEqual(compared.b, ["g", "f"]);
+    assert.equal(compared.changed, true);
+  });
+
+  it("counts repeated single-character calls positionally", () => {
+    const ordered = extractOrderedMessageCalls(
+      "@startuml\nA -> B: f(x)\nA -> B: g(y)\nA -> B: f(z)\n@enduml\n",
+      MAX_DIFF_ORDER_CALLS,
+    );
+    assert.deepEqual(ordered.calls, ["f", "g", "f"]);
+    assert.equal(ordered.exceeded, false);
+
+    const compared = compareCallOrder(
+      "@startuml\nA -> B: f(x)\nA -> B: g(y)\nA -> B: f(z)\n@enduml\n",
+      "@startuml\nA -> B: f(x)\nA -> B: f(z)\nA -> B: g(y)\n@enduml\n",
+    );
+    assert.deepEqual(compared.a, ["f", "g", "f"]);
+    assert.deepEqual(compared.b, ["f", "f", "g"]);
+    assert.equal(compared.changed, true);
   });
 
   it("matches the same order across PlantUML and Mermaid", () => {
@@ -171,6 +203,54 @@ describe("call order", () => {
           `Call order on side 'b' exceeds the limit of ${MAX_DIFF_ORDER_CALLS} calls.`,
         );
         assert.ok(!err.message.includes("A -> B"));
+        return true;
+      },
+    );
+  });
+
+  it("accepts exactly the cap of single-character calls without error", () => {
+    const source = repeatSingleCallSource(MAX_DIFF_ORDER_CALLS);
+    const { calls, exceeded } = extractOrderedMessageCalls(source, MAX_DIFF_ORDER_CALLS);
+    assert.equal(exceeded, false);
+    assert.equal(calls.length, MAX_DIFF_ORDER_CALLS);
+    assert.ok(calls.every((name) => name === "f"));
+    const compared = compareCallOrder(source, source);
+    assert.equal(compared.changed, false);
+    assert.equal(compared.a.length, MAX_DIFF_ORDER_CALLS);
+  });
+
+  it("rejects cap plus one single-character calls as over the limit", () => {
+    const over = repeatSingleCallSource(MAX_DIFF_ORDER_CALLS + 1);
+    const small = "@startuml\nA -> B: f(x)\n@enduml\n";
+
+    const extracted = extractOrderedMessageCalls(over, MAX_DIFF_ORDER_CALLS);
+    assert.equal(extracted.exceeded, true);
+    assert.equal(extracted.calls.length, MAX_DIFF_ORDER_CALLS);
+
+    assert.throws(
+      () => compareCallOrder(over, small),
+      (err: unknown) => {
+        assert.ok(err instanceof CallOrderLimitError);
+        assert.equal(err.side, "a");
+        assert.equal(err.limit, MAX_DIFF_ORDER_CALLS);
+        assert.equal(
+          err.message,
+          `Call order on side 'a' exceeds the limit of ${MAX_DIFF_ORDER_CALLS} calls.`,
+        );
+        return true;
+      },
+    );
+
+    assert.throws(
+      () => compareCallOrder(small, over),
+      (err: unknown) => {
+        assert.ok(err instanceof CallOrderLimitError);
+        assert.equal(err.side, "b");
+        assert.equal(err.limit, MAX_DIFF_ORDER_CALLS);
+        assert.equal(
+          err.message,
+          `Call order on side 'b' exceeds the limit of ${MAX_DIFF_ORDER_CALLS} calls.`,
+        );
         return true;
       },
     );

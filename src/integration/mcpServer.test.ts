@@ -1085,4 +1085,38 @@ describe("MCP stdio integration (dist/index.js)", () => {
     const relisted = await callTool("diagrams_list", { type_filter: "all" });
     assert.equal((relisted.structuredContent as { count: number }).count, 0);
   });
+
+  it("recognizes short operation names in consistency and call-order comparison over stdio", async () => {
+    const directory = path.join(projectRoot, "src-short-calls");
+    await fs.mkdir(directory);
+    await fs.writeFile(
+      path.join(directory, "operations.js"),
+      "export class A {}\nexport class B {}\nexport function f() {}\n",
+      "utf-8",
+    );
+    const a = "@startuml\nparticipant A\nparticipant B\nA -> B: f()\nA -> B: g()\n@enduml\n";
+    const b = "sequenceDiagram\nparticipant A\nparticipant B\nA->>B: g()\nA->>B: f()\n";
+    const relativePath = "models/short-calls.puml";
+    const created = await callTool("diagrams_create", { relative_path: relativePath, content: a });
+    assert.equal(created.isError, undefined);
+    const checked = await callTool("diagrams_check_consistency", { relative_path: relativePath });
+    assert.equal(checked.isError, undefined);
+    const matched = checked.structuredContent?.matched_entities as string[];
+    const unmatched = checked.structuredContent?.unmatched_entities as string[];
+    assert.ok(matched.includes("f"));
+    assert.ok(unmatched.includes("g"));
+    const compared = await callTool("diagrams_diff", {
+      a_content: a,
+      b_content: b,
+      compare_call_order: true,
+    });
+    assert.equal(compared.isError, undefined);
+    assert.deepEqual(compared.structuredContent?.call_order, {
+      a: ["f", "g"],
+      b: ["g", "f"],
+      changed: true,
+    });
+    const deleted = await callTool("diagrams_delete", { relative_path: relativePath });
+    assert.equal(deleted.isError, undefined);
+  });
 });

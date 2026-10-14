@@ -47,7 +47,60 @@ describe("sequence goldens (baseline pin, Seq P2)", () => {
   });
 
   afterEach(async () => {
+    assert.equal(path.dirname(tmpRoot), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(tmpRoot).startsWith("sequence-goldens-"));
     await fs.rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("matches declared single-character operations in both dialects", async () => {
+    await writeFiles(tmpRoot, {
+      "operations.js": "export class A {}\nexport class B {}\nexport function f() {}\n",
+    });
+    for (const diagram of [
+      {
+        relativePath: "models/short.puml",
+        source: "@startuml\nparticipant A\nparticipant B\nA -> B: f()\n@enduml\n",
+        type: "plantuml" as const,
+      },
+      {
+        relativePath: "models/short.mmd",
+        source: "sequenceDiagram\nparticipant A\nparticipant B\nA->>B: f()\n",
+        type: "mermaid" as const,
+      },
+    ]) {
+      const checked = await checkConsistency(diagram, tmpRoot);
+      assert.deepEqual(sorted(checked.entities), ["A", "B", "f"]);
+      assert.ok(checked.matchedEntities.includes("f"));
+      assert.ok(!checked.unmatchedEntities.includes("f"));
+      assert.equal(checked.entitiesFound, 3);
+      assert.equal(checked.entitiesMatched, 3);
+    }
+  });
+
+  it("reports undeclared single-character operations with the operation diagnostic", async () => {
+    await writeFiles(tmpRoot, {
+      "operations.js": "export class A {}\nexport class B {}\nexport function f() {}\n",
+    });
+    for (const diagram of [
+      {
+        relativePath: "models/short.puml",
+        source: "@startuml\nparticipant A\nparticipant B\nA -> B: f()\nA -> B: g()\n@enduml\n",
+        type: "plantuml" as const,
+      },
+      {
+        relativePath: "models/short.mmd",
+        source: "sequenceDiagram\nparticipant A\nparticipant B\nA->>B: f()\nA->>B: g()\n",
+        type: "mermaid" as const,
+      },
+    ]) {
+      const checked = await checkConsistency(diagram, tmpRoot);
+      assert.ok(checked.entities.includes("g"));
+      assert.ok(checked.unmatchedEntities.includes("g"));
+      assert.ok(checked.matchedEntities.includes("f"));
+      const issueForG = checked.issues.find((issue) => issue.name === "g");
+      assert.ok(issueForG);
+      assert.match(issueForG.issue, /operation/);
+    }
   });
 
   it("pins the order-flow outcome: participants matched, labels ignored", async () => {

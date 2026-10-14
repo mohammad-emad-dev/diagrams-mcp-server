@@ -65,6 +65,10 @@ Thirteen tools in four groups (template discovery is UNRELEASED). The read-only 
 
 All 13 tools reject unknown argument keys over MCP instead of silently ignoring them. For example, `include_sorce` is rejected; the export option is `include_source`. This change is not in published v0.7.0. Existing fields, defaults, refinements, and response shapes are unchanged. The SDK dependency now requires `^1.30.0`, matching the already-installed and locked version verified with full-schema registration.
 
+#### Call-name extraction (UNRELEASED)
+
+UNRELEASED parser correction: valid one-character operation names such as `f()` and `_()` are recognized by consistency checks, name-based diffs, and optional call-order comparison. They count toward the 10,000-call limit like longer names. Plain labels remain ignored; recognized call names still use the existing ASCII identifier grammar. This correction is not in published v0.7.0.
+
 #### `diagrams_list_templates` (UNRELEASED)
 
 Call with `{}` to discover the three built-in kinds and custom-template candidate names under `<PROJECT_ROOT>/.diagrams-templates`. Each custom result includes `custom_template` and a relative POSIX `relative_path`; use the identifier with `diagrams_template`, which validates the definition, selected dialect, and emitted source. Discovery reads directory entries only, so malformed JSON files can appear as candidates.

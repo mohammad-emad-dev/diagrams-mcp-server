@@ -54,7 +54,7 @@ function makeEntitySink(): EntitySink {
 
 // Message calls like `charge(card)`; plain labels are ignored. Shared by both
 // dialects. Module-level /g regex, so lastIndex is reset on every call below.
-const MESSAGE_CALL_REGEX = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]{1,})\s*\(/g;
+const MESSAGE_CALL_REGEX = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
 
 /** Collect message-call entities from source into a shared sink. */
 function collectMessageCalls(source: string, addClean: (raw: string | undefined) => void): void {
