@@ -68,7 +68,7 @@ Error Handling:
   - Returns "Error: Refused to access path outside the diagrams root" when a stored side attempts to escape the diagrams directory
   - Returns "Error: ... does not have a recognized diagram extension" when a stored path's extension is not .puml/.plantuml/.mmd/.mermaid
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

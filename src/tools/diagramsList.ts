@@ -119,7 +119,7 @@ Error Handling:
   - Returns an empty page (count 0, has_more=false) when offset is past the end of the matches
   - Returns "Error: Invalid pagination: ..." if offset is negative/non-integer or limit is outside 1-500
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

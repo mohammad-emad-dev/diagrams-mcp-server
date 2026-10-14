@@ -44,7 +44,7 @@ Error Handling:
   - Returns "Error: No diagram found at '<path>'" if the file doesn't exist
   - Returns "Error: Refused to access path outside the diagrams root" if relative_path attempts to escape the diagrams directory (e.g. via '../..')
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,

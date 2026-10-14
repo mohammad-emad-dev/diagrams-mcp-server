@@ -123,7 +123,7 @@ Error Handling:
   - Returns "Error: PlantUML rendering server responded with <status>..." when the opt-in remote fallback answers non-2xx
   - Returns "Error: The export bundle for '<path>' is <n> bytes, larger than the ${MAX_EXPORT_HTML_BYTES}-byte limit, so it was not returned..." when the finished bundle exceeds the cap
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

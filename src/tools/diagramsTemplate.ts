@@ -186,7 +186,7 @@ Error Handling:
   - CustomTemplateError messages explain missing custom_template, invalid built-in/custom combinations, unreadable or invalid JSON files, unsupported dialects/placeholders, and read/expansion limits without exposing absolute paths
   - Emitted source passes the same syntax gate diagrams_create enforces; invalid template output returns a diagram validation error
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

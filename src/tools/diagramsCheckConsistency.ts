@@ -131,7 +131,7 @@ Error Handling:
   - Returns "Error: No diagram found at '<path>'" if the diagram file doesn't exist
   - An empty "issues" array with entities_found=0 means no checkable entities were found in the diagram, not that everything matched
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

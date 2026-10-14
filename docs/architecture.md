@@ -91,6 +91,8 @@ source tools return their source as text, report tools return a summary, and
 `toolOutput.test.ts` file next to the adapters tests the content/structured
 contract through captured registrations.
 
+UNRELEASED: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 13 tools and verify rejected mutation requests leave files unchanged.
+
 `diagramsDiff.ts` delegates its input schema, validation, and side loading to
 `diffInput.ts`, and its text summaries to `diffSummary.ts`. Validation runs
 before either side is read; stored sides still use the store's path guards.

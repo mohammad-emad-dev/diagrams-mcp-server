@@ -55,7 +55,7 @@ Error Handling:
   - Returns "Error: Invalid Mermaid diagram (basic check): ..." if Mermaid source is empty or has no recognized diagram declaration
   - Returns "Error: Refused to access path outside the diagrams root" if relative_path attempts to escape the diagrams directory
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,

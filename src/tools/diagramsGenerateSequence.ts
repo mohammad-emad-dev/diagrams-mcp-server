@@ -183,7 +183,7 @@ Error Handling:
   - A scope with no code files is not an error: participants and messages are empty, and the emitted source is a valid empty diagram
   - Emitted source always passes the same syntax gate diagrams_create enforces; an emission that cannot is reported as an unexpected internal error
   - Unexpected internal failures return a generic "Error: Unexpected internal error ..." with isError:true and are logged to stderr without source, paths, or secrets`,
-      inputSchema: InputSchema.shape,
+      inputSchema: InputSchema,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

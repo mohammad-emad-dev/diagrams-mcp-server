@@ -850,4 +850,209 @@ describe("MCP stdio integration (dist/index.js)", () => {
 
     assert.equal(await fs.readFile(codeFixturePath, "utf-8"), CODE_FIXTURE);
   });
+
+  it("rejects unknown create/update/delete arguments without mutating diagrams", async () => {
+    const guardPath = "models/strict-guard.puml";
+    const blockedCreatePath = "models/strict-create-blocked.puml";
+    const beforeList = await callTool("diagrams_list", { type_filter: "all" });
+    const beforeCount = (beforeList.structuredContent as { count: number }).count;
+
+    const badCreate = await callTool("diagrams_create", {
+      relative_path: blockedCreatePath,
+      content: DIAGRAM_V1,
+      bogus_unknown_field: "boom",
+    });
+    assert.equal(badCreate.isError, true);
+    assert.match(textOf(badCreate), /bogus_unknown_field/);
+    assert.ok(!textOf(badCreate).includes(projectRoot));
+    assert.ok(!textOf(badCreate).includes(DIAGRAM_V1));
+    await assert.rejects(
+      fs.access(path.join(diagramsDir, "models", "strict-create-blocked.puml")),
+      { code: "ENOENT" },
+    );
+    const afterBadCreate = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((afterBadCreate.structuredContent as { count: number }).count, beforeCount);
+
+    const created = await callTool("diagrams_create", {
+      relative_path: guardPath,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+
+    const badUpdate = await callTool("diagrams_update", {
+      relative_path: guardPath,
+      content: DIAGRAM_V2,
+      bogus_unknown_field: "boom",
+    });
+    assert.equal(badUpdate.isError, true);
+    assert.match(textOf(badUpdate), /bogus_unknown_field/);
+    assert.ok(!textOf(badUpdate).includes(projectRoot));
+    assert.ok(!textOf(badUpdate).includes(DIAGRAM_V1));
+    assert.ok(!textOf(badUpdate).includes(DIAGRAM_V2));
+    const reread = await callTool("diagrams_get", { relative_path: guardPath });
+    assert.equal(reread.isError, undefined);
+    assert.equal((reread.structuredContent as { content: string }).content, DIAGRAM_V1);
+
+    const badDelete = await callTool("diagrams_delete", {
+      relative_path: guardPath,
+      bogus_unknown_field: "boom",
+    });
+    assert.equal(badDelete.isError, true);
+    assert.match(textOf(badDelete), /bogus_unknown_field/);
+    assert.ok(!textOf(badDelete).includes(projectRoot));
+    const stillThere = await callTool("diagrams_get", { relative_path: guardPath });
+    assert.equal(stillThere.isError, undefined);
+
+    const cleaned = await callTool("diagrams_delete", { relative_path: guardPath });
+    assert.equal(cleaned.isError, undefined);
+    const finalList = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((finalList.structuredContent as { count: number }).count, beforeCount);
+  });
+
+  it("rejects unknown arguments for read-only discovery tools", async () => {
+    const fixture = "models/strict-read.puml";
+    const created = await callTool("diagrams_create", {
+      relative_path: fixture,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+    try {
+      const badList = await callTool("diagrams_list", {
+        type_filter: "all",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badList.isError, true);
+      assert.match(textOf(badList), /bogus_unknown_field/);
+      assert.ok(!textOf(badList).includes(projectRoot));
+
+      const badGet = await callTool("diagrams_get", {
+        relative_path: fixture,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badGet.isError, true);
+      assert.match(textOf(badGet), /bogus_unknown_field/);
+      assert.ok(!textOf(badGet).includes(projectRoot));
+      assert.ok(!textOf(badGet).includes(DIAGRAM_V1));
+
+      const badTemplates = await callTool("diagrams_list_templates", {
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badTemplates.isError, true);
+      assert.match(textOf(badTemplates), /bogus_unknown_field/);
+      assert.ok(!textOf(badTemplates).includes(projectRoot));
+
+      const badConsistency = await callTool("diagrams_check_consistency", {
+        relative_path: fixture,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badConsistency.isError, true);
+      assert.match(textOf(badConsistency), /bogus_unknown_field/);
+      assert.ok(!textOf(badConsistency).includes(projectRoot));
+
+      const listDefault = await callTool("diagrams_list", {});
+      assert.equal(listDefault.isError, undefined);
+      assert.equal((listDefault.structuredContent as { count: number }).count, 1);
+
+      const getDefault = await callTool("diagrams_get", { relative_path: fixture });
+      assert.equal(getDefault.isError, undefined);
+      assert.equal((getDefault.structuredContent as { content: string }).content, DIAGRAM_V1);
+    } finally {
+      await callTool("diagrams_delete", { relative_path: fixture });
+    }
+  });
+
+  it("rejects unknown arguments for generation, template, and diff tools", async () => {
+    const diffPath = "models/strict-diff.puml";
+    const created = await callTool("diagrams_create", {
+      relative_path: diffPath,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+    try {
+      const before = await callTool("diagrams_list", { type_filter: "all" });
+      const beforeCount = (before.structuredContent as { count: number }).count;
+
+      const badGenerate = await callTool("diagrams_generate", {
+        scope: "src-code",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badGenerate.isError, true);
+      assert.match(textOf(badGenerate), /bogus_unknown_field/);
+      assert.ok(!textOf(badGenerate).includes(projectRoot));
+
+      const badSequence = await callTool("diagrams_generate_sequence", {
+        scope: "src-sequence",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badSequence.isError, true);
+      assert.match(textOf(badSequence), /bogus_unknown_field/);
+      assert.ok(!textOf(badSequence).includes(projectRoot));
+
+      const badTemplate = await callTool("diagrams_template", {
+        template: "class",
+        entities: ["User"],
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badTemplate.isError, true);
+      assert.match(textOf(badTemplate), /bogus_unknown_field/);
+      assert.ok(!textOf(badTemplate).includes(projectRoot));
+
+      const badDiff = await callTool("diagrams_diff", {
+        a_content: DIAGRAM_V1,
+        b_relative_path: diffPath,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badDiff.isError, true);
+      assert.match(textOf(badDiff), /bogus_unknown_field/);
+      assert.ok(!textOf(badDiff).includes(projectRoot));
+      assert.ok(!textOf(badDiff).includes(DIAGRAM_V1));
+
+      const after = await callTool("diagrams_list", { type_filter: "all" });
+      assert.equal((after.structuredContent as { count: number }).count, beforeCount);
+
+      const templated = await callTool("diagrams_template", {
+        template: "class",
+        entities: ["User"],
+      });
+      assert.equal(templated.isError, undefined);
+      assert.equal((templated.structuredContent as { format: string }).format, "puml");
+    } finally {
+      await callTool("diagrams_delete", { relative_path: diffPath });
+    }
+  });
+
+  it("rejects unknown render/export arguments before renderer invocation", async () => {
+    const fixture = "models/strict-render.puml";
+    const created = await callTool("diagrams_create", {
+      relative_path: fixture,
+      content: DIAGRAM_V1,
+    });
+    assert.equal(created.isError, undefined);
+    try {
+      const badRender = await callTool("diagrams_render", {
+        relative_path: fixture,
+        format: "svg",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badRender.isError, true);
+      assert.match(textOf(badRender), /bogus_unknown_field/);
+      assert.ok(!textOf(badRender).includes(projectRoot));
+      assert.ok(!textOf(badRender).includes(DIAGRAM_V1));
+      assert.ok(!/mmdc|plantuml|rendering requires/i.test(textOf(badRender)));
+
+      const badExport = await callTool("diagrams_export", {
+        relative_path: fixture,
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badExport.isError, true);
+      assert.match(textOf(badExport), /bogus_unknown_field/);
+      assert.ok(!textOf(badExport).includes(projectRoot));
+      assert.ok(!textOf(badExport).includes(DIAGRAM_V1));
+      assert.ok(!/mmdc|plantuml|rendering requires/i.test(textOf(badExport)));
+    } finally {
+      await callTool("diagrams_delete", { relative_path: fixture });
+    }
+    const relisted = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((relisted.structuredContent as { count: number }).count, 0);
+  });
 });
