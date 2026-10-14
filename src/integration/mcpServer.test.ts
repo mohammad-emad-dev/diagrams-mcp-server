@@ -1094,8 +1094,12 @@ describe("MCP stdio integration (dist/index.js)", () => {
       "export class A {}\nexport class B {}\nexport function f() {}\n",
       "utf-8",
     );
-    const a = "@startuml\nparticipant A\nparticipant B\nA -> B: f()\nA -> B: g()\n@enduml\n";
-    const b = "sequenceDiagram\nparticipant A\nparticipant B\nA->>B: g()\nA->>B: f()\n";
+    const a =
+      "@startuml\nparticipant A\nparticipant B\n' A -> B: lineGhost()\n" +
+      "/'\nA -> B: blockGhost()\n'/\nA -> B: f()\nA -> B: g()\n@enduml\n";
+    const b =
+      "sequenceDiagram\nparticipant A\nparticipant B\n%% A->>B: mermaidGhost()\n" +
+      "A->>B: g()\nA->>B: f()\n";
     const relativePath = "models/short-calls.puml";
     const created = await callTool("diagrams_create", { relative_path: relativePath, content: a });
     assert.equal(created.isError, undefined);
@@ -1105,6 +1109,8 @@ describe("MCP stdio integration (dist/index.js)", () => {
     const unmatched = checked.structuredContent?.unmatched_entities as string[];
     assert.ok(matched.includes("f"));
     assert.ok(unmatched.includes("g"));
+    assert.ok(!unmatched.includes("lineGhost"));
+    assert.ok(!unmatched.includes("blockGhost"));
     const compared = await callTool("diagrams_diff", {
       a_content: a,
       b_content: b,

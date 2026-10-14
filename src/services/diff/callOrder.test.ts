@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { MAX_DIFF_ORDER_CALLS } from "../../constants.js";
 import { extractMessageCalls, extractOrderedMessageCalls } from "../consistencyChecker/entities.js";
 import { CallOrderLimitError, compareCallOrder } from "./callOrder.js";
+import { diffDiagrams } from "./diffDiagram.js";
 
 const PLANTUML_ORDERED =
   "@startuml\nparticipant Customer\nparticipant OrderService\n" +
@@ -266,5 +267,76 @@ describe("call order", () => {
     const forward = compareCallOrder(PLANTUML_ORDERED, PLANTUML_REORDERED);
     const repeat = compareCallOrder(PLANTUML_ORDERED, PLANTUML_REORDERED);
     assert.deepEqual(forward, repeat);
+  });
+});
+
+describe("call order with diagram comments (diff regression)", () => {
+  const PLANTUML_CLEAN =
+    "@startuml\nparticipant Customer\nparticipant OrderService\n" +
+    "Customer -> OrderService: place(order)\n" +
+    "Customer -> OrderService: cancel(order)\n" +
+    "@enduml\n";
+  const PLANTUML_COMMENTED =
+    "@startuml\nparticipant Customer\nparticipant OrderService\n" +
+    "' Customer -> OrderService: fake(order)\n" +
+    "Customer -> OrderService: place(order)\n" +
+    "/'\nCustomer -> OrderService: hidden(order)\n'/\n" +
+    "Customer -> OrderService: cancel(order)\n" +
+    "@enduml\n";
+  const MERMAID_CLEAN =
+    "sequenceDiagram\nparticipant Customer\nparticipant OrderService\n" +
+    "Customer->>OrderService: place(order)\n" +
+    "Customer->>OrderService: cancel(order)\n";
+  const MERMAID_COMMENTED =
+    "sequenceDiagram\nparticipant Customer\nparticipant OrderService\n" +
+    "%% Customer->>OrderService: fake(order)\n" +
+    "Customer->>OrderService: place(order)\n" +
+    "Customer->>OrderService: cancel(order)\n";
+
+  it("keeps default diff unchanged when comments are added", () => {
+    for (const [clean, commented, type] of [
+      [PLANTUML_CLEAN, PLANTUML_COMMENTED, "plantuml"],
+      [MERMAID_CLEAN, MERMAID_COMMENTED, "mermaid"],
+    ] as const) {
+      const compared = diffDiagrams({ source: clean, type }, { source: commented, type });
+      assert.equal("call_order" in compared, false);
+      assert.deepEqual(compared.added, []);
+      assert.deepEqual(compared.removed, []);
+      assert.deepEqual(compared.renamed, []);
+      assert.deepEqual(compared.calls_added, []);
+      assert.deepEqual(compared.calls_removed, []);
+      assert.equal(compared.is_same, true);
+    }
+
+    const crlfClean = PLANTUML_CLEAN.replaceAll("\n", "\r\n");
+    const crlfCommented = PLANTUML_COMMENTED.replaceAll("\n", "\r\n");
+    const crlfCompared = diffDiagrams(
+      { source: crlfClean, type: "plantuml" },
+      { source: crlfCommented, type: "plantuml" },
+    );
+    assert.deepEqual(crlfCompared.calls_added, []);
+    assert.deepEqual(crlfCompared.calls_removed, []);
+    assert.equal(crlfCompared.is_same, true);
+  });
+
+  it("keeps enabled call order unchanged when comments are added", () => {
+    for (const [clean, commented, type] of [
+      [PLANTUML_CLEAN, PLANTUML_COMMENTED, "plantuml"],
+      [MERMAID_CLEAN, MERMAID_COMMENTED, "mermaid"],
+    ] as const) {
+      const compared = diffDiagrams(
+        { source: clean, type },
+        { source: commented, type },
+        { compareCallOrder: true },
+      );
+      assert.deepEqual(compared.call_order, {
+        a: ["place", "cancel"],
+        b: ["place", "cancel"],
+        changed: false,
+      });
+      assert.deepEqual(compared.calls_added, []);
+      assert.deepEqual(compared.calls_removed, []);
+      assert.equal(compared.is_same, true);
+    }
   });
 });

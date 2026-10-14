@@ -69,6 +69,8 @@ All 13 tools reject unknown argument keys over MCP instead of silently ignoring 
 
 UNRELEASED parser correction: valid one-character operation names such as `f()` and `_()` are recognized by consistency checks, name-based diffs, and optional call-order comparison. They count toward the 10,000-call limit like longer names. Plain labels remain ignored; recognized call names still use the existing ASCII identifier grammar. This correction is not in published v0.7.0.
 
+UNRELEASED message-call extraction also skips whole-line apostrophe and `%%` comments, plus PlantUML `/' ... '/` blocks beginning at the first non-whitespace character of a line. Calls inside these comments do not affect consistency call names, name-based diffs, or the optional call-order limit. Parsing resumes after a block closes; an unclosed block hides the rest of the source. Inline blocks after diagram content, nested blocks, and note text are not parsed specially. This applies to call names only; declaration and participant extraction remain heuristic. See [PlantUML comments](https://plantuml.com/commons) and [Mermaid sequence comments](https://mermaid.js.org/syntax/sequenceDiagram#comments).
+
 #### `diagrams_list_templates` (UNRELEASED)
 
 Call with `{}` to discover the three built-in kinds and custom-template candidate names under `<PROJECT_ROOT>/.diagrams-templates`. Each custom result includes `custom_template` and a relative POSIX `relative_path`; use the identifier with `diagrams_template`, which validates the definition, selected dialect, and emitted source. Discovery reads directory entries only, so malformed JSON files can appear as candidates.

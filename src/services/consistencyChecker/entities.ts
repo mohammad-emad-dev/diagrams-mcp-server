@@ -52,17 +52,9 @@ function makeEntitySink(): EntitySink {
   return { names, addClean };
 }
 
-// Message calls like `charge(card)`; plain labels are ignored. Shared by both
-// dialects. Module-level /g regex, so lastIndex is reset on every call below.
-const MESSAGE_CALL_REGEX = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
-
 /** Collect message-call entities from source into a shared sink. */
 function collectMessageCalls(source: string, addClean: (raw: string | undefined) => void): void {
-  MESSAGE_CALL_REGEX.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = MESSAGE_CALL_REGEX.exec(source)) !== null) {
-    addClean(match[1]);
-  }
+  for (const name of orderedMessageCallNames(source)) addClean(name);
 }
 
 /** Message-call names (`charge` in `: charge(card)`), shared by both dialects. */
@@ -72,13 +64,47 @@ export function extractMessageCalls(source: string): string[] {
   return Array.from(names);
 }
 
-/** Cleaned message-call names in extraction order, repetitions kept. */
+/**
+ * Shared lazy call scanner. Whole-line comments and line-leading PlantUML
+ * blocks are skipped; trailing content after a block closes is scanned.
+ * Inline blocks and note bodies are outside this heuristic's scope.
+ * Each invocation owns its regex and block state, including early exits.
+ */
 function* orderedMessageCallNames(source: string): Generator<string> {
-  // matchAll clones the shared grammar, so the module regex lastIndex is
-  // never touched and repeated calls cannot leak parser state.
-  for (const match of source.matchAll(MESSAGE_CALL_REGEX)) {
-    const cleaned = cleanDiagramName(match[1] ?? "");
-    if (cleaned) yield cleaned;
+  const regex = /:(?![/:])[^\n:]*?\b([A-Za-z_][A-Za-z0-9_]*)\s*\(/g;
+  let inBlockComment = false;
+  let lineStart = 0;
+  while (lineStart < source.length) {
+    const newline = source.indexOf("\n", lineStart);
+    const lineEnd = newline === -1 ? source.length : newline;
+    let segment = source.slice(lineStart, lineEnd);
+    lineStart = lineEnd + 1;
+
+    while (segment.length > 0) {
+      if (inBlockComment) {
+        const close = segment.indexOf("'/");
+        if (close === -1) break;
+        inBlockComment = false;
+        segment = segment.slice(close + 2);
+        continue;
+      }
+
+      const trimmed = segment.trimStart();
+      if (trimmed.startsWith("'") || trimmed.startsWith("%%")) break;
+      if (trimmed.startsWith("/'")) {
+        inBlockComment = true;
+        segment = trimmed.slice(2);
+        continue;
+      }
+
+      regex.lastIndex = 0;
+      let match: RegExpExecArray | null;
+      while ((match = regex.exec(segment)) !== null) {
+        const cleaned = cleanDiagramName(match[1] ?? "");
+        if (cleaned) yield cleaned;
+      }
+      break;
+    }
   }
 }
 
