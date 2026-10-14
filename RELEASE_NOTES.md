@@ -1,8 +1,9 @@
-# Proposed release notes — 0.8.0 (UNRELEASED)
+# Release notes — 0.8.0 (UNRELEASED)
 
-The current package and runtime version remains `0.7.0`. `0.8.0` is the
-proposed next release; these changes are unpublished. Historical release notes
-are preserved below.
+Package, runtime, lockfile, and registry metadata are aligned to `0.8.0`.
+This release is unpublished. It includes the earlier `0.7.0` development wave
+documented below, which was also not published to npm. Historical notes are
+preserved as development records.
 
 ## Features and corrections
 
@@ -29,8 +30,8 @@ are preserved below.
   whole-line apostrophe/`%%` comments and line-leading PlantUML blocks.
   Inline/nested blocks and note bodies are not parsed specially.
 - Structural cleanup separates tool adapters, services, setup modules, and
-  build/test scripts. Registry metadata now matches the current package:
-  both `server.json` versions are corrected from `0.6.0` to `0.7.0`.
+  build/test scripts. Registry metadata is aligned with the release version:
+  both `server.json` versions are `0.8.0`.
 
 ## Compatibility changes
 
@@ -44,9 +45,9 @@ are preserved below.
 
 ## Release preparation remaining
 
-Select the final version, update package/lock/runtime/registry metadata together,
-and verify CI on the final release commit. Tagging and publication are separate
-steps; update the UNRELEASED documentation for the published version.
+Review and merge the release PR, then verify CI on the final release commit.
+Tagging and publication are separate steps; update the UNRELEASED documentation
+for the published version.
 
 ---
 

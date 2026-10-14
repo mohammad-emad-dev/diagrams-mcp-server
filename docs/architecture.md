@@ -1,8 +1,8 @@
 # Architecture
 
-Describes the repository as it is checked out here. CLI dispatch lives in
+Describes the repository as it is checked out here for `0.8.0` preparation (UNRELEASED, unpublished). CLI dispatch lives in
 `src/index.ts`; MCP construction lives in `src/server.ts`
-(`createDiagramServer`).
+(`createDiagramServer`). UNRELEASED items below target `0.8.0`.
 
 The [cleanup handoff](cleanup-handoff.md) records the completed structural
 cleanup, local verification results, and remaining release checks.
@@ -44,15 +44,15 @@ and first write, while subsequent key events still render the updated state.
 
 ## Shared foundation
 
-- `src/context.ts` — `ServerContext`: `diagramStore`, `codeRootDir`, optional
+- `src/context.ts` â€” `ServerContext`: `diagramStore`, `codeRootDir`, optional
   `rendererDeps` test seam (unset in production, so the real CLIs and fetch
   are used).
-- `src/types.ts` — `DiagramType`, `DiagramFile`, `ConsistencyCheckResult` and
+- `src/types.ts` â€” `DiagramType`, `DiagramFile`, `ConsistencyCheckResult` and
   its evidence types, `AnalyzerTier` (`reliable` / `experimental` / `generic`).
-- `src/constants.ts` — `toPosixPath`, `EXTENSION_TO_TYPE` (`.puml`, `.plantuml`,
+- `src/constants.ts` â€” `toPosixPath`, `EXTENSION_TO_TYPE` (`.puml`, `.plantuml`,
   `.mmd`, `.mermaid`), `TYPE_TO_EXTENSION`, `DEFAULT_DIAGRAMS_DIR`, and the
   `MAX_*` caps for pagination, rendering, generation, templates (incl. UNRELEASED `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000), and export.
-- `src/tools/toolError.ts` — `handleToolError` / `handleRenderError`: expected
+- `src/tools/toolError.ts` â€” `handleToolError` / `handleRenderError`: expected
   domain errors (`DiagramNotFoundError`, `PathTraversalError`,
   `DiagramValidationError`, `DiagramExistsError`,
   `UnsupportedDiagramExtensionError`, `ScopeEscapeError`, `RenderError`) pass
@@ -61,7 +61,7 @@ and first write, while subsequent key events still render the updated state.
 
 ## Tools (`src/tools/`)
 
-One adapter per tool, each exporting `registerDiagrams*(server, ctx)` — except
+One adapter per tool, each exporting `registerDiagrams*(server, ctx)` â€” except
 `diagramsTemplate.ts`, whose `registerDiagramsTemplate(server, ctx?)` takes an
 optional context: built-in skeletons are pure (no store, no project root, no
 state), while `template="custom"` reads one file under `ctx.codeRootDir`.
@@ -111,49 +111,49 @@ adapter, including evidence field names, summary branches, and scan warnings.
 
 ## Services (`src/services/`)
 
-- `diagramStore.ts` — filesystem CRUD rooted at one directory; paths escaping
+- `diagramStore.ts` â€” filesystem CRUD rooted at one directory; paths escaping
   the root are rejected (`PathTraversalError`), plus typed errors for missing
   diagrams, existing diagrams, and unsupported extensions.
   `write` validates the target before dispatching to private exclusive-create
   or atomic-replacement operations; these retain the original open flags,
   rename behavior, error mapping, and handle cleanup.
-- `store/diagramMetadata.ts` — `diagramTypeFromPath` maps file extensions to
+- `store/diagramMetadata.ts` â€” `diagramTypeFromPath` maps file extensions to
   diagram types; `readDiagramTitlePrefix` reads the bounded prefix through the
   store's open file handle; `extractDiagramTitle` reports an exact, partial,
   or absent title. The store owns path validation and handle cleanup.
-- `diagramValidator.ts` — creation/update syntax gate: PlantUML needs
+- `diagramValidator.ts` â€” creation/update syntax gate: PlantUML needs
   `@startuml`/`@enduml` boundaries, Mermaid needs a known leading keyword.
   Mermaid header parsing skips leading blanks, comments, and optional
   frontmatter, then stops at the first meaningful line. Anything deeper is
   left to the renderer.
-- `renderer.ts` — diagram source to SVG/PNG via local CLIs (`mmdc` for
+- `renderer.ts` â€” diagram source to SVG/PNG via local CLIs (`mmdc` for
   Mermaid; local `plantuml` preferred). The remote PlantUML fallback is
   opt-in (`ALLOW_REMOTE_PLANTUML=true`) and `DISABLE_REMOTE_PLANTUML=true`
   always wins. `RendererDeps` (`commandExists`, `runCommand`, `fetchRemote`)
   is the process/network seam.
-- `renderer/types.ts` — rendering formats, provenance, results, and process/
+- `renderer/types.ts` â€” rendering formats, provenance, results, and process/
   network dependency contracts. Backends import these types directly; the
   renderer entry re-exports them for existing callers. The module has no runtime
   declarations.
-- `renderer/command.ts` — executable detection, Windows command-shim
+- `renderer/command.ts` â€” executable detection, Windows command-shim
   arguments, bounded process output, and renderer timeouts.
   `renderer/error.ts` defines the shared `RenderError` class. `renderer.ts`
   re-exports `RenderError`, `runCommand`, `resolveSpawnTarget`, and the
   `SpawnTarget` type so existing callers keep their imports.
-- `renderer/local.ts` — local Mermaid and PlantUML execution, input/output
+- `renderer/local.ts` â€” local Mermaid and PlantUML execution, input/output
   files, and temporary-directory cleanup. The renderer entry retains backend
   selection, remote-fallback policy, and provenance reporting.
-- `renderer/plantumlRemote.ts` — PlantUML URL encoding, remote requests,
+- `renderer/plantumlRemote.ts` â€” PlantUML URL encoding, remote requests,
   timeouts, and response-size checks. The renderer entry owns the fallback
   decision and re-exports `encodePlantUmlForUrl` and `defaultFetchRemote` for
   existing callers.
-- `scopeResolve.ts` — `resolveScope(projectRoot, scope)` bounds the read-only
+- `scopeResolve.ts` â€” `resolveScope(projectRoot, scope)` bounds the read-only
   tools to `PROJECT_ROOT`; anything resolving outside is refused
   (`ScopeEscapeError`) before a file is read.
-- `nameNormalize.ts` — `normalizeForMatch`: lowercase, separator-free
+- `nameNormalize.ts` â€” `normalizeForMatch`: lowercase, separator-free
   comparison key shared by the consistency checker and `diagrams_diff`, so
   matching and rename pairing cannot drift apart.
-- `consistencyChecker/` — diagram-vs-code drift detection. `index.ts`
+- `consistencyChecker/` â€” diagram-vs-code drift detection. `index.ts`
   orchestrates scan, match, report; `fileAnalysis.ts` reads and analyzes code
   files; `entityMatching.ts` matches structural and operation names and
   collects issues and evidence. `entities.ts` composes dialect-specific
@@ -180,19 +180,19 @@ adapter, including evidence field names, summary branches, and scan warnings.
   `tsHeritage.ts` separates AST traversal from class/interface clause
   collection. Invalid root shapes return no edges; unexpected visitor
   failures propagate through `analyzeTsFile`.
-  UNRELEASED (not in published 0.7.0): `ts/tsCalls.ts` collects ordered AST call edges plus callable operations via optional `includeCalls` in `tsIndex.ts` (methods/accessors/property-held functions; `f()`, `obj.m()`, `obj["m"]()`; enclosing-caller reset; multiline callback deferral). Missing compiler, non-TS extensions, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner matching with no semantic type resolution.
+  UNRELEASED (for upcoming 0.8.0): `ts/tsCalls.ts` collects ordered AST call edges plus callable operations via optional `includeCalls` in `tsIndex.ts` (methods/accessors/property-held functions; `f()`, `obj.m()`, `obj["m"]()`; enclosing-caller reset; multiline callback deferral). Missing compiler, non-TS extensions, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner matching with no semantic type resolution.
   Participant mapping uses case-insensitive operation names and the first
   declaring participant in file order. Its lookup is rebuilt per call,
   so changes to the declaration set are visible to the next call.
-- `diff/diffDiagram.ts` — pure added/removed/renamed comparison of two
+- `diff/diffDiagram.ts` â€” pure added/removed/renamed comparison of two
   sources; rename pairing uses `normalizeForMatch` and carries
   `confidence: "heuristic"`. A cursor per normalized name consumes added
   candidates in order, avoiding repeated scans of already-used candidates.
-- `export/htmlBundle.ts` — pure builder: an HTML wrapper around an SVG-as-image plus
-  optional source. UNRELEASED (not in published 0.7.0): the stripped SVG source is base64-encoded into `<img src="data:image/svg+xml;base64,...">`, never parsed as live markup; scripts/external resources are disabled by SVG-image processing under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation is the boundary — no sanitization or removal of encoded markup is claimed. It escapes path, source, and provenance in one pass, preserving
+- `export/htmlBundle.ts` â€” pure builder: an HTML wrapper around an SVG-as-image plus
+  optional source. UNRELEASED (for upcoming 0.8.0): the stripped SVG source is base64-encoded into `<img src="data:image/svg+xml;base64,...">`, never parsed as live markup; scripts/external resources are disabled by SVG-image processing under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation is the boundary â€” no sanitization or removal of encoded markup is claimed. It escapes path, source, and provenance in one pass, preserving
   literal entity spellings. The wrapper adds inline CSS and no scripts or
   fetched styles; `svgChars` is the decoded source length after XML-declaration/DOCTYPE strip, not the base64 length. No filesystem operations.
-- `generate/` — `collectEntities.ts` (scope scan to ordered entities plus
+- `generate/` â€” `collectEntities.ts` (scope scan to ordered entities plus
   evidenced relations), `emitters.ts` (class-diagram emitters),
   `sequence.ts` (candidate-message construction, participant/message caps,
   and dialect naming),
@@ -211,9 +211,9 @@ adapter, including evidence field names, summary branches, and scan warnings.
   operation name wins, including when a later participant has an exact-case
   match. Candidate caller and callee lookups reuse that index. UNRELEASED: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
   UNRELEASED: `SequenceOptions.includeCallParentheses` (wire: `include_call_parentheses`, default false) reaches only the sequence emitter. When enabled, labels append `()`; structured messages retain their operation names, and collection/capping behavior is unchanged.
-- `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
-  × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
-  byte-identical output. UNRELEASED (not in published 0.7.0): `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
+- `templates/skeletons.ts` â€” six pure built-in emitters (class, sequence, C4-context
+  Ã— PlantUML, Mermaid). Fixed tables in source; identical inputs yield
+  byte-identical output. UNRELEASED (for upcoming 0.8.0): `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
 
 UNRELEASED `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
 
