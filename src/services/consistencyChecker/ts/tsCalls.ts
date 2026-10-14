@@ -1,7 +1,7 @@
 // AST call collection for TypeScript sequence generation.
 //
 // Pure visitor (no filesystem, no type resolution): named functions,
-// variable-bound arrow/function expressions, and class methods become
+// variable/property-bound arrow/function expressions, and class methods become
 // operations, and every static call site becomes an ordered edge. Only the
 // passed compiler module is used, so installs without `typescript` keep
 // working on the regex fallback.
@@ -14,7 +14,7 @@ import type * as tsTypes from "typescript";
 export interface TsCallAnalysis {
   /** One edge per static call site, in callee-token order. */
   edges: CallEdge[];
-  /** Named functions, variable-bound arrows/functions, class methods. */
+  /** Callable names used for file-level participant matching. */
   operations: Set<string>;
 }
 
@@ -148,16 +148,21 @@ export function collectTsCalls(sourceFile: unknown, ts: TsModule): TsCallAnalysi
   }
 
   function visitBinding(
-    node: tsTypes.VariableDeclaration | tsTypes.PropertyDeclaration,
+    node: tsTypes.VariableDeclaration | tsTypes.PropertyDeclaration | tsTypes.PropertyAssignment,
     context: CallContext,
   ): void {
-    if (
-      ts.isIdentifier(node.name) &&
-      node.initializer &&
-      isFunctionInitializer(ts, node.initializer)
-    ) {
-      operations.add(node.name.text);
-      visit(node.initializer, { ...context, caller: node.name.text, inCallArgument: false });
+    const name = ts.isVariableDeclaration(node)
+      ? ts.isIdentifier(node.name)
+        ? node.name.text
+        : undefined
+      : operationNameText(ts, node.name);
+    if (name && node.initializer && isFunctionInitializer(ts, node.initializer)) {
+      operations.add(name);
+      visit(node.initializer, {
+        ...context,
+        caller: name,
+        inCallArgument: ts.isPropertyAssignment(node) ? context.inCallArgument : false,
+      });
     } else {
       visitChildren(node, context);
     }
@@ -200,7 +205,11 @@ export function collectTsCalls(sourceFile: unknown, ts: TsModule): TsCallAnalysi
       ts.isSetAccessorDeclaration(node)
     )
       return visitMethod(node, context);
-    if (ts.isVariableDeclaration(node) || ts.isPropertyDeclaration(node))
+    if (
+      ts.isVariableDeclaration(node) ||
+      ts.isPropertyDeclaration(node) ||
+      ts.isPropertyAssignment(node)
+    )
       return visitBinding(node, context);
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
       return visitCallback(node, context);

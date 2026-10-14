@@ -23,6 +23,66 @@ function edgeSummary(edges: CallEdge[]): Array<[string, string, boolean, number]
 }
 
 describe("collectTsCalls", () => {
+  it("attributes object functions and quoted class fields to their callable names", async () => {
+    const { analysis } = await collect(
+      [
+        "const service = {",
+        "  pay: () => charge(),",
+        '  "refund": function named() { audit(); },',
+        "};",
+        'class Service { "submit" = () => finalize(); }',
+      ].join("\n"),
+    );
+    assert.deepEqual([...analysis.operations].sort(), ["named", "pay", "refund", "submit"]);
+    assert.deepEqual(edgeSummary(analysis.edges), [
+      ["pay", "charge", false, 2],
+      ["named", "audit", false, 3],
+      ["submit", "finalize", false, 5],
+    ]);
+  });
+
+  it("preserves callback-object deferral while object initializer calls remain direct", async () => {
+    const { analysis } = await collect(
+      [
+        "function run() {",
+        "  register({",
+        "    handler: () => {",
+        "      charge();",
+        "    },",
+        "    other: function named() { refund(); },",
+        "    eager: before(),",
+        "  });",
+        "  after();",
+        "}",
+      ].join("\n"),
+    );
+    assert.deepEqual(edgeSummary(analysis.edges), [
+      ["run", "register", false, 2],
+      ["handler", "charge", true, 4],
+      ["named", "refund", true, 6],
+      ["run", "before", false, 7],
+      ["run", "after", false, 9],
+    ]);
+  });
+
+  it("does not declare numeric, computed or non-identifier object property names", async () => {
+    const { analysis } = await collect(
+      [
+        "const service = {",
+        "  1: () => alpha(),",
+        "  [key]: () => beta(),",
+        '  "not-an-identifier": () => gamma(),',
+        "};",
+      ].join("\n"),
+    );
+    assert.deepEqual([...analysis.operations], []);
+    assert.deepEqual(edgeSummary(analysis.edges), [
+      ["<module>", "alpha", false, 2],
+      ["<module>", "beta", false, 3],
+      ["<module>", "gamma", false, 4],
+    ]);
+  });
+
   it("recognizes static callees through parentheses and TypeScript assertions", async () => {
     const { analysis } = await collect("(charge)();\n(service.pay)!();\n(<() => void>refund)();\n");
     assert.deepEqual(edgeSummary(analysis.edges), [

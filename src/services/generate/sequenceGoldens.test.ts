@@ -40,6 +40,42 @@ const SCHEDULER =
 const METHOD_CALLER = "export function checkout() {\n  service.pay();\n}\n";
 const METHOD_CALLEE = "export class Payment {\n  pay() {\n    return 1;\n  }\n  idle() {}\n}\n";
 
+// An object-literal operation: the callee file exports an object whose
+// identifier property holds an arrow function. Only the AST operation set
+// knows this file declares "pay"; the heuristic union sees only "service".
+// The definition itself holds no call, so it must not emit a message.
+const OBJECT_CALLER = "export function checkout() {\n  service.pay();\n}\n";
+const OBJECT_CALLEE = "export const service = {\n  pay: () => {\n    return 1;\n  },\n};\n";
+
+// Same ownership through a quoted static bare-identifier property: "pay"
+// holds an arrow function, so the AST still declares "pay".
+const QUOTED_OBJECT_CALLEE =
+  'export const service = {\n  "pay": () => {\n    return 1;\n  },\n};\n';
+
+// Same ownership through a quoted static class property initializer: "pay"
+// holds an arrow function, so the AST still declares "pay".
+const QUOTED_CLASS_CALLEE = 'export class Service {\n  "pay" = () => {\n    return 1;\n  };\n}\n';
+
+// A multiline callback object: charge() sits inside an inline arrow held by
+// an object property passed as a call argument. Argument deferral keeps
+// charge out of the messages even though the wrapper spans lines; the
+// surrounding before()/after() direct calls stay sequenced.
+const CALLBACK_OBJECT_CALLER =
+  "export function checkout() {\n" +
+  "  before();\n" +
+  "  register({\n" +
+  "    handler: () => {\n" +
+  "      charge();\n" +
+  "    },\n" +
+  "  });\n" +
+  "  after();\n" +
+  "}\n";
+const CALLBACK_OBJECT_CALLEE =
+  "export function before() {\n  return 1;\n}\n" +
+  "export function charge() {\n  return 2;\n}\n" +
+  "export function after() {\n  return 3;\n}\n" +
+  "export function register(input: unknown) {\n  return input;\n}\n";
+
 describe("sequence goldens", () => {
   let tmpRoot: string;
   let callbackRoot: string;
@@ -146,6 +182,99 @@ describe("sequence goldens", () => {
       validateDiagramSource(result.source, format === "puml" ? "plantuml" : "mermaid");
     });
   }
+
+  const objectCalleeCases: Array<{ name: string; slug: string; callee: string }> = [
+    { name: "object-literal identifier property", slug: "identifier", callee: OBJECT_CALLEE },
+    { name: "object-literal quoted property", slug: "quoted", callee: QUOTED_OBJECT_CALLEE },
+    { name: "quoted class property initializer", slug: "class", callee: QUOTED_CLASS_CALLEE },
+  ];
+
+  for (const { name, slug, callee } of objectCalleeCases) {
+    for (const format of ["puml", "mermaid"] as const) {
+      it(`resolves ${name} via AST ownership (${format})`, async () => {
+        const scope = path.join(tmpRoot, `object-${slug}-${format}`);
+        await writeFiles(scope, { "checkout.ts": OBJECT_CALLER, "payment.ts": callee });
+        const result = await collectSequence(scope, { format });
+
+        assert.deepEqual(result.participants, ["checkout", "payment"]);
+        assert.deepEqual(result.messages, [
+          { from: "checkout", to: "payment", message: "pay", line: 2, via_callback: false },
+        ]);
+        // The definition holds no call, so only the caller emits; nothing
+        // deferred and nothing unresolved.
+        assert.equal(result.messagesAvailable, 1);
+        assert.equal(result.messagesDropped, 0);
+        assert.equal(result.deferredCount, 0);
+        assert.deepEqual(result.unresolvedCallees, []);
+        assert.equal(result.filesScanned, 2);
+        validateDiagramSource(result.source, format === "puml" ? "plantuml" : "mermaid");
+      });
+    }
+  }
+
+  for (const format of ["puml", "mermaid"] as const) {
+    it(`defers a multiline callback object while sequencing surrounding calls (${format})`, async () => {
+      const scope = path.join(tmpRoot, `callback-object-${format}`);
+      await writeFiles(scope, {
+        "checkout.ts": CALLBACK_OBJECT_CALLER,
+        "payment.ts": CALLBACK_OBJECT_CALLEE,
+      });
+      const result = await collectSequence(scope, { format });
+
+      assert.deepEqual(result.participants, ["checkout", "payment"]);
+      assert.deepEqual(result.messages, [
+        { from: "checkout", to: "payment", message: "before", line: 2, via_callback: false },
+        { from: "checkout", to: "payment", message: "register", line: 3, via_callback: false },
+        { from: "checkout", to: "payment", message: "after", line: 8, via_callback: false },
+      ]);
+      // charge() sits inside an inline arrow held by an object property
+      // passed as a call argument, so it is deferred, never sequenced.
+      assert.ok(
+        result.messages.every((message) => message.message !== "charge"),
+        "callback object charge must not emit sequential activity",
+      );
+      assert.equal(result.deferredCount, 1);
+      assert.deepEqual(result.unresolvedCallees, []);
+      assert.equal(result.filesScanned, 2);
+      validateDiagramSource(result.source, format === "puml" ? "plantuml" : "mermaid");
+    });
+  }
+
+  it("leaves object-literal pay unresolved when the compiler is missing", async () => {
+    const scope = path.join(tmpRoot, "object-fallback");
+    await writeFiles(scope, { "checkout.ts": OBJECT_CALLER, "payment.ts": OBJECT_CALLEE });
+    const result = await collectSequence(scope, {
+      format: "puml",
+      deps: { loadTsModule: async () => null },
+    });
+
+    // Without the compiler the heuristic union sees only "service", never
+    // the property-held "pay", so the single service.pay() site is unresolved
+    // and no participant is declared.
+    assert.deepEqual(result.messages, []);
+    assert.deepEqual(result.unresolvedCallees, ["pay"]);
+    assert.deepEqual(result.participants, []);
+    assert.equal(result.deferredCount, 0);
+    assert.equal(result.filesScanned, 2);
+  });
+
+  it("falls back to the heuristic when the object-literal callee is unparseable", async () => {
+    const scope = path.join(tmpRoot, "object-parse-error");
+    await writeFiles(scope, {
+      "checkout.ts": OBJECT_CALLER,
+      "payment.ts": "export const service = {\n  pay: () => {\n    return 1;\n",
+    });
+    const result = await collectSequence(scope, { format: "puml" });
+
+    // A parse failure keeps the heuristic fallback for that file: "service"
+    // is declared, "pay" is not, so the call stays unresolved instead of
+    // throwing or inventing a participant.
+    assert.deepEqual(result.messages, []);
+    assert.deepEqual(result.unresolvedCallees, ["pay"]);
+    assert.deepEqual(result.participants, []);
+    assert.equal(result.filesScanned, 2);
+    validateDiagramSource(result.source, "plantuml");
+  });
 
   it("leaves the method call unresolved when the compiler is missing", async () => {
     const scope = path.join(tmpRoot, "method-fallback");
