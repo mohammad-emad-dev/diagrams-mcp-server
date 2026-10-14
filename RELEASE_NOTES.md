@@ -1,3 +1,50 @@
+# Release notes — 0.8.0
+
+Package, runtime, lockfile, and registry metadata are aligned to `0.8.0`.
+This release includes the earlier `0.7.0` development wave
+documented below, which was not published to npm. Historical notes are
+preserved as development records.
+
+## Features and corrections
+
+- `diagrams_list_templates` adds a thirteenth MCP tool. It lists the three
+  built-in kinds and custom JSON filename candidates, scanning at most 1,000
+  directory entries plus one lookahead. Discovery does not read file contents;
+  candidates are validated when instantiated.
+- Custom templates live in `.diagrams-templates/<id>.json`, with strict
+  `puml`/`mermaid` source and entity objects and single-pass
+  `{{title}}`/`{{entities}}`/`{{name}}` placeholders. Reads are capped at
+  65,536 bytes and expanded output at 1,000,000 UTF-16 code units.
+  Symlink template files and directories are rejected.
+- TypeScript sequence generation uses AST call sites when the optional compiler
+  is available. Missing compiler, non-TS files, and parse failures retain the
+  heuristic fallback. Participant ownership remains file-level name matching;
+  semantic type resolution and runtime ordering remain out of scope.
+- `diagrams_generate_sequence` accepts `include_call_parentheses: true` to
+  emit labels such as `charge()`. It defaults to false; raw message metadata
+  and default output remain unchanged.
+- `diagrams_diff` accepts `compare_call_order: true`, preserving recognized
+  call-name repetitions and rejecting more than 10,000 calls on either side.
+  It defaults to false. Arguments, endpoints, and runtime order are excluded.
+- Shared call extraction recognizes short names such as `f()` and skips
+  whole-line apostrophe/`%%` comments and line-leading PlantUML blocks.
+  Inline/nested blocks and note bodies are not parsed specially.
+- Structural cleanup separates tool adapters, services, setup modules, and
+  build/test scripts. Registry metadata is aligned with the release version:
+  both `server.json` versions are `0.8.0`.
+
+## Compatibility changes
+
+- All thirteen tools reject unknown argument keys. Correct misspelled or
+  unsupported fields rather than relying on them being ignored.
+- The SDK dependency floor is `^1.30.0`, matching the already-locked version.
+- HTML exports embed SVG as a base64 data image under a restrictive CSP.
+  SVG text is no longer selectable. Encoding isolates the image; it does not
+  sanitize the SVG payload. The 5,000,000-byte cap measures the complete HTML
+  bundle, and `svg_chars` measures the decoded, preamble-stripped SVG source.
+
+---
+
 # Release notes — 0.7.0
 
 `diagrams-mcp-server` v0.7.0 is a backward-compatible minor release: no

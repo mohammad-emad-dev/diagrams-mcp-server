@@ -46,6 +46,13 @@ const InputSchema = z
           `The applied cap is reported as message_limit; messages past it, or to a participant the participant cap ` +
           `removed, are counted in messages_available and flagged by messages_capped.`,
       ),
+    include_call_parentheses: z
+      .boolean()
+      .default(false)
+      .describe(
+        "When true, emitted message labels append '()' in both dialects (default: false). " +
+          "Structured messages.message values stay bare.",
+      ),
   })
   .strict();
 
@@ -140,19 +147,20 @@ Args:
   - format ('puml' | 'mermaid', default 'puml'): Output dialect
   - max_participants (integer 1-${MAX_SEQUENCE_PARTICIPANTS}, default 8): Hard cap on declared participants
   - max_messages (integer 1-${MAX_SEQUENCE_MESSAGES}, default 20): Hard cap on emitted messages
+  - include_call_parentheses (boolean, default false): When true, emitted message labels append '()' in both dialects; structured messages.message values stay bare
 
 Returns:
   JSON with schema:
   {
     "scope": string,                 // POSIX path as resolved, "." for the project root
     "format": "puml" | "mermaid",
-    "source": string,                // the generated sequence; identical to the text block
+    "source": string,                // the generated sequence; identical to the text block (message labels carry '()' when include_call_parentheses is true)
     "participants": string[],        // participant names as emitted, in first-conversation order, capped
     "participants_included": number, // length of "participants"
     "participants_available": number,// distinct participants in candidate messages, may exceed the cap
     "participants_capped": boolean,  // true when participants were dropped by the cap
     "participant_limit": number,     // the applied cap (max_participants, at most ${MAX_SEQUENCE_PARTICIPANTS})
-    "messages": [                    // ordered call sites, one per sequenced call
+    "messages": [                    // ordered call sites, one per sequenced call (message stays bare when include_call_parentheses is true)
       { "from": string, "to": string, "message": string, "line": number, "via_callback": false }
     ],
     "messages_included": number,
@@ -205,6 +213,7 @@ Error Handling:
           format: params.format,
           maxParticipants: participantLimit,
           maxMessages: messageLimit,
+          includeCallParentheses: params.include_call_parentheses,
           deps,
         });
 

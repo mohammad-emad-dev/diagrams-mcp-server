@@ -1,6 +1,6 @@
 # Architecture
 
-Describes the repository as it is checked out here. CLI dispatch lives in
+Describes the repository as released in 0.8.0. CLI dispatch lives in
 `src/index.ts`; MCP construction lives in `src/server.ts`
 (`createDiagramServer`).
 
@@ -51,7 +51,7 @@ and first write, while subsequent key events still render the updated state.
   its evidence types, `AnalyzerTier` (`reliable` / `experimental` / `generic`).
 - `src/constants.ts` — `toPosixPath`, `EXTENSION_TO_TYPE` (`.puml`, `.plantuml`,
   `.mmd`, `.mermaid`), `TYPE_TO_EXTENSION`, `DEFAULT_DIAGRAMS_DIR`, and the
-  `MAX_*` caps for pagination, rendering, generation, templates (incl. UNRELEASED `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000), and export.
+  `MAX_*` caps for pagination, rendering, generation, templates (incl. `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000, introduced in 0.8.0), and export.
 - `src/tools/toolError.ts` — `handleToolError` / `handleRenderError`: expected
   domain errors (`DiagramNotFoundError`, `PathTraversalError`,
   `DiagramValidationError`, `DiagramExistsError`,
@@ -91,7 +91,7 @@ source tools return their source as text, report tools return a summary, and
 `toolOutput.test.ts` file next to the adapters tests the content/structured
 contract through captured registrations.
 
-UNRELEASED: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 13 tools and verify rejected mutation requests leave files unchanged.
+Introduced in 0.8.0: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 13 tools and verify rejected mutation requests leave files unchanged.
 
 `diagramsDiff.ts` delegates its input schema, validation, and side loading to
 `diffInput.ts`, and its text summaries to `diffSummary.ts`. Validation runs
@@ -180,7 +180,7 @@ adapter, including evidence field names, summary branches, and scan warnings.
   `tsHeritage.ts` separates AST traversal from class/interface clause
   collection. Invalid root shapes return no edges; unexpected visitor
   failures propagate through `analyzeTsFile`.
-  UNRELEASED (not in published 0.7.0): `ts/tsCalls.ts` collects ordered AST call edges plus callable operations via optional `includeCalls` in `tsIndex.ts` (methods/accessors/property-held functions; `f()`, `obj.m()`, `obj["m"]()`; enclosing-caller reset; multiline callback deferral). Missing compiler, non-TS extensions, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner matching with no semantic type resolution.
+  Introduced in 0.8.0: `ts/tsCalls.ts` collects ordered AST call edges plus callable operations via optional `includeCalls` in `tsIndex.ts` (methods/accessors/property-held functions; `f()`, `obj.m()`, `obj["m"]()`; enclosing-caller reset; multiline callback deferral). Missing compiler, non-TS extensions, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner matching with no semantic type resolution.
   Participant mapping uses case-insensitive operation names and the first
   declaring participant in file order. Its lookup is rebuilt per call,
   so changes to the declaration set are visible to the next call.
@@ -189,7 +189,7 @@ adapter, including evidence field names, summary branches, and scan warnings.
   `confidence: "heuristic"`. A cursor per normalized name consumes added
   candidates in order, avoiding repeated scans of already-used candidates.
 - `export/htmlBundle.ts` — pure builder: an HTML wrapper around an SVG-as-image plus
-  optional source. UNRELEASED (not in published 0.7.0): the stripped SVG source is base64-encoded into `<img src="data:image/svg+xml;base64,...">`, never parsed as live markup; scripts/external resources are disabled by SVG-image processing under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation is the boundary — no sanitization or removal of encoded markup is claimed. It escapes path, source, and provenance in one pass, preserving
+  optional source. Introduced in 0.8.0: the stripped SVG source is base64-encoded into `<img src="data:image/svg+xml;base64,...">`, never parsed as live markup; scripts/external resources are disabled by SVG-image processing under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation is the boundary — no sanitization or removal of encoded markup is claimed. It escapes path, source, and provenance in one pass, preserving
   literal entity spellings. The wrapper adds inline CSS and no scripts or
   fetched styles; `svgChars` is the decoded source length after XML-declaration/DOCTYPE strip, not the base64 length. No filesystem operations.
 - `generate/` — `collectEntities.ts` (scope scan to ordered entities plus
@@ -209,16 +209,17 @@ adapter, including evidence field names, summary branches, and scan warnings.
   Sequence generation builds its operation lookup after merging files that
   share a participant name. The first participant declaring a lowercase
   operation name wins, including when a later participant has an exact-case
-  match. Candidate caller and callee lookups reuse that index. UNRELEASED: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
+  match. Candidate caller and callee lookups reuse that index. Introduced in 0.8.0: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
+  Introduced in 0.8.0: `SequenceOptions.includeCallParentheses` (wire: `include_call_parentheses`, default false) reaches only the sequence emitter. When enabled, labels append `()`; structured messages retain their operation names, and collection/capping behavior is unchanged.
 - `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
-  byte-identical output. UNRELEASED (not in published 0.7.0): `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
+  byte-identical output. Introduced in 0.8.0: `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
 
-UNRELEASED `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
+Introduced in 0.8.0, `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
 
-UNRELEASED message-call extraction shares one lazy line scanner between deduplicated and ordered collectors. Whole-line apostrophe/`%%` comments and PlantUML blocks starting with `/'` at the first non-whitespace character are skipped; scanning resumes after `'/`. Unclosed blocks consume the remaining source. Regex and block state belong to each invocation, so a bounded early return cannot affect later calls. Inline blocks after content, nested blocks, note bodies, declaration comments, and participant comments remain outside this scanner's scope.
+Introduced in 0.8.0, message-call extraction shares one lazy line scanner between deduplicated and ordered collectors. Whole-line apostrophe/`%%` comments and PlantUML blocks starting with `/'` at the first non-whitespace character are skipped; scanning resumes after `'/`. Unclosed blocks consume the remaining source. Regex and block state belong to each invocation, so a bounded early return cannot affect later calls. Inline blocks after content, nested blocks, note bodies, declaration comments, and participant comments remain outside this scanner's scope.
 
-UNRELEASED template discovery uses `templates/templateCatalog.ts` through `diagramsListTemplates.ts`. `listCustomTemplates` examines at most `MAX_TEMPLATE_SCAN_ENTRIES` (1,000) directory entries plus one lookahead, skips subfolders and symlink files, and returns candidate identifiers without opening their JSON. Discovery and instantiation share `resolveCustomTemplateDirectory` in `customTemplates.ts`. A missing directory gives built-ins only; a redirected directory is rejected. The tool reports partial scans explicitly and writes nothing.
+Introduced in 0.8.0, template discovery uses `templates/templateCatalog.ts` through `diagramsListTemplates.ts`. `listCustomTemplates` examines at most `MAX_TEMPLATE_SCAN_ENTRIES` (1,000) directory entries plus one lookahead, skips subfolders and symlink files, and returns candidate identifiers without opening their JSON. Discovery and instantiation share `resolveCustomTemplateDirectory` in `customTemplates.ts`. A missing directory gives built-ins only; a redirected directory is rejected. The tool reports partial scans explicitly and writes nothing.
 
 ## Tests
 

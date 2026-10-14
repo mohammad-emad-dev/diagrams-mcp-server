@@ -267,6 +267,7 @@ export async function collectSequence(
   const format = options?.format ?? "puml";
   const maxParticipants = options?.maxParticipants ?? MAX_SEQUENCE_PARTICIPANTS;
   const maxMessages = options?.maxMessages ?? MAX_SEQUENCE_MESSAGES;
+  const includeCallParentheses = options?.includeCallParentheses ?? false;
 
   const { files, truncated } = await listScopeFiles(scopePath);
   if (files.length === 0) return emptyResult(format);
@@ -324,6 +325,6 @@ export async function collectSequence(
     scanLimit: MAX_SCAN_FILES,
     scanWarning: truncated ? SEQUENCE_SCAN_TRUNCATED_WARNING : null,
     tsAstAvailable: compiler !== null,
-    source: emitSequenceDiagram(type, named.participants, named.messages),
+    source: emitSequenceDiagram(type, named.participants, named.messages, includeCallParentheses),
   };
 }
