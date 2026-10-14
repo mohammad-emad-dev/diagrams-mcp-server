@@ -12,7 +12,7 @@
 > (`diagrams_generate`, `diagrams_diff`, `diagrams_generate_sequence`,
 > `diagrams_template`, `diagrams_export`). Checkbox states below are the
 > historical phase record; unchecked global/CI gates remain unverified here.
-> Current status note (UNRELEASED, for upcoming 0.8.0): development additions are `tsCalls.ts` via optional `includeCalls`, project-local custom templates, and SVG-as-image export — see `README.md` and `docs/architecture.md`. Historical contracts below are preserved; current behavior is labeled inline.
+> Current status note (introduced in 0.8.0): development additions are `tsCalls.ts` via optional `includeCalls`, project-local custom templates, and SVG-as-image export — see `README.md` and `docs/architecture.md`. Historical contracts below are preserved; current behavior is labeled inline.
 
 ## Identity recap
 
@@ -384,7 +384,7 @@ read-only, dependency-free, capped.
 - No cross-language or dynamic-dispatch inference; no message arguments.
 - No writing to `diagrams/` — same rule as feature 1.
 
-Current status note (UNRELEASED, for upcoming 0.8.0): TS sequence edges additionally use `tsCalls.ts` via optional `includeCalls` (`generate/sequence.ts` prefers AST edges when the compiler resolves, else heuristic fallback); multiline callbacks deferred, enclosing caller reset; still file-level first-owner matching with no semantic type resolution.
+Current status note (introduced in 0.8.0): TS sequence edges additionally use `tsCalls.ts` via optional `includeCalls` (`generate/sequence.ts` prefers AST edges when the compiler resolves, else heuristic fallback); multiline callbacks deferred, enclosing caller reset; still file-level first-owner matching with no semantic type resolution.
 
 **Acceptance checklist**
 
@@ -487,7 +487,7 @@ new is added to `files`, and no template file can go missing at install time.
   3 own generated content; this is hand-instantiated scaffolding).
 - No custom template files or user template directory — the set is fixed at
   three; a fourth is a deliberate schema change.
-  Current status note (UNRELEASED, for upcoming 0.8.0): custom directory implemented — see V2 follow-ups and `README.md` Template limits.
+  Current status note (introduced in 0.8.0): custom directory implemented — see V2 follow-ups and `README.md` Template limits.
 
 **Acceptance checklist**
 
@@ -592,7 +592,7 @@ renderer output.
 - No PNG embedding, no theming, no interactivity, no JS — inline styles only.
 - No external resources of any kind (no CDN, no fonts, no network fetch), so the
   artifact works fully offline and survives CSP.
-  Current status note (UNRELEASED, for upcoming 0.8.0): live-SVG inlining replaced by base64 SVG image + wrapper CSP; SVG text no longer selectable; `svg_chars` is decoded source length, cap measures whole encoded HTML — see V2 follow-ups.
+  Current status note (introduced in 0.8.0): live-SVG inlining replaced by base64 SVG image + wrapper CSP; SVG text no longer selectable; `svg_chars` is decoded source length, cap measures whole encoded HTML — see V2 follow-ups.
 
 **Acceptance checklist**
 
@@ -817,14 +817,14 @@ is scheduled; each needs its own order before work starts.
       non-data-URL external references) plus tests proving a hostile SVG comes
       out inert while a normal diagram renders unchanged. Threat model note:
       local-first, own diagrams, local CLIs — acceptable for V1, fix in V2.
-      Current status note (UNRELEASED, not implemented): no allowlist sanitizer shipped; live-SVG export is replaced by SVG-as-image isolation in `src/services/export/htmlBundle.ts` (`<img src="data:image/svg+xml;base64,...">` under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`). Isolation is the boundary — encoded markup is not claimed sanitized or removed. Restrictions: [SVG as an image](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image). Probe outside repo: Chrome showed hostile SVG as a 120×40 image with no requests or active DOM; standalone-SVG control ran its script.
+      Current status note (introduced in 0.8.0 for export isolation; allowlist sanitizer not implemented): no allowlist sanitizer shipped; live-SVG export is replaced by SVG-as-image isolation in `src/services/export/htmlBundle.ts` (`<img src="data:image/svg+xml;base64,...">` under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`). Isolation is the boundary — encoded markup is not claimed sanitized or removed. Restrictions: [SVG as an image](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image). Probe outside repo: Chrome showed hostile SVG as a 120×40 image with no requests or active DOM; standalone-SVG control ran its script.
 - [ ] **In-repo `.html` saving (from Phase 5).** Needs its own store method, never
       a loosened extension check on `DiagramStore`.
 - [ ] **Rename verdict via call-site analysis (from Phase 2).** Rename confidence
       stays `"heuristic"` until this exists.
 - [ ] **Semantic type resolution for sequence participants (from Phase 3).**
       Unresolved callees are reported, never guessed, until this exists.
-      Current status note (UNRELEASED): still not done — `tsCalls.ts` via `includeCalls` keeps file-level first-owner name matching with heuristic fallback (missing compiler/non-TS/parse failure) and no runtime ordering.
+      Current status note (introduced in 0.8.0 for AST calls; semantic resolution still not done): `tsCalls.ts` via `includeCalls` keeps file-level first-owner name matching with heuristic fallback (missing compiler/non-TS/parse failure) and no runtime ordering.
 - [x] **Custom template directory (from Phase 4).** The set stays fixed at three
       until a deliberate schema change adds a fourth.
-      Current status note (UNRELEASED, for upcoming 0.8.0): implemented as `template="custom"` + `custom_template` in `src/tools/diagramsTemplate.ts` backed by `src/services/templates/customTemplates.ts` (`<PROJECT_ROOT>/.diagrams-templates/<id>.json`, 1–64 `/^[A-Za-z0-9_-]+$/`, strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}`, 65,536-byte / 1,000,000-char bounds, regular-files-only). Built-in three remain fixed in `skeletons.ts`.
+      Current status note (introduced in 0.8.0): implemented as `template="custom"` + `custom_template` in `src/tools/diagramsTemplate.ts` backed by `src/services/templates/customTemplates.ts` (`<PROJECT_ROOT>/.diagrams-templates/<id>.json`, 1–64 `/^[A-Za-z0-9_-]+$/`, strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}`, 65,536-byte / 1,000,000-char bounds, regular-files-only). Built-in three remain fixed in `skeletons.ts`.

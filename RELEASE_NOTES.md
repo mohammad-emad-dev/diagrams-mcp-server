@@ -1,8 +1,8 @@
-# Release notes — 0.8.0 (UNRELEASED)
+# Release notes — 0.8.0
 
 Package, runtime, lockfile, and registry metadata are aligned to `0.8.0`.
-This release is unpublished. It includes the earlier `0.7.0` development wave
-documented below, which was also not published to npm. Historical notes are
+This release includes the earlier `0.7.0` development wave
+documented below, which was not published to npm. Historical notes are
 preserved as development records.
 
 ## Features and corrections
@@ -42,12 +42,6 @@ preserved as development records.
   SVG text is no longer selectable. Encoding isolates the image; it does not
   sanitize the SVG payload. The 5,000,000-byte cap measures the complete HTML
   bundle, and `svg_chars` measures the decoded, preamble-stripped SVG source.
-
-## Release preparation remaining
-
-Review and merge the release PR, then verify CI on the final release commit.
-Tagging and publication are separate steps; update the UNRELEASED documentation
-for the published version.
 
 ---
 

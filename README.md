@@ -1,6 +1,6 @@
 # diagrams-mcp-server
 
-> **Technical Preview (V1 Preview, v0.8.0 — unreleased)** — local-first MCP server for
+> **Technical Preview (V1 Preview, v0.8.0)** — local-first MCP server for
 > PlantUML and Mermaid diagrams: manage, render, and share them, check them
 > against your codebase, and draft new ones from your code.
 
@@ -24,7 +24,7 @@ I built this after running into the same problem while using AI to work on softw
 
 ## Features
 
-Thirteen tools in four groups. UNRELEASED items below target the upcoming 0.8.0 release. The read-only drafting tools (`diagrams_generate`, `diagrams_generate_sequence`, `diagrams_template`, `diagrams_export`) never write: they return source text and you save it yourself with `diagrams_create`.
+Thirteen tools in four groups. Items marked introduced in 0.8.0 shipped in this release. The read-only drafting tools (`diagrams_generate`, `diagrams_generate_sequence`, `diagrams_template`, `diagrams_export`) never write: they return source text and you save it yourself with `diagrams_create`.
 
 ### Manage diagrams
 
@@ -54,24 +54,24 @@ Thirteen tools in four groups. UNRELEASED items below target the upcoming 0.8.0 
 
 | Tool | What it does |
 |---|---|
-| `diagrams_list_templates` | **UNRELEASED: discover built-in kinds and project-local custom-template candidates** without reading template contents or writing files |
+| `diagrams_list_templates` | **Introduced in 0.8.0: discover built-in kinds and project-local custom-template candidates** without reading template contents or writing files |
 | `diagrams_generate` | **Draft a PlantUML or Mermaid class diagram from a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 | `diagrams_generate_sequence` | **Draft a PlantUML or Mermaid sequence diagram from the message-call patterns in a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 | `diagrams_template`          | **Instantiate a minimal, always-valid starter skeleton (class, sequence, C4-context, or project-local custom) in PlantUML or Mermaid** — one declaration per entity, nothing inferred, nothing written |
 
 ### Tool notes
 
-#### Argument validation (UNRELEASED)
+#### Argument validation (introduced in 0.8.0)
 
-All 13 tools reject unknown argument keys over MCP instead of silently ignoring them. For example, `include_sorce` is rejected; the export option is `include_source`. This change targets unreleased v0.8.0. Existing fields, defaults, refinements, and response shapes are unchanged. The SDK dependency now requires `^1.30.0`, matching the already-installed and locked version verified with full-schema registration.
+All 13 tools reject unknown argument keys over MCP instead of silently ignoring them. For example, `include_sorce` is rejected; the export option is `include_source`. This change was introduced in v0.8.0. Existing fields, defaults, refinements, and response shapes are unchanged. The SDK dependency now requires `^1.30.0`, matching the already-installed and locked version verified with full-schema registration.
 
-#### Call-name extraction (UNRELEASED)
+#### Call-name extraction (introduced in 0.8.0)
 
-UNRELEASED parser correction: valid one-character operation names such as `f()` and `_()` are recognized by consistency checks, name-based diffs, and optional call-order comparison. They count toward the 10,000-call limit like longer names. Plain labels remain ignored; recognized call names still use the existing ASCII identifier grammar. This correction targets unreleased v0.8.0.
+Introduced in 0.8.0 — parser correction: valid one-character operation names such as `f()` and `_()` are recognized by consistency checks, name-based diffs, and optional call-order comparison. They count toward the 10,000-call limit like longer names. Plain labels remain ignored; recognized call names still use the existing ASCII identifier grammar. This correction was introduced in v0.8.0.
 
-UNRELEASED message-call extraction also skips whole-line apostrophe and `%%` comments, plus PlantUML `/' ... '/` blocks beginning at the first non-whitespace character of a line. Calls inside these comments do not affect consistency call names, name-based diffs, or the optional call-order limit. Parsing resumes after a block closes; an unclosed block hides the rest of the source. Inline blocks after diagram content, nested blocks, and note text are not parsed specially. This applies to call names only; declaration and participant extraction remain heuristic. See [PlantUML comments](https://plantuml.com/commons) and [Mermaid sequence comments](https://mermaid.js.org/syntax/sequenceDiagram#comments).
+Introduced in 0.8.0 — message-call extraction also skips whole-line apostrophe and `%%` comments, plus PlantUML `/' ... '/` blocks beginning at the first non-whitespace character of a line. Calls inside these comments do not affect consistency call names, name-based diffs, or the optional call-order limit. Parsing resumes after a block closes; an unclosed block hides the rest of the source. Inline blocks after diagram content, nested blocks, and note text are not parsed specially. This applies to call names only; declaration and participant extraction remain heuristic. See [PlantUML comments](https://plantuml.com/commons) and [Mermaid sequence comments](https://mermaid.js.org/syntax/sequenceDiagram#comments).
 
-#### `diagrams_list_templates` (UNRELEASED)
+#### `diagrams_list_templates` (introduced in 0.8.0)
 
 Call with `{}` to discover the three built-in kinds and custom-template candidate names under `<PROJECT_ROOT>/.diagrams-templates`. Each custom result includes `custom_template` and a relative POSIX `relative_path`; use the identifier with `diagrams_template`, which validates the definition, selected dialect, and emitted source. Discovery reads directory entries only, so malformed JSON files can appear as candidates.
 
@@ -87,25 +87,25 @@ The tool writes nothing and does not create a missing template directory. It exa
 
 `diagrams_generate_sequence` drafts the other half of the picture: not the boxes, but the **conversation** between them. It reads the message-call patterns in a file or directory under your project root — participants named by module, merging files that share a basename — and emits ordered `from -> to : message` lines from the caller-to-callee edges the consistency checker's call graph already extracts. **Static call-site order is not runtime order**, and every result says so: a call inside a callback, promise, or listener is counted in `deferred_count` and excluded from the messages, because its real position in the conversation is unknowable from source. Participant mapping uses case-insensitive declared-identifier matching (the first declaring participant wins) — a callee that no file in the scope declares is listed in `unresolved_callees` rather than attached to an invented participant, because which class owns a method is a type question and out of scope. Like `diagrams_generate` it is read-only and **never writes** — nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call — and every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, with every cap reporting itself in-band (`participants_capped` / `messages_capped` / `*_available` / `*_limit` / `truncated`). The sequence limits are listed under [Sequence limits](#sequence-limits).
 
-UNRELEASED (for upcoming 0.8.0): TypeScript files additionally use AST-backed extraction from `src/services/consistencyChecker/ts/tsCalls.ts` via optional `includeCalls` in `tsIndex.ts` — named functions, variable-bound arrows/functions, methods/accessors, object-literal identifier/quoted static bare-identifier properties holding arrow/function expressions, and quoted static class property initializers as operations; `f()`, `obj.m()` and `obj["m"]()` callees; enclosing-caller reset after each function; multiline callback arguments deferred, including calls inside callback object properties (`register({handler:()=>charge()})` never emits `charge`). Missing compiler, non-TS files, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner name matching, with no semantic type resolution and no runtime ordering.
+Introduced in 0.8.0: TypeScript files additionally use AST-backed extraction from `src/services/consistencyChecker/ts/tsCalls.ts` via optional `includeCalls` in `tsIndex.ts` — named functions, variable-bound arrows/functions, methods/accessors, object-literal identifier/quoted static bare-identifier properties holding arrow/function expressions, and quoted static class property initializers as operations; `f()`, `obj.m()` and `obj["m"]()` callees; enclosing-caller reset after each function; multiline callback arguments deferred, including calls inside callback object properties (`register({handler:()=>charge()})` never emits `charge`). Missing compiler, non-TS files, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner name matching, with no semantic type resolution and no runtime ordering.
 
-UNRELEASED sequence-generation option (for upcoming v0.8.0): set `include_call_parentheses: true` on `diagrams_generate_sequence` to emit labels such as `charge()` in either format. This lets the existing heuristic call-name extractor recognize generated operations in consistency checks and optional call-order diffs. The default is `false`, preserving plain labels and existing output. Structured `messages[].message` values remain bare operation names. Empty parentheses mark a call; they do not reproduce its arguments or signature. Call extraction still follows the ASCII name grammar described above.
+Introduced in 0.8.0 — sequence-generation option: set `include_call_parentheses: true` on `diagrams_generate_sequence` to emit labels such as `charge()` in either format. This lets the existing heuristic call-name extractor recognize generated operations in consistency checks and optional call-order diffs. The default is `false`, preserving plain labels and existing output. Structured `messages[].message` values remain bare operation names. Empty parentheses mark a call; they do not reproduce its arguments or signature. Call extraction still follows the ASCII name grammar described above.
 
 #### `diagrams_diff`
 
 `diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
 
-UNRELEASED `diagrams_diff` option: set `compare_call_order: true` to compare recognized message-call names in source order, preserving repeated calls. The response adds `call_order: { a, b, changed }`; `is_same` also accounts for this comparison. Each side is limited to 10,000 recognized calls (`MAX_DIFF_ORDER_CALLS`), and an over-limit comparison returns an error rather than partial arrays. It reuses the existing heuristic call grammar (for example, `charge()`); plain labels such as `charge`, endpoints, arguments, control flow, and runtime order are outside this comparison. Omit the option for the existing name-based diff. This targets unreleased v0.8.0.
+Introduced in 0.8.0 — `diagrams_diff` option: set `compare_call_order: true` to compare recognized message-call names in source order, preserving repeated calls. The response adds `call_order: { a, b, changed }`; `is_same` also accounts for this comparison. Each side is limited to 10,000 recognized calls (`MAX_DIFF_ORDER_CALLS`), and an over-limit comparison returns an error rather than partial arrays. It reuses the existing heuristic call grammar (for example, `charge()`); plain labels such as `charge`, endpoints, arguments, control flow, and runtime order are outside this comparison. Omit the option for the existing name-based diff. This was introduced in v0.8.0.
 
 #### `diagrams_template`
 
 `diagrams_template` is the blank-page tool that precedes all of them: **give it a kind, a dialect, and the entity names, and it hands back a minimal skeleton that already clears every syntax gate.** The three built-in kinds (class, sequence, C4-context × PlantUML, Mermaid) are fixed tables in `src/services/templates/skeletons.ts` — pure, no filesystem, no code scan, identical inputs yield byte-identical source. Unlike `diagrams_generate` there is no `confidence` field: one declaration per entity plus a TODO hint, nothing more. The PlantUML C4-context skeleton stays self-contained with plain rectangles (no C4-PlantUML stdlib fetch); Mermaid uses native `C4Context`. Nothing is ever written: the source comes back in the response until you save it with `diagrams_create`. The template limits are listed under [Template limits](#template-limits).
 
-UNRELEASED (for upcoming 0.8.0): `template="custom"` with `custom_template="<id>"` loads `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (no env override). `custom_template` is 1–64 chars matching `/^[A-Za-z0-9_-]+$/`. The JSON may define optional `puml`/`mermaid` objects; the selected object must contain `source` and `entity` strings, and unknown fields are rejected. `source` supports `{{title}}`/`{{entities}}`, `entity` supports `{{name}}`, substituted once with no recursive expansion or eval. Reads are capped at 65,536 bytes and expansion at 1,000,000 UTF-16 chars; entity validation (1–20 names, identifier, 60 chars, no duplicates) is unchanged. Files must be regular files; symlinks are rejected. The loader is read-only, and `registerDiagramsTemplate(server, ctx)` takes an optional context (the factory passes `ctx`); custom results additionally return `custom_template`.
+Introduced in 0.8.0: `template="custom"` with `custom_template="<id>"` loads `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (no env override). `custom_template` is 1–64 chars matching `/^[A-Za-z0-9_-]+$/`. The JSON may define optional `puml`/`mermaid` objects; the selected object must contain `source` and `entity` strings, and unknown fields are rejected. `source` supports `{{title}}`/`{{entities}}`, `entity` supports `{{name}}`, substituted once with no recursive expansion or eval. Reads are capped at 65,536 bytes and expansion at 1,000,000 UTF-16 chars; entity validation (1–20 names, identifier, 60 chars, no duplicates) is unchanged. Files must be regular files; symlinks are rejected. The loader is read-only, and `registerDiagramsTemplate(server, ctx)` takes an optional context (the factory passes `ctx`); custom results additionally return `custom_template`.
 
 #### `diagrams_export`
 
-`diagrams_export` is the sharing tool that closes the loop: **package a stored diagram and its rendered SVG into one self-contained HTML file** that opens anywhere, inside or outside the repo. It is packaging of two artifacts the server already produces — the stored source and the locally rendered SVG — so it adds no dependency (the HTML is string concatenation) and no new write surface: the tool never writes a file, the HTML comes back as text, and you decide where it lands. UNRELEASED (for upcoming 0.8.0): the SVG is embedded as a base64 data image (`<img src="data:image/svg+xml;base64,...">`), not live inline SVG — scripts and external resources are disabled by SVG-image processing, so SVG text is no longer selectable. The wrapper CSP is `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation in the image is the security boundary; encoded renderer markup is not claimed sanitized or removed. See [SVG as an image](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image) for the restrictions. The diagram's POSIX `relative_path` is the only path in the document. With `include_source` (the default), the source is escaped into a collapsible native `<details>` block needing no JavaScript; `false` omits it. Rendering follows `diagrams_render` exactly, including CLI requirements and opt-in remote fallback, and `rendered_with` reports the path (`local-plantuml` / `remote-plantuml` / `mmdc`). A bundle larger than the byte cap is refused outright — `truncated` is always `false`. The whole encoded HTML (larger than the raw SVG) is what the 5,000,000-byte cap measures; `svg_chars` measures the decoded SVG source after preamble strip, not the base64 length. Browser probe outside the repo: Chrome showed a hostile SVG as a 120×40 image with no HTTP requests or active DOM, while the standalone-SVG control ran its script. The export limits are listed under [Export limits](#export-limits).
+`diagrams_export` is the sharing tool that closes the loop: **package a stored diagram and its rendered SVG into one self-contained HTML file** that opens anywhere, inside or outside the repo. It is packaging of two artifacts the server already produces — the stored source and the locally rendered SVG — so it adds no dependency (the HTML is string concatenation) and no new write surface: the tool never writes a file, the HTML comes back as text, and you decide where it lands. Introduced in 0.8.0: the SVG is embedded as a base64 data image (`<img src="data:image/svg+xml;base64,...">`), not live inline SVG — scripts and external resources are disabled by SVG-image processing, so SVG text is no longer selectable. The wrapper CSP is `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation in the image is the security boundary; encoded renderer markup is not claimed sanitized or removed. See [SVG as an image](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image) for the restrictions. The diagram's POSIX `relative_path` is the only path in the document. With `include_source` (the default), the source is escaped into a collapsible native `<details>` block needing no JavaScript; `false` omits it. Rendering follows `diagrams_render` exactly, including CLI requirements and opt-in remote fallback, and `rendered_with` reports the path (`local-plantuml` / `remote-plantuml` / `mmdc`). A bundle larger than the byte cap is refused outright — `truncated` is always `false`. The whole encoded HTML (larger than the raw SVG) is what the 5,000,000-byte cap measures; `svg_chars` measures the decoded SVG source after preamble strip, not the base64 length. Browser probe outside the repo: Chrome showed a hostile SVG as a 120×40 image with no HTTP requests or active DOM, while the standalone-SVG control ran its script. The export limits are listed under [Export limits](#export-limits).
 
 ## Pagination and source windows
 
@@ -498,11 +498,11 @@ Every `diagrams_template` call observes these caps. There is no `max_*` argument
 | Entities per skeleton | 20 names (`1`–`20`) | `entities_included` reports the count actually emitted, in the order given |
 | Entity name length | 60 characters | each name is emitted bare as a class, participant, or C4 alias, so this is the length that has to stay a legal identifier |
 | Title length | 200 characters | a longer title is rejected rather than truncated; whitespace-only is rejected rather than emitting an empty title line |
-| Built-in template kinds | 3 (`class`, `sequence`, `c4_context`) | fixed in `skeletons.ts`; UNRELEASED `custom` loads `<PROJECT_ROOT>/.diagrams-templates/<id>.json` instead                 |
+| Built-in template kinds | 3 (`class`, `sequence`, `c4_context`) | fixed in `skeletons.ts`; introduced in 0.8.0, `custom` loads `<PROJECT_ROOT>/.diagrams-templates/<id>.json` instead                 |
 
 Every name must match `/^[A-Za-z_][A-Za-z0-9_]*$/` and no two may repeat — a duplicate would emit two declarations of the same box, so the second occurrence is rejected at its own index. A rejection comes back with `isError: true` and names the offending input; the emitted source always passes the same syntax gate `diagrams_create` applies, so a skeleton can be saved as-is.
 
-UNRELEASED custom-template bounds (for upcoming 0.8.0): `custom_template` id 1–64 chars `/^[A-Za-z0-9_-]+$/`; file read 65,536 bytes (`MAX_CUSTOM_TEMPLATE_BYTES`); expansion 1,000,000 UTF-16 chars (`MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS`); strict JSON (only optional `puml`/`mermaid` objects with required `source`/`entity` strings); regular files only, symlinks rejected. Example (verified against `FileSchema` in `customTemplates.ts`):
+Custom-template bounds (introduced in 0.8.0): `custom_template` id 1–64 chars `/^[A-Za-z0-9_-]+$/`; file read 65,536 bytes (`MAX_CUSTOM_TEMPLATE_BYTES`); expansion 1,000,000 UTF-16 chars (`MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS`); strict JSON (only optional `puml`/`mermaid` objects with required `source`/`entity` strings); regular files only, symlinks rejected. Example (verified against `FileSchema` in `customTemplates.ts`):
 
 ```json
 {
@@ -522,7 +522,7 @@ Every `diagrams_export` run observes this cap on the finished HTML document:
 |---|---|---|
 | Bundle size | 5,000,000 bytes | a larger bundle is refused with `isError: true` naming the diagram and the ceiling; `truncated` is always `false`, so no partial file is ever returned or saved |
 
-UNRELEASED (for upcoming 0.8.0): the cap measures the whole HTML containing the base64 SVG image. `svg_chars` is the decoded SVG source length after XML-preamble strip, before base64 encoding.
+Introduced in 0.8.0: the cap measures the whole HTML containing the base64 SVG image. `svg_chars` is the decoded SVG source length after XML-preamble strip, before base64 encoding.
 
 The SVG inside the bundle is bounded by what the renderer produced, and the renderer's own limits still apply on the way there. `include_source` is a boolean, not a size argument: the source block is either embedded in full or omitted, because a cut-off source next to a complete diagram would mislead a reader.
 
@@ -554,7 +554,7 @@ src/
 ├── index.ts                       # CLI dispatch (setup | --help | serve) + stdio wiring
 ├── server.ts                      # createDiagramServer(ctx): McpServer + 12 tool registrations
 ├── context.ts                     # Resolves PROJECT_ROOT / DIAGRAMS_DIR once at startup
-├── constants.ts                   # Shared constants (incl. UNRELEASED MAX_CUSTOM_TEMPLATE_* + MAX_EXPORT_HTML_BYTES)
+├── constants.ts                   # Shared constants (incl. MAX_CUSTOM_TEMPLATE_* + MAX_EXPORT_HTML_BYTES, introduced in 0.8.0)
 ├── types.ts                       # Shared TypeScript types
 ├── constants.test.ts / packaging.test.ts / setup.test.ts  # Colocated root tests
 ├── setup/                         # Guided client-setup wizard (scopes, pre-flight checks)
@@ -594,10 +594,10 @@ src/
 │   │       ├── tsParse.ts         # Compiler availability probe (+ tsParse.test.ts)
 │   │       ├── tsSymbols.ts       # Declared symbols + heritage collection (+ tsSymbols.test.ts)
 │   │       ├── tsIndex.ts / tsHeritage.ts  # Index and extends/implements edges (+ tsIndex.test.ts, tsGoldens.test.ts)
-│   │       └── tsCalls.ts         # UNRELEASED AST call edges for sequences via optional includeCalls (+ tsCalls.test.ts)
+│   │       └── tsCalls.ts         # AST call edges for sequences via optional includeCalls (introduced in 0.8.0) (+ tsCalls.test.ts)
 │   ├── diff/                      # diagrams_diff comparison
 │   │   ├── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
-│   │   └── callOrder.ts           # UNRELEASED bounded recognized call-order comparison
+│   │   └── callOrder.ts           # bounded recognized call-order comparison (introduced in 0.8.0)
 │   ├── export/                    # diagrams_export bundle builder (pure, no filesystem)
 │   │   ├── htmlBundle.ts          # SVG-as-image HTML wrapper + CSP from SVG + source
 │   │   └── exportGoldens.test.ts  # Exact wrapper structure locked per variant
@@ -608,10 +608,10 @@ src/
 │   │   ├── sequenceEmitters.ts    # Pure PlantUML/Mermaid sequence emitters
 │   │   ├── scopeFiles.ts          # Scope walking shared by both generators
 │   │   └── types.ts               # Shared generation options, results, relations, and messages
-│   └── templates/                 # diagrams_template skeletons + UNRELEASED custom loader
+│   └── templates/                 # diagrams_template skeletons + custom loader (introduced in 0.8.0)
 │       ├── skeletons.ts           # Six pure built-in emitters: kind x dialect
-│       ├── customTemplates.ts     # UNRELEASED .diagrams-templates/<id>.json loader (+ customTemplates.test.ts)
-│       ├── templateCatalog.ts     # UNRELEASED bounded candidate discovery (+ templateCatalog.test.ts)
+│       ├── customTemplates.ts     # .diagrams-templates/<id>.json loader (introduced in 0.8.0) (+ customTemplates.test.ts)
+│       ├── templateCatalog.ts     # bounded candidate discovery (introduced in 0.8.0) (+ templateCatalog.test.ts)
 │       └── templateGoldens.test.ts # Exact emitted source per (template, format)
 ├── tools/                         # One MCP tool adapter per file (13 tools) + shared toolError; *.test.ts colocated per tool
 │   ├── diffInput.ts               # diagrams_diff validation and stored/inline side loading
@@ -637,14 +637,14 @@ need no package-script edits. Build before running `npm test`.
 -   All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected. Windows-style `\` separators work as path separators on every platform, so `..\..` traversal is rejected on Linux too.
 - `diagrams_check_consistency`, `diagrams_generate`, and `diagrams_generate_sequence` only *read* your codebase — they never modify code or diagrams. Both generators resolve their `scope` against `PROJECT_ROOT` and refuse (without reading anything) any path that would land outside it; their output is source text you save yourself with `diagrams_create`.
 - `diagrams_diff` is read-only too: stored sides are read through the same traversal-protected store as `diagrams_get`, inline sides never touch the filesystem at all, and input-shape errors are reported before any file is opened. Errors and logs never include diagram source, only the names being reported.
-- `diagrams_template` built-ins touch no filesystem at all — no project root, no diagrams directory, no state between calls. UNRELEASED custom templates are read-only: one `<PROJECT_ROOT>/.diagrams-templates/<id>.json` regular-file read (symlinks rejected), nothing written; the supplied title and entity names are expanded into the selected template.
-- `diagrams_export` reads one diagram through the same traversal-protected store as `diagrams_get` and returns the bundle as text — it writes nothing, so the store's extension allow-list never opens to `.html`. UNRELEASED: the artifact embeds the SVG as a base64 data image under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`; scripts and external resources are disabled by SVG-image processing, not by claimed sanitization or removal of encoded markup. The only path it carries is the diagram's POSIX `relative_path`. Remote PlantUML rendering, when you opt into it, sends diagram source to the configured server; that is the renderer's existing path, unchanged.
+- `diagrams_template` built-ins touch no filesystem at all — no project root, no diagrams directory, no state between calls. Introduced in 0.8.0, custom templates are read-only: one `<PROJECT_ROOT>/.diagrams-templates/<id>.json` regular-file read (symlinks rejected), nothing written; the supplied title and entity names are expanded into the selected template.
+- `diagrams_export` reads one diagram through the same traversal-protected store as `diagrams_get` and returns the bundle as text — it writes nothing, so the store's extension allow-list never opens to `.html`. Introduced in 0.8.0: the artifact embeds the SVG as a base64 data image under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`; scripts and external resources are disabled by SVG-image processing, not by claimed sanitization or removal of encoded markup. The only path it carries is the diagram's POSIX `relative_path`. Remote PlantUML rendering, when you opt into it, sends diagram source to the configured server; that is the renderer's existing path, unchanged.
 - No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
 - Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
 
 ## Roadmap
 
-Implemented in the unpublished 0.7.0 development wave, included in upcoming 0.8.0 (see [RELEASE_NOTES.md](./RELEASE_NOTES.md)):
+Implemented in the unpublished 0.7.0 development wave, included in 0.8.0 (see [RELEASE_NOTES.md](./RELEASE_NOTES.md)):
 
 - TypeScript AST path for consistency checking — stricter matching plus `extends`/`implements` edges when the compiler is available, open heuristic fallback when it is not
 - Sequence diagrams both ways: `diagrams_generate_sequence` drafts them from call-graph edges, and the checker compares message ordering (callbacks deferred, never sequenced)
@@ -654,9 +654,9 @@ Still open:
 
 - Code-from-diagram scaffolding: generate a class skeleton from a diagram (the reverse of `diagrams_generate`)
 - AST-backed precision for more languages, as demand dictates
-- Export hardening follow-up: UNRELEASED image isolation replaces live-SVG export; the historical allowlist-sanitizer proposal in `docs/next-features.md` is not implemented (tracked there)
+- Export hardening follow-up: introduced in 0.8.0, image isolation replaces live-SVG export; the historical allowlist-sanitizer proposal in `docs/next-features.md` is not implemented (tracked there)
 
-UNRELEASED development additions (for upcoming 0.8.0): AST-backed TS sequence calls (`tsCalls.ts` via `includeCalls`), project-local custom templates (`template="custom"`), and SVG-as-image export with wrapper CSP. See [Template limits](#template-limits), [Export limits](#export-limits), and `docs/next-features.md` current-status notes.
+Introduced in 0.8.0: AST-backed TS sequence calls (`tsCalls.ts` via `includeCalls`), project-local custom templates (`template="custom"`), and SVG-as-image export with wrapper CSP. See [Template limits](#template-limits), [Export limits](#export-limits), and `docs/next-features.md` current-status notes.
 
 Contributions and issues welcome.
 
