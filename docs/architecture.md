@@ -210,6 +210,7 @@ adapter, including evidence field names, summary branches, and scan warnings.
   share a participant name. The first participant declaring a lowercase
   operation name wins, including when a later participant has an exact-case
   match. Candidate caller and callee lookups reuse that index. UNRELEASED: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
+  UNRELEASED: `SequenceOptions.includeCallParentheses` (wire: `include_call_parentheses`, default false) reaches only the sequence emitter. When enabled, labels append `()`; structured messages retain their operation names, and collection/capping behavior is unchanged.
 - `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
   byte-identical output. UNRELEASED (not in published 0.7.0): `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
