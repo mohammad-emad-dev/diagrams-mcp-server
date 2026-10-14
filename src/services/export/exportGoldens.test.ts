@@ -152,4 +152,55 @@ describe("export bundle goldens", () => {
     assert.ok(html.includes("<title>models/order-flow.puml</title>"));
     assert.ok(html.includes("<h1>models/order-flow.puml</h1>"));
   });
+
+  it("escapes literal entities, adjacent specials, unicode and multiline text in one pass", () => {
+    const cases: Array<{
+      relativePath: string;
+      expectedPath: string;
+      source: string;
+      expectedSource: string;
+    }> = [
+      {
+        relativePath: "models/fish&amp;chips.puml",
+        expectedPath: "models/fish&amp;amp;chips.puml",
+        source: "Tom &amp; Jerry &lt;3",
+        expectedSource: "Tom &amp;amp; Jerry &amp;lt;3",
+      },
+      {
+        relativePath: "models/&<>\"'.puml",
+        expectedPath: "models/&amp;&lt;&gt;&quot;&#39;.puml",
+        source: "&<>\"'",
+        expectedSource: "&amp;&lt;&gt;&quot;&#39;",
+      },
+      {
+        relativePath: "models/café-日本語-🎨.puml",
+        expectedPath: "models/café-日本語-🎨.puml",
+        source: "café — 日本語 🎨 & < >",
+        expectedSource: "café — 日本語 🎨 &amp; &lt; &gt;",
+      },
+      {
+        relativePath: "models/multi&<test>.puml",
+        expectedPath: "models/multi&amp;&lt;test&gt;.puml",
+        source: "first <line>\nsecond & \"quoted\"\nthird 'tick' ☃",
+        expectedSource:
+          "first &lt;line&gt;\nsecond &amp; &quot;quoted&quot;\nthird &#39;tick&#39; ☃",
+      },
+    ];
+
+    for (const { relativePath, expectedPath, source, expectedSource } of cases) {
+      const { html, svgChars } = buildExportBundle({
+        relativePath,
+        diagramType: "plantuml",
+        svg: SVG,
+        source,
+        renderedWith: "local-plantuml",
+      });
+
+      assert.equal(svgChars, SVG.length);
+      assert.ok(html.includes(`<title>${expectedPath}</title>`));
+      assert.ok(html.includes(`<h1>${expectedPath}</h1>`));
+      assert.ok(html.includes(`<pre><code>${expectedSource}</code></pre>`));
+      assert.ok(html.includes(SVG), "inline SVG must stay unchanged");
+    }
+  });
 });

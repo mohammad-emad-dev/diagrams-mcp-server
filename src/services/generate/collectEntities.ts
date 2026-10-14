@@ -28,57 +28,13 @@ import {
 } from "../consistencyChecker/scanning.js";
 import { listScopeFiles } from "./scopeFiles.js";
 
-/** One directed edge in the generated diagram. */
-export interface RelationEdge {
-  /** Declaring class or interface name. */
-  from: string;
-  /** Parent type name. */
-  to: string;
-  /** Generalization (extends) or realization (implements). */
-  kind: "extends" | "implements";
-}
-
-/**
- * Test seam for the TypeScript compiler. The default resolves it by dynamic
- * import; `{ loadTsModule: async () => null }` exercises the AST-missing
- * path on a machine where the compiler is installed. Mirrors RendererDeps.
- */
-export interface GenerateDeps {
-  loadTsModule?: () => Promise<TsModule | null>;
-}
-
-export interface CollectOptions {
-  /** Collect extends/implements; false emits an entities-only diagram. */
-  includeRelations?: boolean;
-  /** Overrides for the emitted caps; tests use small values. */
-  maxEntities?: number;
-  maxRelations?: number;
-  /** Compiler override; see GenerateDeps. */
-  deps?: GenerateDeps;
-}
-
-export interface EntityCollectionResult {
-  /** Entities in emission order, already capped. */
-  entities: string[];
-  /** Edges in emission order, already capped and endpoint-filtered. */
-  relations: RelationEdge[];
-  /** Distinct entities found before the cap. */
-  entitiesAvailable: number;
-  /** Distinct evidenced edges before the cap and endpoint filter. */
-  relationsAvailable: number;
-  /** Entities dropped by the cap. */
-  entitiesDropped: number;
-  /** Edges dropped by the cap, or by an endpoint the entity cap removed. */
-  relationsDropped: number;
-  filesScanned: number;
-  truncated: boolean;
-  scanLimit: number;
-  scanWarning: string | null;
-  /** Relations status; null when relations were requested and available. */
-  dialectNote: string | null;
-  /** True when the TypeScript AST backed this collection. */
-  tsAstAvailable: boolean;
-}
+import type {
+  CollectOptions,
+  EntityCollectionResult,
+  GenerateDeps,
+  RelationEdge,
+} from "./types.js";
+export type { CollectOptions, EntityCollectionResult, GenerateDeps, RelationEdge };
 
 interface ScannedScopeFile {
   /** Absolute path; only used for emission ordering. */
@@ -124,7 +80,55 @@ function emptyResult(): EntityCollectionResult {
   };
 }
 
-/** Read and analyze one file; null when unreadable, oversized, or unparseable. */
+/**
+ * Merge ordered name lists into one, keeping the first occurrence of each
+ * name: earlier lists (AST declarations) win over later ones (heuristic
+ * matches). Casing is preserved and compared exactly.
+ */
+function mergeDeclarations(nameLists: Iterable<string>[]): string[] {
+  const merged: string[] = [];
+  const seen = new Set<string>();
+  for (const names of nameLists) {
+    for (const name of names) {
+      if (!seen.has(name)) {
+        seen.add(name);
+        merged.push(name);
+      }
+    }
+  }
+  return merged;
+}
+
+async function analyzeScopeFile(request: {
+  sourceText: string;
+  filePath: string;
+  includeRelations: boolean;
+  compiler: TsModule | null;
+}): Promise<ScannedScopeFile> {
+  const { sourceText, filePath, includeRelations, compiler } = request;
+  const ext = path.extname(filePath).toLowerCase();
+  const family = familyForExtension(ext);
+  const stripped = stripCommentsAndStrings(sourceText, family);
+
+  const nameLists: Iterable<string>[] = [];
+  let relations: RelationEdge[] = [];
+  if (isTsFamilyExtension(ext)) {
+    const analysis = await analyzeTsFile(sourceText, ext, filePath, {
+      ts: compiler,
+      includeRelations,
+    });
+    // AST names first so a parsed file emits in source-declaration order;
+    // heuristic-only names follow for shapes the visitor does not read.
+    nameLists.push(analysis.declared, extractDeclaredIdentifiers(stripped, family));
+    relations = analysis.relations;
+  } else {
+    nameLists.push(extractDeclaredIdentifiers(stripped, family));
+  }
+
+  return { absolutePath: filePath, ext, entities: mergeDeclarations(nameLists), relations };
+}
+
+/** Unreadable and oversized files are skipped; unexpected failures propagate. */
 async function readScopeFile(
   file: string,
   includeRelations: boolean,
@@ -133,32 +137,7 @@ async function readScopeFile(
   try {
     const raw = await fs.readFile(file, "utf-8");
     if (Buffer.byteLength(raw, "utf-8") > MAX_SCAN_FILE_BYTES) return null;
-    const ext = path.extname(file).toLowerCase();
-    const family = familyForExtension(ext);
-    const stripped = stripCommentsAndStrings(raw, family);
-
-    const entities: string[] = [];
-    const seen = new Set<string>();
-    const push = (name: string): void => {
-      if (!seen.has(name)) {
-        seen.add(name);
-        entities.push(name);
-      }
-    };
-
-    let relations: RelationEdge[] = [];
-    if (isTsFamilyExtension(ext)) {
-      const analysis = await analyzeTsFile(raw, ext, file, { ts: compiler, includeRelations });
-      // AST names first so a parsed file emits in source-declaration order;
-      // heuristic-only names follow for shapes the visitor does not read.
-      for (const name of analysis.declared) push(name);
-      for (const name of extractDeclaredIdentifiers(stripped, family)) push(name);
-      relations = analysis.relations;
-    } else {
-      for (const name of extractDeclaredIdentifiers(stripped, family)) push(name);
-    }
-
-    return { absolutePath: file, ext, entities, relations };
+    return await analyzeScopeFile({ sourceText: raw, filePath: file, includeRelations, compiler });
   } catch (err: unknown) {
     // Skip unreadable files; unexpected failures must surface instead of
     // silently shrinking the entity list.
@@ -176,17 +155,7 @@ async function readScopeFile(
 
 /** Distinct entity names across files, first occurrence wins (emission order). */
 function mergeEntities(scanned: ScannedScopeFile[]): string[] {
-  const entities: string[] = [];
-  const seen = new Set<string>();
-  for (const file of scanned) {
-    for (const name of file.entities) {
-      if (!seen.has(name)) {
-        seen.add(name);
-        entities.push(name);
-      }
-    }
-  }
-  return entities;
+  return mergeDeclarations(scanned.map((file) => file.entities));
 }
 
 /** Distinct edges whose both endpoints are declared somewhere in the scope. */
@@ -207,8 +176,8 @@ function evidencedEdges(scanned: ScannedScopeFile[], declared: Set<string>): Rel
 }
 
 /**
- * Collect entities from a resolved scope. Never throws: unreadable files and
- * a missing compiler both degrade to fewer entities with an in-band note.
+ * Collect entities from a resolved scope. Unreadable files are skipped and a
+ * missing compiler uses heuristic analysis. Unexpected failures propagate.
  */
 export async function collectScopeEntities(
   scopePath: string,

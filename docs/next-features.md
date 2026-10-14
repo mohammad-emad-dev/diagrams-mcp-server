@@ -1,10 +1,17 @@
-# Next Features — Development Phase Reference
+# Next Features — Historical Development Phase Reference
 
-> **Status:** the single to-do reference for this development phase. Every feature
-> ships by checking off its boxes, in phase order. Nothing here is implemented yet.
-> Repo baseline: `diagrams-mcp-server` v0.6.0, TypeScript ESM, Node >=18 runtime,
-> Node >=20.19 dev toolchain, 7 MCP tools, zero production dependencies beyond
-> `@modelcontextprotocol/sdk` and `zod`.
+> **Status (historical record, not current backlog):** this file is the design
+> and acceptance record for the v0.6.0 development phase, preserved for cleanup
+> handoff. It is not the authoritative current backlog — see `README.md` and
+> `docs/architecture.md` for current behavior.
+> Original phase baseline: `diagrams-mcp-server` v0.6.0, TypeScript ESM,
+> Node >=18 runtime, Node >=20.19 dev toolchain, 7 MCP tools, zero production
+> dependencies beyond `@modelcontextprotocol/sdk` and `zod`.
+> Current checkout (cleanup handoff): package v0.7.0 with 12 tools registered
+> in `src/server.ts`, including all 5 tools proposed below
+> (`diagrams_generate`, `diagrams_diff`, `diagrams_generate_sequence`,
+> `diagrams_template`, `diagrams_export`). Checkbox states below are the
+> historical phase record; unchecked global/CI gates remain unverified here.
 
 ## Identity recap
 
@@ -30,16 +37,21 @@ Every feature below serves that identity, and is rejected if it does not:
   `confidence: "heuristic"` plus a `heuristic_warning` that says what the
   heuristic can and cannot tell you. Deterministic outputs say so instead.
 
-## How to use this file
+## How to use this file (historical)
 
-1. Work the phases in order (see [Phase order](#phase-order-and-dependencies)).
-2. Before opening a PR for a feature, tick every box in its
-   [Acceptance checklist](#1-diagrams_generate). Each box is verifiable by
-   running a command or reading a file — none is subjective.
-3. Cross-cutting rules that apply to all six live in
+This section records how the file was used during the v0.6.0 phase; it does
+not assign current work. For current behavior, see `README.md` and
+`docs/architecture.md`.
+
+1. The original plan specified a phase order (see
+   [Phase order](#phase-order-and-dependencies)).
+2. The [acceptance checklists](#1-diagrams_generate) defined the intended phase
+   gates. Their checkbox states are preserved as recorded, not independently
+   certified here. Each check refers to a command or source evidence.
+3. Cross-cutting rules that applied to all six live in
    [Global gates](#global-gates). They are not repeated per feature.
 4. [6. Watch note](#6-watch-note) is a decision record, not a backlog item. It
-   is in force from day one of the phase; do not re-litigate it mid-phase.
+   was in force from day one of the phase; do not re-litigate it mid-phase.
 
 ---
 
@@ -58,7 +70,7 @@ modeling) and says so in every result.
 **Proposed tool contract**
 
 - **Tool name:** `diagrams_generate` · **File:** `src/tools/diagramsGenerate.ts`
-  · registered in `src/index.ts`.
+  · registered in `src/server.ts`.
 - **Inputs** (strict zod object):
   - `scope` (string, required) — relative path under `PROJECT_ROOT` pointing at
     a file or a directory. Reject anything that resolves outside `PROJECT_ROOT`
@@ -127,7 +139,8 @@ modeling) and says so in every result.
 **Acceptance checklist**
 
 - [x] `src/tools/diagramsGenerate.ts` exists and `registerDiagramsGenerate` is
-      called from `src/index.ts` after the existing seven registrations.
+      called from `src/server.ts` after the existing seven registrations
+      (historical phase-1 ordering; current checkout registers twelve — see status note).
 - [x] The zod schema is `.strict()`, every input has a `.describe(...)` line, and
       `max_entities` is bounded `1`–`60` with the bounds echoed in the tool
       description text.
@@ -248,7 +261,7 @@ semantic identity.
 
 **Acceptance checklist**
 
-- [x] `src/tools/diagramsDiff.ts` exists and is registered in `src/index.ts`.
+- [x] `src/tools/diagramsDiff.ts` exists and is registered in `src/server.ts`.
 - [x] Exactly-one-per-side validation returns `isError: true` for all four
       malformed combinations (both, neither, and the two mixed cases), with a
       message that names the offending side.
@@ -351,8 +364,10 @@ read-only, dependency-free, capped.
 - `extractCallEdges` (`sequence/callGraph.ts`) — ordered `caller → callee` edges
   with `viaCallback` and source line numbers; its `CALL_KEYWORDS` /
   construction-skipping rules are inherited as-is.
-- `buildOperationIndex` and `mapParticipants` (`sequence/`) for
-  callee-to-participant resolution by declared-identifier equality.
+- `generate/sequence.ts` resolves callees with a case-insensitive operation
+  lookup built after merging participants; the first declaring participant
+  wins. The `mapParticipants` helper (`sequence/`) prefers an exact identifier
+  before the first case-insensitive match.
 - The same scan + AST stack as feature 1: `collectCodeFiles`,
   `stripCommentsAndStrings`, `analyzeTsFile`, and the shared scope resolver.
 - `validateDiagramSource` as the emitted-source self-check (must be accepted by
@@ -371,7 +386,7 @@ read-only, dependency-free, capped.
 **Acceptance checklist**
 
 - [x] `src/tools/diagramsGenerateSequence.ts` exists and is registered in
-      `src/index.ts`; the tool description states up front that static call
+      `src/server.ts`; the tool description states up front that static call
       order is not runtime order.
 - [x] `max_participants` (`1`–`20`) and `max_messages` (`1`–`50`) are enforced by
       the zod schema, and both bounds appear in the tool description and README.
@@ -472,7 +487,7 @@ new is added to `files`, and no template file can go missing at install time.
 
 **Acceptance checklist**
 
-- [x] `src/tools/diagramsTemplate.ts` exists and is registered in `src/index.ts`.
+- [x] `src/tools/diagramsTemplate.ts` exists and is registered in `src/server.ts`.
 - [x] All three templates are emitted in **both** dialects (six emitters), and
       every one of the six outputs passes `validateDiagramSource` — asserted in
       a table-driven unit test.
@@ -576,7 +591,7 @@ renderer output.
 
 **Acceptance checklist**
 
-- [x] `src/tools/diagramsExport.ts` exists and is registered in `src/index.ts`.
+- [x] `src/tools/diagramsExport.ts` exists and is registered in `src/server.ts`.
 - [x] The produced HTML is a single file: it contains no `src=`, `href=`, `@import`,
       or `<script>` referencing any URL, and no external resource is fetched
       (asserted by a test that greps the output for those patterns).
@@ -706,9 +721,9 @@ checkboxes count as done.
 
 - [ ] `npm run build` passes (`tsc`, no new errors, no `any`-leaks the config
       already forbids).
-- [ ] `npm test` passes — and every new `*.test.ts` file is **added to the `test`
-      script's explicit file list in `package.json`**, because the runner does
-      not glob `dist/` (the README calls this out under "Project layout").
+- [ ] `npm run build` and `npm test` pass — compiled `*.test.js` files under
+      `dist/` are discovered automatically by `scripts/test.mjs`; new colocated
+      `*.test.ts` files need no package-script edits.
 - [ ] `npm run lint` passes with `--max-warnings 0`.
 - [ ] `npm run format:check` passes (Prettier: 100-col, double quotes,
       semicolons, trailing commas — see `.prettierrc.json`).
@@ -727,7 +742,7 @@ checkboxes count as done.
 
 **Existing tool patterns — follow them, do not invent parallels:**
 
-- [ ] One tool per file under `src/tools/`, registered from `src/index.ts` via a
+- [ ] One tool per file under `src/tools/`, registered from `src/server.ts` via a
       `registerDiagrams*` export that takes `(server, ctx)`.
 - [ ] Strict zod input schema with `.describe(...)` on every field; tool
       `description` follows the existing sections: summary, `Args:`,
@@ -778,8 +793,9 @@ checkboxes count as done.
       `LICENSE` — no new shipped data files; templates and goldens live in
       `src/` and are excluded like the rest of the test surface.
 - [ ] Boxes in this file are ticked as features ship, and the phase-order table
-      above is updated if an order change is ever agreed — this file is the
-      phase's single source of truth, not a post-hoc write-up.
+      above is updated if an order change is ever agreed — during the phase,
+      this file was the phase's single source of truth, not a post-hoc write-up
+      (historical; not the current backlog — see status note).
 
 ---
 

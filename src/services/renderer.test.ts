@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { after, afterEach, before, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import http from "node:http";
@@ -32,6 +32,33 @@ const ALLOW_FLAG = "ALLOW_REMOTE_PLANTUML";
 const SECRET_SOURCE = "@startuml\nclass SecretWidgetDoodad\n@enduml\n";
 const LOCAL_SVG = Buffer.from("<svg>fake-local-render</svg>", "utf-8");
 const REMOTE_SVG = Buffer.from("<svg>fake-remote-render</svg>", "utf-8");
+
+const testTempParent = path.resolve(os.tmpdir());
+const originalTempEnvironment = {
+  TEMP: process.env.TEMP,
+  TMP: process.env.TMP,
+  TMPDIR: process.env.TMPDIR,
+};
+let isolatedRendererTemp: string | undefined;
+
+// Other test workers also render diagrams, so cleanup assertions need a
+// worker-owned directory rather than the shared system temporary directory.
+before(async () => {
+  isolatedRendererTemp = await fs.mkdtemp(path.join(testTempParent, "diagrams-renderer-tests-"));
+  process.env.TEMP = isolatedRendererTemp;
+  process.env.TMP = isolatedRendererTemp;
+  process.env.TMPDIR = isolatedRendererTemp;
+});
+
+after(async () => {
+  for (const [name, original] of Object.entries(originalTempEnvironment)) {
+    if (original === undefined) delete process.env[name];
+    else process.env[name] = original;
+  }
+  if (isolatedRendererTemp === undefined) return;
+  assert.equal(path.dirname(path.resolve(isolatedRendererTemp)), testTempParent);
+  await fs.rm(isolatedRendererTemp, { recursive: true, force: true });
+});
 
 function toArrayBuffer(data: Buffer): ArrayBuffer {
   const copy = new Uint8Array(data.byteLength);

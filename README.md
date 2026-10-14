@@ -68,7 +68,7 @@ Twelve tools in four groups. The read-only drafting tools (`diagrams_generate`, 
 
 #### `diagrams_generate_sequence`
 
-`diagrams_generate_sequence` drafts the other half of the picture: not the boxes, but the **conversation** between them. It reads the message-call patterns in a file or directory under your project root — one participant per scanned file, named by module — and emits ordered `from -> to : message` lines from the caller-to-callee edges the consistency checker's call graph already extracts. **Static call-site order is not runtime order**, and every result says so: a call inside a callback, promise, or listener is counted in `deferred_count` and excluded from the messages, because its real position in the conversation is unknowable from source. Participant mapping is declared-identifier equality only — a callee that no file in the scope declares is listed in `unresolved_callees` rather than attached to an invented participant, because which class owns a method is a type question and out of scope. Like `diagrams_generate` it is read-only and **never writes** — nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call — and every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, with every cap reporting itself in-band (`participants_capped` / `messages_capped` / `*_available` / `*_limit` / `truncated`). The sequence limits are listed under [Sequence limits](#sequence-limits).
+`diagrams_generate_sequence` drafts the other half of the picture: not the boxes, but the **conversation** between them. It reads the message-call patterns in a file or directory under your project root — participants named by module, merging files that share a basename — and emits ordered `from -> to : message` lines from the caller-to-callee edges the consistency checker's call graph already extracts. **Static call-site order is not runtime order**, and every result says so: a call inside a callback, promise, or listener is counted in `deferred_count` and excluded from the messages, because its real position in the conversation is unknowable from source. Participant mapping uses case-insensitive declared-identifier matching (the first declaring participant wins) — a callee that no file in the scope declares is listed in `unresolved_callees` rather than attached to an invented participant, because which class owns a method is a type question and out of scope. Like `diagrams_generate` it is read-only and **never writes** — nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call — and every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, with every cap reporting itself in-band (`participants_capped` / `messages_capped` / `*_available` / `*_limit` / `truncated`). The sequence limits are listed under [Sequence limits](#sequence-limits).
 
 #### `diagrams_diff`
 
@@ -216,12 +216,12 @@ whichever path fits: the global shim, the project's `.bin` binary, or
 ### Lint and formatting
 
 ```bash
-npm run lint          # ESLint over src/ (TypeScript recommended rules, zero warnings allowed)
-npm run format:check  # Prettier check over src/ (100-col, double quotes, semicolons, trailing commas)
+npm run lint          # ESLint over src/ and scripts/ (zero warnings allowed)
+npm run format:check  # Prettier check over src/ and scripts/
 ```
 
 Both run in CI (`.github/workflows/ci.yml`, Node 20.x/22.x matrix) before the build. They cover
-source and test files under `src/` only — `dist/`, `node_modules/`,
+source and test files under `src/` and build utilities under `scripts/` — `dist/`, `node_modules/`,
 `graphify-out/`, and packed tarballs are excluded via `eslint.config.mjs`
 and `.prettierignore`. These two commands require the development toolchain
 (Node >=20.19); the server runtime itself still supports Node >=18. `.gitattributes`
@@ -512,23 +512,38 @@ The agent calls `diagrams_check_consistency`, which reports:
 
 ```
 src/
-├── index.ts                       # Server entry point (stdio transport)
+├── index.ts                       # CLI dispatch (setup | --help | serve) + stdio wiring
+├── server.ts                      # createDiagramServer(ctx): McpServer + 12 tool registrations
 ├── context.ts                     # Resolves PROJECT_ROOT / DIAGRAMS_DIR once at startup
 ├── constants.ts                   # Shared constants
 ├── types.ts                       # Shared TypeScript types
+├── constants.test.ts / packaging.test.ts / setup.test.ts  # Colocated root tests
 ├── setup/                         # Guided client-setup wizard (scopes, pre-flight checks)
 │   ├── index.ts                   # runSetup orchestrator
-│   ├── clients.ts                 # Supported clients, arg parsing, config writers
+│   ├── clients.ts                 # Client catalog, PATH checks, compatibility exports
+│   ├── arguments.ts               # Setup flags and scope parsing
+│   ├── configuration.ts           # Config paths, server entries, merging, persistence
+│   ├── projectRoot.ts             # Project-root prompt loop and scope policy
 │   ├── prompts.ts                 # Interactive pickers and confirmations
 │   └── terminal.ts                # Banner, boxes, color
 ├── services/
 │   ├── diagramStore.ts            # Safe filesystem CRUD (path-traversal protected)
+│   ├── store/diagramMetadata.ts    # File type detection and bounded title reading
 │   ├── diagramValidator.ts        # PlantUML/Mermaid syntax checks and dialect detection
 │   ├── nameNormalize.ts           # Shared lenient name normalizer (checker + diff)
 │   ├── renderer.ts                # Mermaid/PlantUML -> SVG/PNG rendering
+│   ├── renderer/
+│   │   ├── command.ts             # CLI resolution, Windows arguments, bounded process execution
+│   │   ├── error.ts               # Shared RenderError class
+│   │   ├── local.ts               # Local Mermaid/PlantUML backends and temporary-file cleanup
+│   │   ├── plantumlRemote.ts      # PlantUML URL encoding and bounded remote requests
+│   │   └── types.ts               # Shared rendering contracts and dependency seams
 │   ├── scopeResolve.ts            # Bounds read-only tool scopes to PROJECT_ROOT
+│   ├── *.test.ts                   # Colocated service tests: store, validator, renderer, scope, normalize, checker
 │   ├── consistencyChecker/        # Diagram <-> code drift detection
 │   │   ├── index.ts               # checkConsistency orchestration (scan, match, report)
+│   │   ├── fileAnalysis.ts        # Read and analyze bounded code files
+│   │   ├── entityMatching.ts      # Match names and collect issues and evidence
 │   │   ├── entities.ts            # Entity names from diagram source
 │   │   ├── codeAnalysis.ts        # Per-language declaration patterns
 │   │   ├── scanning.ts            # Filesystem walk with scan limits
@@ -537,9 +552,9 @@ src/
 │   │   │   ├── sequenceEntities.ts / sequenceMatch.ts / sequenceOrder.ts
 │   │   │   └── sequenceGoldens.test.ts / sequenceOrderGoldens.test.ts
 │   │   └── ts/                    # Optional TypeScript AST path (dynamic import only — never a static import, so published installs run without the compiler)
-│   │       ├── tsParse.ts         # Compiler availability probe
-│   │       ├── tsSymbols.ts       # Declared symbols + heritage collection
-│   │       ├── tsIndex.ts / tsHeritage.ts  # Index and extends/implements edges
+│   │       ├── tsParse.ts         # Compiler availability probe (+ tsParse.test.ts)
+│   │       ├── tsSymbols.ts       # Declared symbols + heritage collection (+ tsSymbols.test.ts)
+│   │       ├── tsIndex.ts / tsHeritage.ts  # Index and extends/implements edges (+ tsIndex.test.ts, tsGoldens.test.ts)
 │   ├── diff/                      # diagrams_diff comparison
 │   │   └── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
 │   ├── export/                    # diagrams_export bundle builder (pure, no filesystem)
@@ -550,18 +565,29 @@ src/
 │   │   ├── emitters.ts            # Pure PlantUML/Mermaid class-diagram emitters
 │   │   ├── sequence.ts            # diagrams_generate_sequence orchestration (participants, messages, caps)
 │   │   ├── sequenceEmitters.ts    # Pure PlantUML/Mermaid sequence emitters
-│   │   └── scopeFiles.ts          # Scope walking shared by both generators
+│   │   ├── scopeFiles.ts          # Scope walking shared by both generators
+│   │   └── types.ts               # Shared generation options, results, relations, and messages
 │   └── templates/                 # diagrams_template skeleton tables (no filesystem, no state)
 │       ├── skeletons.ts           # Six pure emitters: kind x dialect
 │       └── templateGoldens.test.ts # Exact emitted source per (template, format)
-├── tools/                         # One MCP tool adapter per file (12 tools) + shared toolError/toolOutput
+├── tools/                         # One MCP tool adapter per file (12 tools) + shared toolError; *.test.ts colocated per tool
+│   ├── diffInput.ts               # diagrams_diff validation and stored/inline side loading
+│   └── diffSummary.ts             # diagrams_diff text summaries
 └── integration/
     └── mcpServer.test.ts          # End-to-end server surface tests
 ```
 
+See [docs/architecture.md](./docs/architecture.md) for the CLI → server
+composition → tools → services boundaries and how to extend them.
+`examples/` is the reference fixture project (`examples/src/user.ts` plus two
+diagrams under `examples/diagrams/models/`); `evaluations/` holds the
+read-only Q&A (`eval.xml`) and the AST activation probe
+(`prod-activation/probe.mjs`, `npm run probe:prod`).
+
 Tests live next to the source they cover (`*.test.ts`), compile to `dist/`,
-and run from there — `npm test` uses the file list in `package.json`, so new
-test files need adding there.
+and run from there. `scripts/build.mjs` cleans `dist/` before compiling;
+`scripts/test.mjs` discovers compiled `*.test.js` recursively, so new tests
+need no package-script edits. Build before running `npm test`.
 
 ## Security notes
 

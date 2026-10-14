@@ -1,6 +1,7 @@
 // Terminal rendering toolkit for the guided setup CLI: ANSI styling, box
-// drawing, prompt frame rendering, and pure prompt state machines. No I/O:
-// every function here is pure and directly unit-testable.
+// drawing, prompt frame rendering, and pure prompt state machines. No console
+// output is performed here; only paint reads NO_COLOR and stdout.isTTY and
+// everything remains directly unit-testable.
 
 // Wrap text in an ANSI style in capable terminals only: piped output and
 // NO_COLOR stay plain so logs and scripts never see escape codes.
@@ -28,18 +29,16 @@ function padCenter(text: string, width: number): string {
 
 // Double-lined terminal card. Width fits the widest line plus padding.
 export function box(lines: string[], title?: string): string {
-  const inner = Math.max(
-    0,
-    ...lines.map(visibleWidth),
-    title === undefined ? 0 : visibleWidth(title) + 4,
-  );
+  const lineWidths = lines.map(visibleWidth);
+  const titleWidth = title === undefined ? 0 : visibleWidth(title);
+  const inner = Math.max(0, ...lineWidths, title === undefined ? 0 : titleWidth + 4);
   const width = inner + 4;
   const top =
     title === undefined
       ? `╔${"═".repeat(width)}╗`
-      : `╔═ ${title} ${"═".repeat(Math.max(0, width - visibleWidth(title) - 3))}╗`;
+      : `╔═ ${title} ${"═".repeat(Math.max(0, width - titleWidth - 3))}╗`;
   const body = lines.map(
-    (line) => `║  ${line}${" ".repeat(Math.max(0, width - visibleWidth(line) - 2))}║`,
+    (line, index) => `║  ${line}${" ".repeat(Math.max(0, width - lineWidths[index] - 2))}║`,
   );
   return [top, ...body, `╚${"═".repeat(width)}╝`].join("\n");
 }

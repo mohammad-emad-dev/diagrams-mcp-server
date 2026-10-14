@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
+import type { DiagramType } from "../types.js";
 import { MAX_GET_WINDOW_CHARS, toPosixPath } from "../constants.js";
 import { handleToolError } from "./toolError.js";
 
@@ -52,6 +53,45 @@ function windowError(offset: unknown, maxChars: unknown): string | null {
     return `Error: Invalid source window: 'max_chars' must be an integer between 1 and ${MAX_GET_WINDOW_CHARS} (got ${JSON.stringify(maxChars)}).`;
   }
   return null;
+}
+
+// Window offsets and lengths use UTF-16 code units, like JavaScript string slicing.
+function sourceWindowResponse(request: {
+  relativePath: string;
+  full: string;
+  type: DiagramType;
+  offset?: number;
+  maxChars?: number;
+}) {
+  const offset: number = request.offset ?? 0;
+  const maxChars: number | undefined = request.maxChars;
+  const totalChars = request.full.length;
+  if (offset > 0 && offset >= totalChars) {
+    const message =
+      `Error: offset ${offset} is out of range for '${toPosixPath(request.relativePath)}': ` +
+      `diagram source is ${totalChars} characters. Omit offset/max_chars for the full ` +
+      `content or choose an offset below ${totalChars}.`;
+    return {
+      content: [{ type: "text" as const, text: message }],
+      isError: true,
+    };
+  }
+  const end = maxChars === undefined ? totalChars : Math.min(offset + maxChars, totalChars);
+  const window = request.full.slice(offset, end);
+  const output = {
+    relative_path: toPosixPath(request.relativePath),
+    type: request.type,
+    content: window,
+    is_partial: offset !== 0 || end < totalChars,
+    offset,
+    total_chars: totalChars,
+    returned_chars: window.length,
+    has_more: offset + window.length < totalChars,
+  };
+  return {
+    content: [{ type: "text" as const, text: window }],
+    structuredContent: output,
+  };
 }
 
 export function registerDiagramsGet(server: McpServer, ctx: ServerContext): void {
@@ -113,35 +153,13 @@ Error Handling:
 
       try {
         const { content: full, type } = await ctx.diagramStore.read(params.relative_path);
-        const offset: number = params.offset ?? 0;
-        const maxChars: number | undefined = params.max_chars;
-        const totalChars = full.length;
-        if (offset > 0 && offset >= totalChars) {
-          const message =
-            `Error: offset ${offset} is out of range for '${toPosixPath(params.relative_path)}': ` +
-            `diagram source is ${totalChars} characters. Omit offset/max_chars for the full ` +
-            `content or choose an offset below ${totalChars}.`;
-          return {
-            content: [{ type: "text" as const, text: message }],
-            isError: true,
-          };
-        }
-        const end = maxChars === undefined ? totalChars : Math.min(offset + maxChars, totalChars);
-        const window = full.slice(offset, end);
-        const output = {
-          relative_path: toPosixPath(params.relative_path),
+        return sourceWindowResponse({
+          relativePath: params.relative_path,
+          full,
           type,
-          content: window,
-          is_partial: offset !== 0 || end < totalChars,
-          offset,
-          total_chars: totalChars,
-          returned_chars: window.length,
-          has_more: offset + window.length < totalChars,
-        };
-        return {
-          content: [{ type: "text" as const, text: window }],
-          structuredContent: output,
-        };
+          offset: params.offset,
+          maxChars: params.max_chars,
+        });
       } catch (err: unknown) {
         return handleToolError("diagrams_get", err);
       }

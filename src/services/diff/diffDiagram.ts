@@ -96,6 +96,7 @@ function pairRenames(
   const renamed: RenamedEntity[] = [];
   const usedAdded = new Set<number>();
   const indexesByKey = new Map<string, number[]>();
+  const nextCandidateOffsetByKey = new Map<string, number>();
   added.forEach((entity, index) => {
     const key = normalizeForMatch(entity.name);
     if (key.length === 0) return;
@@ -111,11 +112,13 @@ function pairRenames(
   for (const removedEntry of removed) {
     const key = normalizeForMatch(removedEntry.name);
     const candidates = key.length > 0 ? indexesByKey.get(key) : undefined;
-    const unused = candidates?.find((index) => !usedAdded.has(index));
+    const nextCandidateOffset = nextCandidateOffsetByKey.get(key) ?? 0;
+    const unused = candidates?.[nextCandidateOffset];
     if (unused === undefined) {
       remainingRemoved.push(removedEntry);
       continue;
     }
+    nextCandidateOffsetByKey.set(key, nextCandidateOffset + 1);
     usedAdded.add(unused);
     renamed.push({
       from: removedEntry.name,

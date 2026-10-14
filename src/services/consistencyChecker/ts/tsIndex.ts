@@ -37,7 +37,7 @@ export interface TsAnalysisOptions {
   includeRelations?: boolean;
 }
 
-/** Analyze one file; never throws, falls back to `{ empty, strict false }`. */
+/** Missing compiler or unparseable source falls back; unexpected visitor errors propagate. */
 export async function analyzeTsFile(
   rawText: string,
   ext: string,

@@ -36,19 +36,17 @@ export interface ExportBundle {
   svgChars: number;
 }
 
-/**
- * Escape text for HTML element and attribute content. The ampersand goes first
- * so an input containing a literal "&amp;" is not double-escaped into
- * "&amp;amp;". Source goes through this before it lands in <pre><code>, so a
- * diagram containing "<" or "-->" cannot break out of the block.
- */
+const HTML_ESCAPES: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+// Preserve literal entity spellings as text: "&amp;" becomes "&amp;amp;".
 function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return value.replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] as string);
 }
 
 /**

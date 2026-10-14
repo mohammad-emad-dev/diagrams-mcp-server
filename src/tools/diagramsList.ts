@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { MAX_LIST_LIMIT, toPosixPath } from "../constants.js";
+import type { DiagramFile } from "../types.js";
 import { handleToolError } from "./toolError.js";
 
 const InputSchema = z
@@ -47,6 +48,26 @@ function paginationError(offset: unknown, limit: unknown): string | null {
     return `Error: Invalid pagination: 'limit' must be an integer between 1 and ${MAX_LIST_LIMIT} (got ${JSON.stringify(limit)}).`;
   }
   return null;
+}
+
+interface ListPagination {
+  offset: number;
+  total: number;
+  effectiveLimit: number;
+  hasMore: boolean;
+}
+
+function formatListedDiagrams(page: DiagramFile[], pagination: ListPagination): string {
+  const { offset, total, effectiveLimit, hasMore } = pagination;
+  const lines = page.map(
+    (d) => `- ${toPosixPath(d.relativePath)} (${d.type}${d.title ? `, "${d.title}"` : ""})`,
+  );
+  if (hasMore) {
+    lines.push(
+      `Showing ${page.length} of ${total} diagrams (offset ${offset}, limit ${effectiveLimit}). Call diagrams_list with offset=${offset + page.length} to see more.`,
+    );
+  }
+  return lines.join("\n");
 }
 
 export function registerDiagramsList(server: McpServer, ctx: ServerContext): void {
@@ -152,15 +173,7 @@ Error Handling:
               ? `No diagrams found under '${ctx.diagramStore.getRoot()}'. Create one with diagrams_create.`
               : `No diagrams at offset ${offset} (total ${total}). Call diagrams_list with a smaller offset to see more.`;
         } else {
-          text = page
-            .map(
-              (d) =>
-                `- ${toPosixPath(d.relativePath)} (${d.type}${d.title ? `, "${d.title}"` : ""})`,
-            )
-            .join("\n");
-          if (hasMore) {
-            text += `\nShowing ${page.length} of ${total} diagrams (offset ${offset}, limit ${effectiveLimit}). Call diagrams_list with offset=${offset + page.length} to see more.`;
-          }
+          text = formatListedDiagrams(page, { offset, total, effectiveLimit, hasMore });
         }
 
         return {

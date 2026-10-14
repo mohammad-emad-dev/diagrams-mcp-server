@@ -9,6 +9,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { collectSequence } from "./sequence.js";
+import type { SequenceMessage } from "./sequence.js";
 import { validateDiagramSource } from "../diagramValidator.js";
 
 async function writeFiles(root: string, files: Record<string, string>): Promise<void> {
@@ -112,4 +113,81 @@ describe("sequence goldens", () => {
     validateDiagramSource(result.source, "plantuml");
     assert.equal(result.source, "@startuml\n@enduml\n");
   });
+
+  const resolutionCases: Array<{
+    name: string;
+    files: Record<string, string>;
+    participants: string[];
+    messages: SequenceMessage[];
+    unresolved: string[];
+  }> = [
+    {
+      name: "an earlier folded declaration wins over a later exact-case declaration",
+      files: {
+        "a_first.ts": "export function CHARGE() {}\n",
+        "b_second.ts": "export function charge() {}\n",
+        "z_caller.ts": "export function checkout() {\n  charge();\n}\n",
+      },
+      participants: ["z_caller", "a_first"],
+      messages: [
+        { from: "z_caller", to: "a_first", message: "charge", line: 2, via_callback: false },
+      ],
+      unresolved: [],
+    },
+    {
+      name: "same-basename files merge before competing operation declarations resolve",
+      files: {
+        "a/payment.ts": "export function CHARGE() {}\n",
+        "b/other.ts": "export function late() {}\n",
+        "c/payment.ts": "export function LATE() {}\n",
+        "z/caller.ts": "export function checkout() {\n  charge();\n  late();\n}\n",
+      },
+      participants: ["caller", "payment"],
+      messages: [
+        { from: "caller", to: "payment", message: "charge", line: 2, via_callback: false },
+        { from: "caller", to: "payment", message: "late", line: 3, via_callback: false },
+      ],
+      unresolved: [],
+    },
+    {
+      name: "a top-level caller uses its file while unresolved callees stay excluded",
+      files: {
+        "a_payment.ts": "export function charge() {}\n",
+        "z_entry.ts": "charge();\nabsent();\n",
+      },
+      participants: ["z_entry", "a_payment"],
+      messages: [
+        { from: "z_entry", to: "a_payment", message: "charge", line: 1, via_callback: false },
+      ],
+      unresolved: ["absent"],
+    },
+  ];
+
+  for (const scenario of resolutionCases) {
+    for (const format of ["puml", "mermaid"] as const) {
+      it(`${scenario.name} (${format})`, async () => {
+        const scope = path.join(tmpRoot, "resolution");
+        await writeFiles(scope, scenario.files);
+        const result = await collectSequence(scope, { format });
+
+        assert.deepEqual(result.participants, scenario.participants);
+        assert.deepEqual(result.messages, scenario.messages);
+        assert.deepEqual(result.unresolvedCallees, scenario.unresolved);
+        assert.equal(result.messagesAvailable, scenario.messages.length);
+        assert.equal(result.messagesDropped, 0);
+        assert.equal(result.filesScanned, Object.keys(scenario.files).length);
+        const declarations = scenario.participants.map((name) => `participant ${name}`);
+        const messages = scenario.messages.map(({ from, to, message }) =>
+          format === "puml" ? `${from} -> ${to} : ${message}` : `${from}->>${to}: ${message}`,
+        );
+        assert.equal(
+          result.source,
+          (format === "puml"
+            ? ["@startuml", ...declarations, ...messages, "@enduml", ""]
+            : ["sequenceDiagram", ...declarations, ...messages, ""]
+          ).join("\n"),
+        );
+      });
+    }
+  }
 });

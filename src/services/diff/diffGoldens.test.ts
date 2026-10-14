@@ -43,6 +43,50 @@ const PLANTUML_REORDER_A = "@startuml\nclass Widget\nclass Gadget\nclass Doohick
 const PLANTUML_REORDER_B = "@startuml\nclass Doohickey\nclass Widget\nclass Gadget\n@enduml\n";
 
 describe("diff goldens", () => {
+  for (const scenario of [
+    {
+      name: "pairs colliding names in order and preserves surplus removed names",
+      previous: ["User_Account", "User__Account", "User___Account", "Keep"],
+      next: ["userAccount", "user_account", "Keep"],
+      renamed: [
+        { from: "User_Account", to: "userAccount", confidence: "heuristic" },
+        { from: "User__Account", to: "user_account", confidence: "heuristic" },
+      ],
+      added: [],
+      removed: [{ name: "User___Account" }],
+    },
+    {
+      name: "consumes each colliding candidate once and preserves surplus added names",
+      previous: ["User__Account", "User_Account", "Keep"],
+      next: ["user_account", "userAccount", "user__account", "Keep"],
+      renamed: [
+        { from: "User__Account", to: "user_account", confidence: "heuristic" },
+        { from: "User_Account", to: "userAccount", confidence: "heuristic" },
+      ],
+      added: [{ name: "user__account" }],
+      removed: [],
+    },
+    {
+      name: "never pairs separator-only names while pairing a valid normalized key",
+      previous: ["_", "__", "Alpha"],
+      next: ["___", "____", "ALPHA"],
+      renamed: [{ from: "Alpha", to: "ALPHA", confidence: "heuristic" }],
+      added: [{ name: "___" }, { name: "____" }],
+      removed: [{ name: "_" }, { name: "__" }],
+    },
+  ]) {
+    it(scenario.name, () => {
+      const diagram = (names: string[]): DiffSide => ({
+        source: `@startuml\n${names.map((name) => `class ${name}`).join("\n")}\n@enduml`,
+        type: "plantuml",
+      });
+      const compared = diffDiagrams(diagram(scenario.previous), diagram(scenario.next));
+      assert.deepEqual(compared.renamed, scenario.renamed);
+      assert.deepEqual(compared.added, scenario.added);
+      assert.deepEqual(compared.removed, scenario.removed);
+    });
+  }
+
   it("diffs a PlantUML class pair into exact added/removed/renamed arrays", () => {
     const result = diffDiagrams(
       { source: PLANTUML_CLASS_A, type: "plantuml" },

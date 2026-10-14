@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { MAX_SEQUENCE_MESSAGES, MAX_SEQUENCE_PARTICIPANTS, toPosixPath } from "../constants.js";
-import type { GenerateDeps } from "../services/generate/collectEntities.js";
+import type { GenerateDeps, SequenceCollectionResult } from "../services/generate/types.js";
 import { collectSequence } from "../services/generate/sequence.js";
 import { MAX_SCAN_FILES } from "../services/consistencyChecker/scanning.js";
 import { validateDiagramSource } from "../services/diagramValidator.js";
@@ -68,6 +68,52 @@ const HEURISTIC_WARNING =
 /** Map the wire dialect to the store's diagram type. */
 function diagramTypeFor(format: "puml" | "mermaid"): "plantuml" | "mermaid" {
   return format === "puml" ? "plantuml" : "mermaid";
+}
+
+interface SequenceResultRequest {
+  scope: string;
+  format: "puml" | "mermaid";
+  participantLimit: number;
+  messageLimit: number;
+  collected: SequenceCollectionResult;
+}
+
+function formatSequenceResult({
+  scope,
+  format,
+  participantLimit,
+  messageLimit,
+  collected,
+}: SequenceResultRequest) {
+  const output = {
+    scope,
+    format,
+    source: collected.source,
+    participants: collected.participants,
+    participants_included: collected.participants.length,
+    participants_available: collected.participantsAvailable,
+    participants_capped: collected.participantsDropped > 0,
+    participant_limit: participantLimit,
+    messages: collected.messages,
+    messages_included: collected.messages.length,
+    messages_available: collected.messagesAvailable,
+    messages_capped: collected.messagesDropped > 0,
+    message_limit: messageLimit,
+    deferred_count: collected.deferredCount,
+    unresolved_callees: collected.unresolvedCallees,
+    files_scanned: collected.filesScanned,
+    truncated: collected.truncated,
+    scan_limit: collected.scanLimit,
+    scan_warning: collected.scanWarning,
+    confidence: "heuristic" as const,
+    heuristic_warning: HEURISTIC_WARNING,
+    written: false as const,
+  };
+
+  return {
+    content: [{ type: "text" as const, text: collected.source }],
+    structuredContent: output,
+  };
 }
 
 export function registerDiagramsGenerateSequence(
@@ -165,35 +211,13 @@ Error Handling:
         // diagrams_create enforces, so the output can be saved as-is.
         validateDiagramSource(collected.source, diagramType);
 
-        const output = {
+        return formatSequenceResult({
           scope: toPosixPath(scope.relativePath),
           format: params.format,
-          source: collected.source,
-          participants: collected.participants,
-          participants_included: collected.participants.length,
-          participants_available: collected.participantsAvailable,
-          participants_capped: collected.participantsDropped > 0,
-          participant_limit: participantLimit,
-          messages: collected.messages,
-          messages_included: collected.messages.length,
-          messages_available: collected.messagesAvailable,
-          messages_capped: collected.messagesDropped > 0,
-          message_limit: messageLimit,
-          deferred_count: collected.deferredCount,
-          unresolved_callees: collected.unresolvedCallees,
-          files_scanned: collected.filesScanned,
-          truncated: collected.truncated,
-          scan_limit: collected.scanLimit,
-          scan_warning: collected.scanWarning,
-          confidence: "heuristic" as const,
-          heuristic_warning: HEURISTIC_WARNING,
-          written: false as const,
-        };
-
-        return {
-          content: [{ type: "text" as const, text: collected.source }],
-          structuredContent: output,
-        };
+          participantLimit,
+          messageLimit,
+          collected,
+        });
       } catch (err: unknown) {
         return handleToolError("diagrams_generate_sequence", err);
       }

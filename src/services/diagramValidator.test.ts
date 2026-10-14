@@ -167,3 +167,66 @@ describe("diagramValidator dialect detection from source", () => {
     }
   });
 });
+
+describe("diagramValidator Mermaid headers", () => {
+  it("accepts supported headers with frontmatter, comments, CRLF, suffixes, and arbitrary bodies", () => {
+    const sources = [
+      "---\ntitle: Order flow\n---\nsequenceDiagram\n    A->>B: hi\n",
+      "\n%% comment\n---\ntitle: x\n---\n%% after frontmatter\ngraph TD\nA-->B\n",
+      "  ---  \r\ntitle: x\r\n  ---  \r\nFLOWCHART TD\r\nA-->B\r\n",
+      ...[
+        "graph;",
+        "graph:",
+        "graph-beta",
+        "graph_beta",
+        "graph:beta",
+        "graph;beta",
+        "stateDiagram-v2",
+      ].map((header) => header + "\nA-->B\n"),
+      "sequenceDiagram\nhello world\n",
+      "---\ntitle: x\n---\ngraph TD\n---\narbitrary body\n",
+    ];
+    for (const source of sources) {
+      assert.doesNotThrow(() => validateDiagramSource(source, "mermaid"), source);
+      assert.equal(detectDiagramType(source), "mermaid", source);
+    }
+  });
+
+  it("rejects missing declarations and invalid first headers despite valid later lines", () => {
+    const cases = [
+      {
+        source: "---\ntitle: missing end\nsequenceDiagram\nA->>B: hi\n",
+        reason: /no diagram declaration found/,
+      },
+      { source: "---\ntitle: x\n---\n%% comments only\n", reason: /no diagram declaration found/ },
+      {
+        source: "---\ntitle: x\n---\n---\ntitle: y\n---\ngraph TD\n",
+        reason: /unrecognized diagram declaration/,
+      },
+      {
+        source: "%% comment\nnot a diagram\ngraph TD\n",
+        reason: /unrecognized diagram declaration/,
+      },
+      {
+        source: "---\ntitle: x\n---\nnot a diagram\ngraph TD\n",
+        reason: /unrecognized diagram declaration/,
+      },
+      {
+        source: "not a diagram\n---\ntitle: x\n---\ngraph TD\n",
+        reason: /unrecognized diagram declaration/,
+      },
+    ];
+    for (const { source, reason } of cases) {
+      assert.throws(
+        () => validateDiagramSource(source, "mermaid"),
+        (error: unknown) => {
+          assert.ok(error instanceof DiagramValidationError);
+          assert.match(error.reason, reason);
+          return true;
+        },
+        source,
+      );
+      assert.equal(detectDiagramType(source), null, source);
+    }
+  });
+});

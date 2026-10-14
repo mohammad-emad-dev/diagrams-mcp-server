@@ -5,6 +5,7 @@ import { MAX_EXPORT_HTML_BYTES, toPosixPath } from "../constants.js";
 import type { DiagramType } from "../types.js";
 import { buildExportBundle } from "../services/export/htmlBundle.js";
 import { renderDiagramWithProvenance } from "../services/renderer.js";
+import type { RenderResult } from "../services/renderer.js";
 import { handleRenderError, handleToolError } from "./toolError.js";
 
 const InputSchema = z
@@ -30,6 +31,56 @@ type Input = z.infer<typeof InputSchema>;
 // runs safeParse on the input schema before the handler sees the arguments,
 // which is what applies the default include_source above.
 export const diagramsExportInputSchema = InputSchema;
+
+interface ExportResponseRequest {
+  params: Input;
+  source: string;
+  type: DiagramType;
+  rendered: RenderResult;
+}
+
+function formatExportResponse({ params, source, type, rendered }: ExportResponseRequest) {
+  const { buffer, renderedWith } = rendered;
+  const { html, svgChars } = buildExportBundle({
+    relativePath: params.relative_path,
+    diagramType: type,
+    svg: buffer.toString("utf-8"),
+    source: params.include_source ? source : null,
+    renderedWith,
+  });
+
+  // A bundle is one whole artifact or nothing: the cap is checked on the
+  // finished document, so a caller never saves a diagram with half its
+  // rendering. The message names the ceiling and the diagram, never the
+  // source or any absolute path.
+  const byteLength = Buffer.byteLength(html, "utf-8");
+  if (byteLength > MAX_EXPORT_HTML_BYTES) {
+    const message =
+      `Error: The export bundle for '${toPosixPath(params.relative_path)}' is ` +
+      `${byteLength} bytes, larger than the ${MAX_EXPORT_HTML_BYTES}-byte limit, so ` +
+      `it was not returned. Split or simplify the diagram, then export it again.`;
+    return {
+      content: [{ type: "text" as const, text: message }],
+      isError: true,
+    };
+  }
+
+  const output = {
+    relative_path: toPosixPath(params.relative_path),
+    diagram_type: type,
+    format: "html" as const,
+    bytes: byteLength,
+    svg_chars: svgChars,
+    source_included: params.include_source,
+    truncated: false as const,
+    rendered_with: renderedWith,
+  };
+
+  return {
+    content: [{ type: "text" as const, text: html }],
+    structuredContent: output,
+  };
+}
 
 export function registerDiagramsExport(server: McpServer, ctx: ServerContext): void {
   server.registerTool(
@@ -91,51 +142,8 @@ Error Handling:
         return handleToolError("diagrams_export", err);
       }
       try {
-        const { buffer, renderedWith } = await renderDiagramWithProvenance(
-          content,
-          type,
-          "svg",
-          ctx.rendererDeps,
-        );
-        const { html, svgChars } = buildExportBundle({
-          relativePath: params.relative_path,
-          diagramType: type,
-          svg: buffer.toString("utf-8"),
-          source: params.include_source ? content : null,
-          renderedWith,
-        });
-
-        // A bundle is one whole artifact or nothing: the cap is checked on the
-        // finished document, so a caller never saves a diagram with half its
-        // rendering. The message names the ceiling and the diagram, never the
-        // source or any absolute path.
-        const byteLength = Buffer.byteLength(html, "utf-8");
-        if (byteLength > MAX_EXPORT_HTML_BYTES) {
-          const message =
-            `Error: The export bundle for '${toPosixPath(params.relative_path)}' is ` +
-            `${byteLength} bytes, larger than the ${MAX_EXPORT_HTML_BYTES}-byte limit, so ` +
-            `it was not returned. Split or simplify the diagram, then export it again.`;
-          return {
-            content: [{ type: "text" as const, text: message }],
-            isError: true,
-          };
-        }
-
-        const output = {
-          relative_path: toPosixPath(params.relative_path),
-          diagram_type: type,
-          format: "html" as const,
-          bytes: byteLength,
-          svg_chars: svgChars,
-          source_included: params.include_source,
-          truncated: false as const,
-          rendered_with: renderedWith,
-        };
-
-        return {
-          content: [{ type: "text" as const, text: html }],
-          structuredContent: output,
-        };
+        const rendered = await renderDiagramWithProvenance(content, type, "svg", ctx.rendererDeps);
+        return formatExportResponse({ params, source: content, type, rendered });
       } catch (err: unknown) {
         return handleRenderError("diagrams_export", err);
       }

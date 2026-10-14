@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { MAX_GENERATE_ENTITIES, MAX_GENERATE_RELATIONS, toPosixPath } from "../constants.js";
-import type { GenerateDeps } from "../services/generate/collectEntities.js";
+import type { GenerateDeps, EntityCollectionResult } from "../services/generate/types.js";
 import { collectScopeEntities } from "../services/generate/collectEntities.js";
 import { emitDiagram } from "../services/generate/emitters.js";
 import { MAX_SCAN_FILES } from "../services/consistencyChecker/scanning.js";
@@ -63,6 +63,51 @@ const HEURISTIC_WARNING =
 /** Map the wire dialect to the store's diagram type. */
 function diagramTypeFor(format: "puml" | "mermaid"): "plantuml" | "mermaid" {
   return format === "puml" ? "plantuml" : "mermaid";
+}
+
+interface GenerateResultRequest {
+  scope: string;
+  format: "puml" | "mermaid";
+  entityLimit: number;
+  collected: EntityCollectionResult;
+  source: string;
+}
+
+function formatGenerateResult({
+  scope,
+  format,
+  entityLimit,
+  collected,
+  source,
+}: GenerateResultRequest) {
+  const output = {
+    scope,
+    format,
+    source,
+    entities: collected.entities,
+    entities_included: collected.entities.length,
+    entities_available: collected.entitiesAvailable,
+    entities_capped: collected.entitiesDropped > 0,
+    entity_limit: entityLimit,
+    relations: collected.relations,
+    relations_included: collected.relations.length,
+    relations_available: collected.relationsAvailable,
+    relations_capped: collected.relationsDropped > 0,
+    relation_limit: MAX_GENERATE_RELATIONS,
+    files_scanned: collected.filesScanned,
+    truncated: collected.truncated,
+    scan_limit: collected.scanLimit,
+    scan_warning: collected.scanWarning,
+    dialect_note: collected.dialectNote,
+    confidence: "heuristic" as const,
+    heuristic_warning: HEURISTIC_WARNING,
+    written: false as const,
+  };
+
+  return {
+    content: [{ type: "text" as const, text: source }],
+    structuredContent: output,
+  };
 }
 
 export function registerDiagramsGenerate(
@@ -157,34 +202,13 @@ Error Handling:
         // diagrams_create enforces, so the output can be saved as-is.
         validateDiagramSource(source, diagramType);
 
-        const output = {
+        return formatGenerateResult({
           scope: toPosixPath(scope.relativePath),
           format: params.format,
+          entityLimit,
+          collected,
           source,
-          entities: collected.entities,
-          entities_included: collected.entities.length,
-          entities_available: collected.entitiesAvailable,
-          entities_capped: collected.entitiesDropped > 0,
-          entity_limit: entityLimit,
-          relations: collected.relations,
-          relations_included: collected.relations.length,
-          relations_available: collected.relationsAvailable,
-          relations_capped: collected.relationsDropped > 0,
-          relation_limit: MAX_GENERATE_RELATIONS,
-          files_scanned: collected.filesScanned,
-          truncated: collected.truncated,
-          scan_limit: collected.scanLimit,
-          scan_warning: collected.scanWarning,
-          dialect_note: collected.dialectNote,
-          confidence: "heuristic" as const,
-          heuristic_warning: HEURISTIC_WARNING,
-          written: false as const,
-        };
-
-        return {
-          content: [{ type: "text" as const, text: source }],
-          structuredContent: output,
-        };
+        });
       } catch (err: unknown) {
         return handleToolError("diagrams_generate", err);
       }

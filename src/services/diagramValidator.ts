@@ -98,9 +98,8 @@ function validatePlantUml(content: string): void {
   }
 }
 
-function firstMeaningfulMermaidLines(content: string): string[] {
+function firstMeaningfulMermaidLine(content: string): string | undefined {
   const lines = content.split(/\r?\n/);
-  const meaningful: string[] = [];
   let index = 0;
 
   const isSkippable = (trimmed: string): boolean =>
@@ -116,18 +115,18 @@ function firstMeaningfulMermaidLines(content: string): string[] {
       index += 1;
     }
     if (index >= lines.length) {
-      return [];
+      return undefined;
     }
     index += 1;
   }
 
-  for (; index < lines.length; index += 1) {
-    const trimmed = lines[index].trim();
-    if (!isSkippable(trimmed)) {
-      meaningful.push(trimmed);
-    }
+  while (index < lines.length && isSkippable(lines[index].trim())) {
+    index += 1;
   }
-  return meaningful;
+  if (index >= lines.length) {
+    return undefined;
+  }
+  return lines[index].trim();
 }
 
 function mermaidFirstToken(line: string): string {
@@ -157,15 +156,15 @@ function isKnownMermaidStarter(token: string): boolean {
 }
 
 function validateMermaid(content: string): void {
-  const meaningful = firstMeaningfulMermaidLines(content);
-  if (meaningful.length === 0) {
+  const firstLine = firstMeaningfulMermaidLine(content);
+  if (firstLine === undefined) {
     throw new DiagramValidationError(
       "mermaid",
       "no diagram declaration found. Mermaid diagrams must start with a known " +
         `diagram type such as ${MERMAID_STARTER_HINT}.`,
     );
   }
-  const token = mermaidFirstToken(meaningful[0]);
+  const token = mermaidFirstToken(firstLine);
   if (!isKnownMermaidStarter(token)) {
     throw new DiagramValidationError(
       "mermaid",
@@ -206,8 +205,8 @@ export function detectDiagramType(content: string): DiagramType | null {
   if (startIndex !== -1 && endIndex > startIndex) {
     return "plantuml";
   }
-  const meaningful = firstMeaningfulMermaidLines(content);
-  if (meaningful.length > 0 && isKnownMermaidStarter(mermaidFirstToken(meaningful[0]))) {
+  const firstLine = firstMeaningfulMermaidLine(content);
+  if (firstLine !== undefined && isKnownMermaidStarter(mermaidFirstToken(firstLine))) {
     return "mermaid";
   }
   return null;
