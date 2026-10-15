@@ -23,6 +23,7 @@ const EXPECTED_TOOLS = [
   "diagrams_list",
   "diagrams_list_templates",
   "diagrams_render",
+  "diagrams_save_export",
   "diagrams_template",
   "diagrams_update",
 ];
@@ -142,7 +143,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 13 tools", async () => {
+  it("discovers all 14 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });
@@ -1128,11 +1129,48 @@ describe("MCP stdio integration (dist/index.js)", () => {
       assert.ok(!textOf(badExport).includes(projectRoot));
       assert.ok(!textOf(badExport).includes(DIAGRAM_V1));
       assert.ok(!/mmdc|plantuml|rendering requires/i.test(textOf(badExport)));
+
+      const badSave = await callTool("diagrams_save_export", {
+        relative_path: fixture,
+        output_path: "exports/strict-save.html",
+        bogus_unknown_field: "boom",
+      });
+      assert.equal(badSave.isError, true);
+      assert.match(textOf(badSave), /bogus_unknown_field/);
+      assert.ok(!textOf(badSave).includes(projectRoot));
+      assert.ok(!textOf(badSave).includes(DIAGRAM_V1));
+      assert.ok(!/mmdc|plantuml|rendering requires/i.test(textOf(badSave)));
+      await assert.rejects(fs.access(path.join(diagramsDir, "exports", "strict-save.html")), {
+        code: "ENOENT",
+      });
     } finally {
       await callTool("diagrams_delete", { relative_path: fixture });
     }
     const relisted = await callTool("diagrams_list", { type_filter: "all" });
     assert.equal((relisted.structuredContent as { count: number }).count, 0);
+  });
+
+  it("advertises diagrams_save_export as a writing, open-world tool", async () => {
+    const { tools } = await getClient().listTools();
+    const save = tools.find((tool) => tool.name === "diagrams_save_export");
+    assert.ok(save, "diagrams_save_export must be discoverable");
+    assert.equal(save.annotations?.readOnlyHint, false);
+    assert.equal(save.annotations?.destructiveHint, false);
+    assert.equal(save.annotations?.idempotentHint, false);
+    assert.equal(save.annotations?.openWorldHint, true);
+  });
+
+  it("rejects diagrams_save_export for a missing diagram without writing", async () => {
+    const result = await callTool("diagrams_save_export", {
+      relative_path: "models/missing-save.puml",
+      output_path: "exports/missing-save.html",
+    });
+
+    assert.equal(result.isError, true);
+    assert.match(textOf(result), /No diagram found at 'models\/missing-save\.puml'/);
+    await assert.rejects(fs.access(path.join(diagramsDir, "exports", "missing-save.html")), {
+      code: "ENOENT",
+    });
   });
 
   it("recognizes short operation names in consistency and call-order comparison over stdio", async () => {

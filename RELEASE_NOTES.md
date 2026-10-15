@@ -1,3 +1,22 @@
+# Release notes — Unreleased
+
+New: `diagrams_save_export` adds a fourteenth MCP tool. It saves the same
+self-contained HTML bundle `diagrams_export` returns (SVG as a base64 data
+image under `default-src 'none'; img-src data:; style-src 'unsafe-inline';
+base-uri 'none'; form-action 'none'`) inside the diagrams root as a `.html`
+file. Inputs are `relative_path`, `output_path` (`.html`, case-insensitive),
+and `include_source` (default `true`); there is no overwrite option and the
+response carries only a short acknowledgement plus `relative_path`,
+`output_path`, `diagram_type`, `format`, `bytes`, `svg_chars`,
+`source_included`, `truncated: false`, and `rendered_with`. The bundle is
+measured against the existing 5,000,000-byte cap before any directory or file
+is created, and existing targets are refused atomically. Writes go through the
+new `DiagramStore.writeHtmlExport` path only; diagram `read`/`write`/`delete`/
+`list`/`exists` gates still reject `.html`, and `diagrams_export` keeps its
+read-only response and cap behavior unchanged.
+
+---
+
 # Release notes — 0.8.0
 
 Package, runtime, lockfile, and registry metadata are aligned to `0.8.0`.

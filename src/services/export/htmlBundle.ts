@@ -131,3 +131,18 @@ export function buildExportBundle(input: BundleInput): ExportBundle {
     svgChars: imageSvg.length,
   };
 }
+
+/** Bundle plus its UTF-8 size, so export and save-export measure the same bytes. */
+export interface SizedExportBundle extends ExportBundle {
+  /** UTF-8 byte length of `html`, the value the export cap enforces. */
+  byteLength: number;
+}
+
+/**
+ * Build the bundle and measure it in one step. Both export tools use this so
+ * the capped size is always the finished HTML document, never the raw SVG.
+ */
+export function buildSizedExportBundle(input: BundleInput): SizedExportBundle {
+  const bundle = buildExportBundle(input);
+  return { ...bundle, byteLength: Buffer.byteLength(bundle.html, "utf-8") };
+}

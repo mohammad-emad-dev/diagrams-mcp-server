@@ -4,11 +4,13 @@
 // secrets, or absolute paths.
 
 import {
+  HtmlExportExistsError,
   DiagramExistsError,
   DiagramNotFoundError,
   DiagramValidationError,
   PathTraversalError,
   UnsupportedDiagramExtensionError,
+  UnsupportedHtmlExportExtensionError,
 } from "../services/diagramStore.js";
 import { RenderError } from "../services/renderer.js";
 import { ScopeEscapeError } from "../services/scopeResolve.js";
@@ -64,7 +66,9 @@ export function isExpectedToolError(err: unknown): err is Error {
     err instanceof PathTraversalError ||
     err instanceof DiagramValidationError ||
     err instanceof DiagramExistsError ||
+    err instanceof HtmlExportExistsError ||
     err instanceof UnsupportedDiagramExtensionError ||
+    err instanceof UnsupportedHtmlExportExtensionError ||
     err instanceof ScopeEscapeError ||
     err instanceof RenderError ||
     err instanceof CustomTemplateError ||

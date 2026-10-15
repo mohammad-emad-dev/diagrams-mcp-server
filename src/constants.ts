@@ -103,7 +103,7 @@ export const MAX_TEMPLATE_SCAN_ENTRIES = 1_000;
 // Bound repeated call arrays when optional diagram call-order comparison is enabled.
 export const MAX_DIFF_ORDER_CALLS = 10_000;
 
-// Largest HTML bundle diagrams_export returns. A bundle is one whole artifact or
+// Largest HTML bundle diagrams_export returns and diagrams_save_export saves. A bundle is one whole artifact or
 // nothing at all: over-cap is an error, never a cut file, so a caller never
 // saves a diagram with half its rendering. Matches MAX_REMOTE_BODY_BYTES, the
 // same memory bound the renderer already applies to a fetched SVG.
