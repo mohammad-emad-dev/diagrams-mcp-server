@@ -1,3 +1,13 @@
+# Unreleased
+
+- AST-backed TypeScript sequence generation excludes inline callback bodies
+  passed to constructors, using the same policy as ordinary call arguments.
+  Eager constructor arguments remain direct; constructor names are not emitted.
+  This is conservative static evidence, not a claim of asynchronous execution.
+  The non-AST fallback is unchanged.
+
+---
+
 # Release notes — 0.8.0
 
 Package, runtime, lockfile, and registry metadata are aligned to `0.8.0`.
