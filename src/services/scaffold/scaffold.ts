@@ -1,11 +1,13 @@
-// Pure code-from-diagram scaffold: heuristic entity names to empty TypeScript classes.
-// No filesystem, no rendering, no network, no execution. The candidate list
-// comes from the existing diagram entity extractor unchanged, so this module
-// never parses a dialect itself; it only filters, caps, and emits.
+// Candidate names retain the shared extractor's behavior in both scaffold modes.
 
 import { MAX_ENTITY_NAME_CHARS, MAX_SCAFFOLD_SOURCE_BYTES } from "../../constants.js";
 import type { DiagramType } from "../../types.js";
 import { extractEntities } from "../consistencyChecker/entities.js";
+import {
+  MAX_SCAFFOLD_MEMBERS_PER_CLASS,
+  extractScaffoldMembers,
+  type ScaffoldMember,
+} from "./members.js";
 
 /** Diagram source larger than the scaffold byte cap. Rejected before extraction. */
 export class ScaffoldSourceTooLargeError extends Error {
@@ -94,6 +96,17 @@ export const SCAFFOLD_HEURISTIC_WARNING =
   "field types, relations, or runtime behavior. Review every name before saving; remove or " +
   "rename anything that is not a type you intend to implement, then save it as TypeScript yourself.";
 
+export const SCAFFOLD_MEMBERS_HEURISTIC_WARNING =
+  "Scaffold members are a heuristic subset from plain class NAME { ... } blocks only " +
+  "(bare ASCII names; no quotes, aliases, generics, or stereotypes). Fields emit as " +
+  "`name: unknown;` and methods as throwing stubs " +
+  "`name(..._args: unknown[]): unknown`, so every type is unknown, argument and return " +
+  "labels are ignored, and visibility/static/readonly/abstract modifiers are lost. " +
+  "Unsupported lines, note bodies, comments, constructors, initializers, relations, and " +
+  "runtime behavior are skipped, never executed or emitted. Review every name and member " +
+  "before saving; remove or rename anything you do not intend to implement, then save it " +
+  "as TypeScript yourself.";
+
 const SCAFFOLD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** True when a candidate can be emitted bare as an exported class name. */
@@ -133,6 +146,27 @@ function emitScaffoldSource(names: string[]): string {
   return `${names.map((name) => `export class ${name} {}`).join("\n\n")}\n`;
 }
 
+function emitScaffoldSourceWithMembers(
+  names: string[],
+  membersByClass: Map<string, ScaffoldMember[]>,
+): string {
+  if (names.length === 0) return "";
+  const blocks = names.map((name) => {
+    const members = membersByClass.get(name) ?? [];
+    if (members.length === 0) return `export class ${name} {}`;
+    // A literal cannot be shadowed by diagram classes named Error or globalThis.
+    const body = members
+      .map((member) =>
+        member.kind === "field"
+          ? `  ${member.name}: unknown;`
+          : `  ${member.name}(..._args: unknown[]): unknown { throw "Not implemented"; }`,
+      )
+      .join("\n");
+    return `export class ${name} {\n${body}\n}`;
+  });
+  return `${blocks.join("\n\n")}\n`;
+}
+
 export interface ScaffoldResult {
   /** Emitted names, capped to the requested limit. */
   entities: string[];
@@ -147,6 +181,12 @@ export interface ScaffoldResult {
   skippedCount: number;
   /** The emitted TypeScript source; identical to the tool text block. */
   source: string;
+}
+
+export interface ScaffoldWithMembersResult extends ScaffoldResult {
+  membersIncluded: number;
+  membersCapped: boolean;
+  memberLimit: number;
 }
 
 function assertScaffoldSourceSize(source: string): void {
@@ -179,5 +219,24 @@ export function buildScaffold(
     skippedEntities: skipped,
     skippedCount: skipped.length,
     source: emitScaffoldSource(emitted),
+  };
+}
+
+export function buildScaffoldWithMembers(
+  source: string,
+  type: DiagramType,
+  maxEntities: number,
+): ScaffoldWithMembersResult {
+  const scaffold = buildScaffold(source, type, maxEntities);
+  const { membersByClass, membersCapped } = extractScaffoldMembers(source, type, scaffold.entities);
+  return {
+    ...scaffold,
+    source: emitScaffoldSourceWithMembers(scaffold.entities, membersByClass),
+    membersIncluded: [...membersByClass.values()].reduce(
+      (total, members) => total + members.length,
+      0,
+    ),
+    membersCapped,
+    memberLimit: MAX_SCAFFOLD_MEMBERS_PER_CLASS,
   };
 }

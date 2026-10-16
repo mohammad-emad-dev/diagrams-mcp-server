@@ -7,7 +7,13 @@ import {
   MAX_SCAFFOLD_SOURCE_BYTES,
   toPosixPath,
 } from "../constants.js";
-import { buildScaffold, SCAFFOLD_HEURISTIC_WARNING } from "../services/scaffold/scaffold.js";
+import {
+  buildScaffold,
+  buildScaffoldWithMembers,
+  SCAFFOLD_HEURISTIC_WARNING,
+  SCAFFOLD_MEMBERS_HEURISTIC_WARNING,
+} from "../services/scaffold/scaffold.js";
+import { MAX_SCAFFOLD_MEMBERS_PER_CLASS } from "../services/scaffold/members.js";
 import { handleToolError } from "./toolError.js";
 
 const InputSchema = z
@@ -26,6 +32,13 @@ const InputSchema = z
         `Hard cap on emitted TypeScript classes, an integer between 1 and ${MAX_GENERATE_ENTITIES} (default: 30). ` +
           `The applied cap is reported as entity_limit; anything past it is counted in entities_available and flagged by entities_capped.`,
       ),
+    include_members: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Opt-in heuristic member stubs from plain class NAME { ... } blocks only (default: false). " +
+          "False keeps empty classes with no new keys; true adds throwing stubs plus members metadata.",
+      ),
   })
   .strict();
 
@@ -43,13 +56,20 @@ export function registerDiagramsScaffold(server: McpServer, ctx: ServerContext):
       title: "Scaffold TypeScript Classes from a Diagram",
       description: `Draft empty exported TypeScript classes from the entity-name candidates in a stored PlantUML or Mermaid diagram, returning source text to review and then save yourself.
 
-This reads heuristic entity-name candidates through the existing extractor unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as charge. It does NOT recover class kinds, members, field types, relations, or runtime behavior. Every result says so with confidence "heuristic" plus a heuristic_warning; review the draft before saving it as TypeScript yourself.
+This reads heuristic entity-name candidates through the existing extractor unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as charge. By default (include_members=false) it does NOT recover class kinds, members, field types, relations, or runtime behavior. Every result says so with confidence "heuristic" plus a heuristic_warning; review the draft before saving it as TypeScript yourself.
 
-It never writes, renders, fetches, or executes: one traversal-protected store read, pure filtering and emission, no new dependencies. Nothing lands outside the response until you save it with an explicit write.
+With include_members=true, simple top-level multiline class NAME { blocks can add member stubs. Names must be bare ASCII identifiers; quoted, aliased, generic, nested, or decorated classes are outside this subset. The first substantive line must be @startuml (PlantUML) or classDiagram (Mermaid).
+
+Supported members: optional +, -, #, or ~ visibility; fields name: Type, Type name, or bare name; methods name(args) with an optional single-token return label, or PlantUML Type name(args). Fields become unknown; methods accept ..._args: unknown[], return unknown, and throw the literal "Not implemented". Argument names, types, modifiers, and bodies are not recovered. Member names use the same ASCII identifier grammar and length cap as class names; constructor and prototype are excluded. Duplicate names keep their first occurrence across field/method collisions and repeated class blocks.
+
+Unsupported syntax is skipped, including constructors, initializers, implementation bodies, relationships, and external Class : member notation. Whole-line comments, PlantUML block comments, and note bodies are ignored. Each emitted class receives at most ${MAX_SCAFFOLD_MEMBERS_PER_CLASS} members; members_capped reports an additional recognized unique name beyond that limit. This is a heuristic subset, not a full parser.
+
+It never writes, renders, fetches, or executes: one traversal-protected store read, pure filtering and emission, no new dependencies. Nothing lands outside the response until you save it with an explicit write. Still read-only with include_members=true.
 
 Args:
   - relative_path (string, required): Path to the diagram, relative to the diagrams root
   - max_entities (integer 1-${MAX_GENERATE_ENTITIES}, default 30): Hard cap on emitted classes
+  - include_members (boolean, default false): Opt-in heuristic member stubs plus members metadata
 
 Returns:
   JSON with schema:
@@ -65,8 +85,13 @@ Returns:
     "skipped_entities": string[],        // invalid or reserved candidates, independent of the cap
     "skipped_count": number,             // length of "skipped_entities"
     "confidence": "heuristic",
-    "heuristic_warning": string,         // candidate-only limitations; review the draft before saving
-    "written": false                     // always false; save the source yourself
+    "heuristic_warning": string,         // candidate-only limitations by default; member-mode limitations when include_members=true
+    "written": false,                    // always false; save the source yourself
+    // include_members=true only:
+    // "include_members": true,
+    // "members_included": number,       // total emitted field+method stubs across emitted classes
+    // "members_capped": boolean,        // true when a 31st unique supported member was found
+    // "member_limit": ${MAX_SCAFFOLD_MEMBERS_PER_CLASS}  // fixed per-class member cap
   }
 
   Names are emitted only when they match /^[A-Za-z_][A-Za-z0-9_]*$/ at most ${MAX_ENTITY_NAME_CHARS} characters and avoid reserved and TypeScript-forbidden class names. Other candidates are listed in skipped_entities without further renaming. An empty candidate set returns empty source.
@@ -74,7 +99,8 @@ Returns:
 Examples:
   - Use when: "Draft class shells for the names in this diagram" -> relative_path="models/order.puml"
   - Use when: "Give me TypeScript stubs for the Mermaid model" -> relative_path="models/order.mmd", max_entities=10
-  - Don't use when: You want members, types, or relations (out of scope; this emits empty classes only)
+  - Use when: "Draft shells with heuristic member stubs" -> relative_path="models/order.puml", include_members=true
+  - Don't use when: You want full members, types, or relations (out of scope; default emits empty classes only, opt-in emits heuristic unknown-typed throwing stubs only)
   - Don't use when: You want a diagram from code (use diagrams_generate)
 
 Error Handling:
@@ -96,8 +122,11 @@ Error Handling:
       try {
         const { content, type } = await ctx.diagramStore.read(params.relative_path);
 
-        const built = buildScaffold(content, type, params.max_entities);
-        const output = {
+        const memberDraft = params.include_members
+          ? buildScaffoldWithMembers(content, type, params.max_entities)
+          : undefined;
+        const built = memberDraft ?? buildScaffold(content, type, params.max_entities);
+        const base = {
           relative_path: toPosixPath(params.relative_path),
           language: "typescript" as const,
           source: built.source,
@@ -109,9 +138,20 @@ Error Handling:
           skipped_entities: built.skippedEntities,
           skipped_count: built.skippedCount,
           confidence: "heuristic" as const,
-          heuristic_warning: SCAFFOLD_HEURISTIC_WARNING,
+          heuristic_warning: params.include_members
+            ? SCAFFOLD_MEMBERS_HEURISTIC_WARNING
+            : SCAFFOLD_HEURISTIC_WARNING,
           written: false as const,
         };
+        const output = memberDraft
+          ? {
+              ...base,
+              include_members: true as const,
+              members_included: memberDraft.membersIncluded,
+              members_capped: memberDraft.membersCapped,
+              member_limit: memberDraft.memberLimit,
+            }
+          : base;
 
         return {
           content: [{ type: "text" as const, text: built.source }],
