@@ -37,7 +37,8 @@ kinds, members, field types, relations, and runtime behavior are not
 recovered. Only `^[A-Za-z_][A-Za-z0-9_]*$` names at most 60 characters outside
 the reserved and TypeScript-forbidden set are emitted; the rest are reported in
 `skipped_entities`/`skipped_count` without renaming. Valid candidates before
-the 60-cap are counted in `entities_available`; over-cap UTF-8 sources above
+the requested cap (default 30, maximum 60) are counted in `entities_available`;
+over-cap UTF-8 sources above
 1,000,000 bytes are rejected before extraction. Empty candidate sets succeed
 with empty source. Members, relations, and additional languages remain open.
 
