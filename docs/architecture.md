@@ -1,6 +1,6 @@
 # Architecture
 
-Describes the repository as released in 0.8.0. CLI dispatch lives in
+Describes the current checkout, including the unreleased HTML export saving tool after 0.8.0. CLI dispatch lives in
 `src/index.ts`; MCP construction lives in `src/server.ts`
 (`createDiagramServer`).
 
@@ -13,8 +13,8 @@ cleanup, local verification results, and remaining release checks.
 MCP client (stdio)
   -> src/index.ts main()            # CLI dispatch: setup | --help | serve
   -> src/context.ts                 # one ServerContext for the process
-  -> src/server.ts                  # createDiagramServer(ctx): builds McpServer, registers 13 tools
-  -> src/tools/diagrams*.ts         # 13 tool adapters, one file per tool
+  -> src/server.ts                  # createDiagramServer(ctx): builds McpServer, registers 14 tools
+  -> src/tools/diagrams*.ts         # 14 tool adapters, one file per tool
   -> src/services/*                 # filesystem, analysis, rendering, emitters
   -> src/tools/toolError.ts         # expected vs. unexpected error mapping
 ```
@@ -22,7 +22,7 @@ MCP client (stdio)
 `main()` serves by: `createServerContext()`, `diagramStore.ensureRootExists()`,
 `createDiagramServer(ctx)`, then `server.connect(new StdioServerTransport())`.
 `createDiagramServer` builds `new McpServer({ name: "diagrams-mcp-server",
-... })`, runs the thirteen `registerDiagrams*` calls, and returns the server.
+... })`, runs the fourteen `registerDiagrams*` calls, and returns the server.
 `setup` dispatches to `runSetup` in `src/setup/index.ts` (clients, prompts,
 terminal helpers in the same directory); `--help` / `-h` prints help and exits.
 
@@ -65,8 +65,8 @@ One adapter per tool, each exporting `registerDiagrams*(server, ctx)` — except
 `diagramsTemplate.ts`, whose `registerDiagramsTemplate(server, ctx?)` takes an
 optional context: built-in skeletons are pure (no store, no project root, no
 state), while `template="custom"` reads one file under `ctx.codeRootDir`.
-`createDiagramServer` passes `ctx` through. `diagramsExport.ts` reads the optional `ctx.rendererDeps` seam so the
-render step is unit-testable without a CLI or the network.
+`createDiagramServer` passes `ctx` through. Both `diagramsExport.ts` and `diagramsSaveExport.ts` read the optional `ctx.rendererDeps` seam so the
+render step is testable without a CLI or the network.
 
 | Tool                         | Adapter                       |
 | ---------------------------- | ----------------------------- |
@@ -77,6 +77,7 @@ render step is unit-testable without a CLI or the network.
 | `diagrams_delete`            | `diagramsDelete.ts`           |
 | `diagrams_render`            | `diagramsRender.ts`           |
 | `diagrams_export`            | `diagramsExport.ts`           |
+| `diagrams_save_export`       | `diagramsSaveExport.ts`       |
 | `diagrams_check_consistency` | `diagramsCheckConsistency.ts` |
 | `diagrams_generate`          | `diagramsGenerate.ts`         |
 | `diagrams_generate_sequence` | `diagramsGenerateSequence.ts` |
@@ -91,7 +92,7 @@ source tools return their source as text, report tools return a summary, and
 `toolOutput.test.ts` file next to the adapters tests the content/structured
 contract through captured registrations.
 
-Introduced in 0.8.0: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 13 tools and verify rejected mutation requests leave files unchanged.
+Introduced in 0.8.0: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 14 tools in the current checkout and verify rejected mutation requests leave files unchanged.
 
 `diagramsDiff.ts` delegates its input schema, validation, and side loading to
 `diffInput.ts`, and its text summaries to `diffSummary.ts`. Validation runs
@@ -232,7 +233,7 @@ exit code. New tests need no package-script edits. Build before testing.
 Lint and formatting checks cover both `src/` and `scripts/`.
 
 `src/integration/mcpServer.test.ts` drives the compiled `dist/index.js`
-over real stdio with the SDK client and asserts the thirteen names in
+over real stdio with the SDK client and asserts the fourteen names in
 `EXPECTED_TOOLS`; rendering stays stubbed or discovery-only there.
 
 Renderer tests give `TEMP`, `TMP`, and `TMPDIR` a file-owned temporary
@@ -267,3 +268,5 @@ directory so parallel test workers cannot interfere with cleanup assertions.
 6. Add colocated unit tests (`*.test.ts`) and extend `EXPECTED_TOOLS` in
    `src/integration/mcpServer.test.ts` when the server surface changes. Add a
    README table row when a tool ships.
+
+Unreleased after 0.8.0: `diagrams_save_export` (`diagramsSaveExport.ts`) saves a self-contained HTML bundle through the dedicated `DiagramStore.writeHtmlExport` method. This path accepts only `.html`, creates files exclusively, and leaves the normal diagram extension gates intact. Both export tools use the same bundle builder and UTF-8 byte limit; only the explicit save tool writes. Export files are excluded from normal diagram listing and CRUD.
