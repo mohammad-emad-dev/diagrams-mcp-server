@@ -121,6 +121,12 @@ generation and additionally reports `include_types`, `typed_fields`, and
 `unresolved_fields`. It preserves only explicit supported field labels;
 method signatures and runtime behavior remain unrecovered.
 
+`include_relations` additionally enables typed members and reports
+`include_relations`, `relations_included`, `relations_skipped`,
+`relations_capped`, and `relation_limit`. It handles only labeled top-level
+`-->` links between plain declared classes that were emitted. Prior modes
+keep their source and response shapes when this flag is false or omitted.
+
 ## Services (`src/services/`)
 
 - `diagramStore.ts` — filesystem CRUD rooted at one directory; paths escaping
@@ -229,6 +235,9 @@ method signatures and runtime behavior remain unrecovered.
 - `scaffold/scaffold.ts` — unreleased after 0.8.0, pure code-from-diagram draft: `buildScaffold` checks the 1,000,000 UTF-8 byte cap before calling the shared `extractEntities` unchanged, partitions candidates into emittable and skipped names (identifier grammar, 60 chars, conservative reserved set, order-preserving dedupe), caps valid names, and emits `export class Name {}` blocks. `ScaffoldSourceTooLargeError` is an expected error in `toolError.ts`. No filesystem, rendering, network, or execution.
 - `scaffold/members.ts` — unreleased after 0.8.0, opt-in subset parser for plain multiline class blocks in PlantUML and Mermaid class diagrams. Only emitted class names receive descriptors, at most 30 unique member names per class. Member-only mode emits `unknown` fields; methods discard signature details and throw until implemented. Unsupported syntax is skipped. Defaults still emit empty shells; the unknown-member mode ignores type labels. Neither mode recovers relations or behavior.
 - `buildScaffoldWithTypes` adds explicit field-label preservation over the same bounded member extraction, resolved through `scaffold/fieldTypes.ts`. Labels are retained only up to 62 characters; accepted types are `string`, `number`, `boolean`, `bigint`, or selected emitted class names, optionally with one array suffix. Accepted fields receive definite-assignment markers; unresolved labels stay `unknown`. No initializer values, imports, relationship inference, or method-type recovery are generated.
+- `scaffold/diagramLines.ts` shares the existing dialect-header, comment, note and brace handling. `scaffoldDiagramLines` feeds the member parser; `topLevelScaffoldLines` excludes block contents for relationship scanning. Moving these helpers preserves the existing member modes.
+- `scaffold/relations.ts` adds bounded named-arrow fields through `appendScaffoldRelations`: first collect explicit plain class declarations among emitted names, then scan labeled `Owner --> Target : role` links. Supported quoted target multiplicities (`*`, `0..*`, `1..*`) yield arrays. It copies member arrays, preserves body members, and appends the first eligible field per role. Limits are 30 total members per class and 300 appended relationship fields; counts continue after caps without retaining an edge list. Unsupported syntax and non-top-level lines do not count as candidates.
+- `buildScaffoldWithRelations` checks the existing source cap, parses members once, appends the relationship fields, and shares typed finalization with `buildScaffoldWithTypes`. Role names use the same member-name validation. It provides no runtime values, inheritance, ownership or cardinality enforcement; warnings identify these limits.
 
 Introduced in 0.8.0, `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
 

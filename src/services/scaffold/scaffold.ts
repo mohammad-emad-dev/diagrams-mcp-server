@@ -7,7 +7,9 @@ import {
   MAX_SCAFFOLD_MEMBERS_PER_CLASS,
   extractScaffoldMembers,
   type ScaffoldMember,
+  type ScaffoldMembersResult,
 } from "./members.js";
+import { MAX_SCAFFOLD_RELATIONS, appendScaffoldRelations } from "./relations.js";
 import { resolveTypedFieldType } from "./fieldTypes.js";
 
 /** Diagram source larger than the scaffold byte cap. Rejected before extraction. */
@@ -117,6 +119,16 @@ export const SCAFFOLD_TYPES_HEURISTIC_WARNING =
   "`name(..._args: unknown[]): unknown`, so argument and return labels are ignored, and visibility/static/readonly/abstract " +
   "modifiers are lost. Unsupported lines, note bodies, comments, constructors, initializers, relations, and runtime behavior " +
   "are skipped, never executed or emitted. Review every name, member, and type before saving; remove or rename anything you do " +
+  "not intend to implement, then save it as TypeScript yourself.";
+
+export const SCAFFOLD_RELATIONS_HEURISTIC_WARNING =
+  "Scaffold relations are a heuristic role-label subset from top-level `Owner --> Target : role` lines only " +
+  '(bare ASCII names; optional right-target multiplicity "*", "0..*", or "1..*" for Target[]; no other arrows, ' +
+  "multiplicities, labels, aliases, generics, or unlabeled relations). Role fields emit as `role!: Target;` or " +
+  "`role!: Target[];` with no initializers, constructors, runtime values, or supplied relations; methods remain throwing stubs " +
+  "`name(..._args: unknown[]): unknown`. Existing members win name conflicts, and undeclared or non-emitted endpoints are skipped. " +
+  "No inheritance, composition, or semantic inference is performed. Unsupported lines, note bodies, comments, and runtime behavior " +
+  "are skipped, never executed or emitted. Review every name, member, type, and relation before saving; remove or rename anything you do " +
   "not intend to implement, then save it as TypeScript yourself.";
 
 const SCAFFOLD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -283,7 +295,21 @@ export function buildScaffoldWithTypes(
   maxEntities: number,
 ): ScaffoldWithTypesResult {
   const scaffold = buildScaffold(source, type, maxEntities);
-  const { membersByClass, membersCapped } = extractScaffoldMembers(source, type, scaffold.entities);
+  const members = extractScaffoldMembers(source, type, scaffold.entities);
+  return finalizeTypedScaffold(scaffold, members);
+}
+
+export interface ScaffoldWithRelationsResult extends ScaffoldWithTypesResult {
+  relationsIncluded: number;
+  relationsSkipped: number;
+  relationsCapped: boolean;
+  relationLimit: number;
+}
+
+function finalizeTypedScaffold(
+  scaffold: ScaffoldResult,
+  { membersByClass, membersCapped }: ScaffoldMembersResult,
+): ScaffoldWithTypesResult {
   const emitted = new Set(scaffold.entities);
   let typedFields = 0;
   let unresolvedFields = 0;
@@ -307,5 +333,36 @@ export function buildScaffoldWithTypes(
     memberLimit: MAX_SCAFFOLD_MEMBERS_PER_CLASS,
     typedFields,
     unresolvedFields,
+  };
+}
+
+/**
+ * Build a typed scaffold with optional named-association fields. Reuses the
+ * base candidate flow and a single member parse; relation fields are appended
+ * after body members, then the shared typed finalizer emits the result.
+ */
+export function buildScaffoldWithRelations(
+  source: string,
+  type: DiagramType,
+  maxEntities: number,
+): ScaffoldWithRelationsResult {
+  const scaffold = buildScaffold(source, type, maxEntities);
+  const { membersByClass, membersCapped } = extractScaffoldMembers(source, type, scaffold.entities);
+  const relations = appendScaffoldRelations({
+    source,
+    type,
+    entities: scaffold.entities,
+    membersByClass,
+  });
+  const typed = finalizeTypedScaffold(scaffold, {
+    membersByClass: relations.membersByClass,
+    membersCapped: membersCapped || relations.membersCapped,
+  });
+  return {
+    ...typed,
+    relationsIncluded: relations.relationsIncluded,
+    relationsSkipped: relations.relationsSkipped,
+    relationsCapped: relations.relationsCapped,
+    relationLimit: MAX_SCAFFOLD_RELATIONS,
   };
 }

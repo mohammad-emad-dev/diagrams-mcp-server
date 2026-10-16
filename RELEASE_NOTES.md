@@ -2,6 +2,17 @@
 
 Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0).
 
+`diagrams_scaffold` adds `include_relations` (default `false`), implying typed
+member generation. Labeled top-level `Owner --> Target : role` links between
+explicit plain declared and emitted classes become typed fields; supported
+target multiplicities `"*"`, `"0..*"`, `"1..*"` yield arrays. Body members win
+conflicts, then the first accepted role wins. Limits are 30 total members per
+class and 300 appended relationship fields per result. New relationship counts
+and cap metadata report recognized candidates that were added or skipped.
+Unsupported arrows, notes, comments and nested blocks are ignored. Existing
+modes retain their outputs; no runtime values, inheritance or semantic recovery
+are introduced. Comment/note/scope scanning is shared by members and relations.
+
 `diagrams_scaffold` also accepts `include_types` (default `false`), which implies
 member generation. It retains explicit field labels from the supported subset:
 `string`, `number`, `boolean`, `bigint`, or an emitted class name, optionally with
@@ -10,7 +21,7 @@ runtime initializer. Missing/unsupported labels and references to non-emitted
 classes fall back to `unknown`. Type-mode responses add `include_types: true`,
 `typed_fields`, and `unresolved_fields` alongside member metadata. Methods stay
 unknown stubs. Existing modes remain unchanged; no semantic type inference or
-relationships are added.
+relationship inference is added by field-type mode.
 
 `diagrams_scaffold` now accepts `include_members` (default `false`). Opt-in mode
 drafts fields as `unknown` and methods as throwing stubs from a limited grammar
@@ -61,7 +72,7 @@ the requested cap (default 30, maximum 60) are counted in `entities_available`;
 over-cap UTF-8 sources above
 1,000,000 bytes are rejected before extraction. Empty candidate sets succeed
 with empty source. The optional member mode above adds limited stubs;
-broader member syntax, type recovery, relations, and additional languages remain open.
+broader member syntax, richer types, broader relationships, and additional languages remain open.
 
 ---
 

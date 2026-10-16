@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
+import type { DiagramType } from "../types.js";
 import {
   MAX_ENTITY_NAME_CHARS,
   MAX_GENERATE_ENTITIES,
@@ -11,11 +12,14 @@ import {
   buildScaffold,
   buildScaffoldWithMembers,
   buildScaffoldWithTypes,
+  buildScaffoldWithRelations,
   SCAFFOLD_HEURISTIC_WARNING,
   SCAFFOLD_MEMBERS_HEURISTIC_WARNING,
   SCAFFOLD_TYPES_HEURISTIC_WARNING,
+  SCAFFOLD_RELATIONS_HEURISTIC_WARNING,
 } from "../services/scaffold/scaffold.js";
 import { MAX_SCAFFOLD_MEMBERS_PER_CLASS } from "../services/scaffold/members.js";
+import { MAX_SCAFFOLD_RELATIONS } from "../services/scaffold/relations.js";
 import { handleToolError } from "./toolError.js";
 
 const InputSchema = z
@@ -39,16 +43,23 @@ const InputSchema = z
       .default(false)
       .describe(
         "Opt-in heuristic member stubs from plain class NAME { ... } blocks only (default: false). " +
-          "False keeps empty classes with no new keys; true adds throwing stubs plus members metadata.",
+          "With other opt-ins disabled, false keeps empty classes with no new keys; true adds throwing stubs plus members metadata.",
       ),
     include_types: z
       .boolean()
       .default(false)
       .describe(
         "Opt-in heuristic field types for member stubs (default: false). " +
-          "True implies include_members=true with no invalid combinations; false adds no new keys. " +
+          "True implies include_members=true; with relations disabled, false adds no new keys. " +
           "True resolves field labels to string, number, boolean, bigint, or exactly an emitted class name, " +
           "optionally with one [] suffix, emitting accepted fields as name!: Type and all other fields as name: unknown.",
+      ),
+    include_relations: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Opt-in named association fields (default: false). Implies include_types and include_members. " +
+          "Only labeled --> relations between explicitly declared, emitted plain classes are used; no inheritance or runtime values.",
       ),
   })
   .strict();
@@ -60,6 +71,22 @@ type Input = z.infer<typeof InputSchema>;
 // which is what applies the default above.
 export const diagramsScaffoldInputSchema = InputSchema;
 
+function buildRequestedScaffold(content: string, type: DiagramType, params: Input) {
+  const relationDraft = params.include_relations
+    ? buildScaffoldWithRelations(content, type, params.max_entities)
+    : undefined;
+  const typedDraft =
+    relationDraft ??
+    (params.include_types ? buildScaffoldWithTypes(content, type, params.max_entities) : undefined);
+  const memberDraft =
+    typedDraft ??
+    (params.include_members
+      ? buildScaffoldWithMembers(content, type, params.max_entities)
+      : undefined);
+  const built = memberDraft ?? buildScaffold(content, type, params.max_entities);
+  return { built, relationDraft, typedDraft, memberDraft };
+}
+
 export function registerDiagramsScaffold(server: McpServer, ctx: ServerContext): void {
   server.registerTool(
     "diagrams_scaffold",
@@ -67,15 +94,21 @@ export function registerDiagramsScaffold(server: McpServer, ctx: ServerContext):
       title: "Scaffold TypeScript Classes from a Diagram",
       description: `Draft empty exported TypeScript classes from the entity-name candidates in a stored PlantUML or Mermaid diagram, returning source text to review and then save yourself.
 
-This reads heuristic entity-name candidates through the existing extractor unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as charge. By default (include_members=false) it does NOT recover class kinds, members, field types, relations, or runtime behavior. Every result says so with confidence "heuristic" plus a heuristic_warning; review the draft before saving it as TypeScript yourself.
+This reads heuristic entity-name candidates through the existing extractor unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as charge. By default (all opt-in flags false) it does NOT recover class kinds, members, field types, relations, or runtime behavior. Every result says so with confidence "heuristic" plus a heuristic_warning; review the draft before saving it as TypeScript yourself.
 
 With include_members=true, simple top-level multiline class NAME { blocks can add member stubs. Names must be bare ASCII identifiers; quoted, aliased, generic, nested, or decorated classes are outside this subset. The first substantive line must be @startuml (PlantUML) or classDiagram (Mermaid).
 
 Supported members: optional +, -, #, or ~ visibility; fields name: Type, Type name, or bare name; methods name(args) with an optional single-token return label, or PlantUML Type name(args). Without include_types, fields become unknown; methods accept ..._args: unknown[], return unknown, and throw the literal "Not implemented". Argument names, types, modifiers, and bodies are not recovered. Member names use the same ASCII identifier grammar and length cap as class names; constructor and prototype are excluded. Duplicate names keep their first occurrence across field/method collisions and repeated class blocks.
 
-Unsupported syntax is skipped, including constructors, initializers, implementation bodies, relationships, and external Class : member notation. Whole-line comments, PlantUML block comments, and note bodies are ignored. Each emitted class receives at most ${MAX_SCAFFOLD_MEMBERS_PER_CLASS} members; members_capped reports an additional recognized unique name beyond that limit. This is a heuristic subset, not a full parser.
+Unsupported syntax is skipped, including constructors, initializers, implementation bodies, and external Class : member notation. Whole-line comments, PlantUML block comments, and note bodies are ignored. Each emitted class receives at most ${MAX_SCAFFOLD_MEMBERS_PER_CLASS} members; members_capped reports an additional recognized unique name beyond that limit. This is a heuristic subset, not a full parser.
 
 With include_types=true (which implies include_members=true), accepted field labels resolve to a strict case-sensitive subset only: string, number, boolean, bigint, or exactly an emitted class name, optionally with one [] suffix. Surrounding whitespace is trimmed but inner whitespace invalidates; there is no alias mapping and no any/unknown/null/undefined/void, unions, generics, objects, functions, qualified names, or nested arrays. Classes past max_entities, skipped candidates, and nonexistent classes fall back to unknown. Accepted fields emit as name!: Type (definite assignment for strict TypeScript); every other emitted field keeps the member-mode name: unknown;. Methods stay literal throwing stubs with no recovered params or returns. Class references are heuristic labels only, with no supplied runtime value or relations claimed. typed_fields counts accepted emitted fields and unresolved_fields counts emitted fields falling back to unknown (never methods or skipped/over-cap members).
+
+With include_relations=true, typed members are enabled even if include_types/include_members are false. Top-level Owner --> Target : role links become role!: Target;. Optional target multiplicity before Target (quoted *, 0..*, or 1..*) becomes role!: Target[];. Both endpoints must be selected emitted classes and independently declared plain top-level class NAME, class NAME { multiline blocks, or class NAME {} empty blocks. No endpoint classes are invented. Alias/quoted/generic/nested/implicit declarations and other arrows, multiplicities or free-text/unlabeled links are outside this subset.
+
+Role names use the member identifier rules. Body fields/methods win collisions regardless of edge position, then the first accepted role wins. Relation fields follow body members. Comments, note bodies and nested blocks are ignored. At most ${MAX_SCAFFOLD_RELATIONS} relationship fields are appended, within the existing class member cap. Recognized arrow lines not added (missing endpoints, invalid role, conflicts, duplicates or limits) increment relations_skipped. Unsupported grammar does not count. A novel candidate refused by either cap sets relations_capped; a class cap also sets members_capped. These are heuristic proposed fields, not recovered ownership, inheritance, runtime values or enforced cardinality.
+
+Relation mode additionally returns include_relations:true, relations_included, relations_skipped, relations_capped, relation_limit. Type/member counts include appended fields. False or omitted include_relations preserves the three existing source and response modes.
 
 It never writes, renders, fetches, or executes: one traversal-protected store read, pure filtering and emission, no new dependencies. Nothing lands outside the response until you save it with an explicit write. Still read-only with include_members=true or include_types=true.
 
@@ -84,6 +117,7 @@ Args:
   - max_entities (integer 1-${MAX_GENERATE_ENTITIES}, default 30): Hard cap on emitted classes
   - include_members (boolean, default false): Opt-in heuristic member stubs plus members metadata
   - include_types (boolean, default false): Opt-in heuristic field types; true implies include_members=true plus typed metadata
+  - include_relations (boolean, default false): Named-arrow fields; implies include_types and include_members
 
 Returns:
   JSON with schema:
@@ -119,6 +153,7 @@ Examples:
   - Use when: "Give me TypeScript stubs for the Mermaid model" -> relative_path="models/order.mmd", max_entities=10
   - Use when: "Draft shells with heuristic member stubs" -> relative_path="models/order.puml", include_members=true
   - Use when: "Draft stubs with heuristic field types" -> relative_path="models/order.puml", include_types=true
+  - Use when: "Draft fields from named arrows between my declared classes" -> relative_path="models/order.mmd", include_relations=true
   - Don't use when: You want full members, types, or relations (out of scope; default emits empty classes only, opt-in emits heuristic unknown-typed throwing stubs only, typed opt-in emits only the strict scalar/emitted-class subset with unknown fallback)
   - Don't use when: You want a diagram from code (use diagrams_generate)
 
@@ -141,15 +176,11 @@ Error Handling:
       try {
         const { content, type } = await ctx.diagramStore.read(params.relative_path);
 
-        const typedDraft = params.include_types
-          ? buildScaffoldWithTypes(content, type, params.max_entities)
-          : undefined;
-        const memberDraft =
-          typedDraft ??
-          (params.include_members
-            ? buildScaffoldWithMembers(content, type, params.max_entities)
-            : undefined);
-        const built = memberDraft ?? buildScaffold(content, type, params.max_entities);
+        const { built, relationDraft, typedDraft, memberDraft } = buildRequestedScaffold(
+          content,
+          type,
+          params,
+        );
         const base = {
           relative_path: toPosixPath(params.relative_path),
           language: "typescript" as const,
@@ -162,11 +193,13 @@ Error Handling:
           skipped_entities: built.skippedEntities,
           skipped_count: built.skippedCount,
           confidence: "heuristic" as const,
-          heuristic_warning: typedDraft
-            ? SCAFFOLD_TYPES_HEURISTIC_WARNING
-            : memberDraft
-              ? SCAFFOLD_MEMBERS_HEURISTIC_WARNING
-              : SCAFFOLD_HEURISTIC_WARNING,
+          heuristic_warning: relationDraft
+            ? SCAFFOLD_RELATIONS_HEURISTIC_WARNING
+            : typedDraft
+              ? SCAFFOLD_TYPES_HEURISTIC_WARNING
+              : memberDraft
+                ? SCAFFOLD_MEMBERS_HEURISTIC_WARNING
+                : SCAFFOLD_HEURISTIC_WARNING,
           written: false as const,
         };
         const output = {
@@ -184,6 +217,15 @@ Error Handling:
                 include_types: true as const,
                 typed_fields: typedDraft.typedFields,
                 unresolved_fields: typedDraft.unresolvedFields,
+              }
+            : {}),
+          ...(relationDraft
+            ? {
+                include_relations: true as const,
+                relations_included: relationDraft.relationsIncluded,
+                relations_skipped: relationDraft.relationsSkipped,
+                relations_capped: relationDraft.relationsCapped,
+                relation_limit: relationDraft.relationLimit,
               }
             : {}),
         };
