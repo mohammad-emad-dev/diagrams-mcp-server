@@ -2,6 +2,15 @@
 
 Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0).
 
+`diagrams_scaffold` now accepts `include_members` (default `false`). Opt-in mode
+drafts fields as `unknown` and methods as throwing stubs from a limited grammar
+of plain multiline PlantUML/Mermaid class blocks. It discards types, arguments,
+modifiers, and implementation text. Only selected emitted classes receive
+members, capped at 30 unique names per class. Opt-in responses add
+`include_members: true`, `members_included`, `members_capped`, and `member_limit`.
+Default source and response fields remain unchanged; both modes remain read-only.
+Unsupported syntax, relationships, and runtime behavior are not recovered.
+
 New: `diagrams_save_export` adds a fourteenth MCP tool. It saves the same
 self-contained HTML bundle `diagrams_export` returns (SVG as a base64 data
 image under `default-src 'none'; img-src data:; style-src 'unsafe-inline';
@@ -31,7 +40,7 @@ the existing `extractEntities(source, type)` unchanged, and emits
 or execution. Save the emitted TypeScript yourself manually, never via
 `diagrams_create`.
 
-Candidate-only draft limits: names may include aliases, namespaces,
+Default candidate-only draft limits: names may include aliases, namespaces,
 components, participants, and call names such as `charge`; class
 kinds, members, field types, relations, and runtime behavior are not
 recovered. Only `^[A-Za-z_][A-Za-z0-9_]*$` names at most 60 characters outside
@@ -40,7 +49,8 @@ the reserved and TypeScript-forbidden set are emitted; the rest are reported in
 the requested cap (default 30, maximum 60) are counted in `entities_available`;
 over-cap UTF-8 sources above
 1,000,000 bytes are rejected before extraction. Empty candidate sets succeed
-with empty source. Members, relations, and additional languages remain open.
+with empty source. The optional member mode above adds limited stubs;
+broader member syntax, type recovery, relations, and additional languages remain open.
 
 ---
 

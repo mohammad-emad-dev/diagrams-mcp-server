@@ -64,7 +64,7 @@ Fifteen tools in five groups (thirteen released in 0.8.0 plus `diagrams_save_exp
 
 | Tool | What it does |
 |---|---|
-| `diagrams_scaffold` | **Unreleased after 0.8.0: draft empty exported TypeScript classes from the heuristic entity-name candidates in a stored diagram** — candidate-only draft, nothing written |
+| `diagrams_scaffold` | **Unreleased after 0.8.0: draft exported TypeScript class shells from a stored diagram**, optionally with field and method stubs — heuristic draft, nothing written |
 
 ### Tool notes
 
@@ -128,7 +128,11 @@ Introduced in 0.8.0: `template="custom"` with `custom_template="<id>"` loads `<P
 
 #### `diagrams_scaffold` (unreleased after 0.8.0)
 
-`diagrams_scaffold` is the code-from-diagram starter: **give it a stored diagram path and it hands back empty exported TypeScript classes, one per heuristic entity-name candidate, to review and save yourself manually as TypeScript, never via `diagrams_create`.** It reads one diagram through the traversal-protected store and reuses the existing `extractEntities(source, type)` unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as `charge`. It does NOT recover class kinds, members, field types, relations, or runtime behavior. Every result carries `confidence: "heuristic"` with a `heuristic_warning` stating these limits; review the draft before saving.
+`diagrams_scaffold` is the code-from-diagram starter: **give it a stored diagram path and it hands back exported TypeScript class shells, one per heuristic entity-name candidate, to review and save yourself manually as TypeScript, never via `diagrams_create`.** It reads one diagram through the traversal-protected store and reuses the existing `extractEntities(source, type)` unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as `charge`. By default the classes are empty and the response shape is unchanged. Every result carries `confidence: "heuristic"` with a `heuristic_warning`; class kinds, field types, relations, and runtime behavior are not recovered.
+
+Unreleased after 0.8.0: set `include_members: true` to draft fields and methods from simple top-level multiline `class Name {` blocks in PlantUML or Mermaid `classDiagram`. This subset accepts bare class names, field names with type labels (`id: string` or `string id`), and method names with argument lists (`submit(payment)`), optionally prefixed with `+`, `-`, `#`, or `~`. Fields become `id: unknown;`; methods accept `..._args: unknown[]`, return `unknown`, and throw `"Not implemented"`. Type labels, argument declarations, modifiers, and implementations are discarded. Unsupported syntax is skipped; this is not a full diagram parser. Quoted/aliased/generic/nested class declarations, external `Class : member` declarations, relationships, and constructors are not recovered.
+
+For example, call `diagrams_scaffold({ "relative_path": "models/order.mmd", "include_members": true })`. The opt-in response adds `include_members: true`, `members_included` (total emitted fields and methods), `members_capped`, and `member_limit: 30`. Each emitted class gets at most 30 unique member names in encounter order; a name shared by a field and method keeps its first occurrence. The cap flag reports additional recognized unique names, not unsupported syntax. Omitting the flag or passing `false` keeps the original empty-class source and omits these extra fields. Review every stub before saving; methods intentionally fail until implemented.
 
 Names are emitted only when they match `/^[A-Za-z_][A-Za-z0-9_]*$/` at most 60 characters and avoid reserved and TypeScript-forbidden class names (strict reserved words plus `eval`/`arguments`/`any`/`unknown`/`never`/`number`/`string`/`boolean`/`symbol`/`object`/`undefined`/`bigint` and related keywords). Anything else is never renamed: it is listed in `skipped_entities`/`skipped_count` independently of the emission cap. Ordering and dedupe follow the extractor; the cap applies to valid names only. An empty candidate set succeeds with empty source, not placeholder classes. The scaffold limits are listed under [Scaffold limits](#scaffold-limits).
 
@@ -548,8 +552,9 @@ Every `diagrams_scaffold` run (unreleased after 0.8.0) observes these caps. `max
 | Emitted classes | 60 declarations | `entities_available` reports the valid candidates before the cap and `entities_capped` is true when any were dropped; `entity_limit` reports the applied cap |
 | Diagram source size | 1,000,000 UTF-8 bytes | a larger source is refused with `isError: true` naming the byte ceiling; nothing partial is returned or extracted |
 | Entity name shape | identifier at most 60 chars, no reserved names | invalid or reserved candidates are listed in `skipped_entities`/`skipped_count` independently of the cap, never renamed |
+| Members per emitted class (opt-in) | 30 unique names | `member_limit` reports 30; `members_included` totals emitted members and `members_capped` reports a recognized name beyond a class limit |
 
-The scaffold is a candidate-only draft: names come from the shared diagram extractor (declarations, aliases, namespaces, components, participants, call names), not from recovered types. Class kinds, members, field types, relations, and runtime behavior are out of scope. An empty candidate set succeeds with empty source and the heuristic warning, not placeholder classes.
+Names come from the shared diagram extractor (declarations, aliases, namespaces, components, participants, call names), not from recovered types. Default classes are empty; `include_members` adds only the limited member stubs described above. Class kinds, field types, relations, and runtime behavior are not recovered. An empty candidate set succeeds with empty source and the heuristic warning, not placeholder classes.
 
 ### Export limits
 
@@ -617,7 +622,8 @@ src/
 │   ├── scopeResolve.ts            # Bounds read-only tool scopes to PROJECT_ROOT
 │   ├── *.test.ts                   # Colocated service tests: store, validator, renderer, scope, normalize, checker
 │   ├── scaffold/                  # diagrams_scaffold candidate filtering and TypeScript emission (unreleased after 0.8.0)
-│   │   └── scaffold.ts            # Pure buildScaffold over shared extractEntities plus ScaffoldSourceTooLargeError
+│   │   ├── scaffold.ts            # Pure buildScaffold over shared extractEntities plus ScaffoldSourceTooLargeError
+│   │   └── members.ts             # Optional bounded class-member subset parser
 │   ├── consistencyChecker/        # Diagram <-> code drift detection
 │   │   ├── index.ts               # checkConsistency orchestration (scan, match, report)
 │   │   ├── fileAnalysis.ts        # Read and analyze bounded code files
@@ -694,11 +700,11 @@ Implemented in the unpublished 0.7.0 development wave, included in 0.8.0 (see [R
 
 Unreleased after 0.8.0, partially delivering code-from-diagram scaffolding:
 
-- `diagrams_scaffold` drafts empty exported TypeScript classes from heuristic entity-name candidates (aliases, namespaces, components, participants, and call names). It does NOT recover class kinds, members, field types, relations, or runtime behavior. Members, relations, and additional languages remain open.
+- `diagrams_scaffold` drafts exported TypeScript classes from heuristic entity-name candidates (aliases, namespaces, components, participants, and call names). Optional `include_members` adds unknown fields and throwing method stubs from a limited class-block grammar. Class kinds, field types, relations, and runtime behavior are not recovered.
 
 Still open:
 
-- Code-from-diagram follow-ups: members, relations, and languages beyond the initial TypeScript empty-class draft
+- Code-from-diagram follow-ups: broader member syntax and type recovery, relations, and languages beyond TypeScript
 - AST-backed precision for more languages, as demand dictates
 - Export hardening follow-up: introduced in 0.8.0, image isolation replaces live-SVG export; the historical allowlist-sanitizer proposal in `docs/next-features.md` is not implemented (tracked there)
 

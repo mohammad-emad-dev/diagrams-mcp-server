@@ -112,9 +112,11 @@ Formatting stays inside each adapter's existing error boundary.
 `diagramsCheckConsistency.ts` also keeps report formatting private to the
 adapter, including evidence field names, summary branches, and scan warnings.
 Unreleased after 0.8.0, `diagramsScaffold.ts` reads one stored diagram, builds
-empty TypeScript classes through `services/scaffold/scaffold.ts`, and reports
-candidate-only counts with a heuristic warning; the text block is the emitted
-source itself.
+TypeScript class shells through `services/scaffold/scaffold.ts`, and reports
+candidate counts with a heuristic warning; the text block is the emitted
+source itself. `include_members` defaults to false. Opt-in results also report
+`include_members`, `members_included`, `members_capped`, and `member_limit`;
+default results retain their existing shape.
 
 ## Services (`src/services/`)
 
@@ -222,6 +224,7 @@ source itself.
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
   byte-identical output. Introduced in 0.8.0: `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
 - `scaffold/scaffold.ts` — unreleased after 0.8.0, pure code-from-diagram draft: `buildScaffold` checks the 1,000,000 UTF-8 byte cap before calling the shared `extractEntities` unchanged, partitions candidates into emittable and skipped names (identifier grammar, 60 chars, conservative reserved set, order-preserving dedupe), caps valid names, and emits `export class Name {}` blocks. `ScaffoldSourceTooLargeError` is an expected error in `toolError.ts`. No filesystem, rendering, network, or execution.
+- `scaffold/members.ts` — unreleased after 0.8.0, opt-in subset parser for plain multiline class blocks in PlantUML and Mermaid class diagrams. Only emitted class names receive descriptors, at most 30 unique member names per class. Fields emit `unknown`; methods discard signature details and throw until implemented. Unsupported syntax is skipped. Defaults still emit empty shells; neither mode recovers types, relations, or behavior.
 
 Introduced in 0.8.0, `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
 

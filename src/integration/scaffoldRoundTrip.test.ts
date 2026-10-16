@@ -55,6 +55,46 @@ it("drafts class shells from a generated and stored diagram through the MCP SDK"
     assert.deepEqual(await fs.readdir(path.join(root, "src-code")), ["model.ts"]);
     assert.equal(await fs.readFile(path.join(root, "src-code", "model.ts"), "utf8"), code);
     assert.equal(await fs.readFile(path.join(diagramsRoot, "model.mmd"), "utf8"), diagram);
+
+    const memberDiagram = "classDiagram\nclass Order {\n+id: string\n+submit(payment) bool\n}\n";
+    const createdMembers = await client.callTool({
+      name: "diagrams_create",
+      arguments: { relative_path: "order.mmd", content: memberDiagram },
+    });
+    assert.equal(createdMembers.isError, undefined);
+    const emptyMemberDraft = await client.callTool({
+      name: "diagrams_scaffold",
+      arguments: { relative_path: "order.mmd", include_members: false },
+    });
+    assert.equal(emptyMemberDraft.isError, undefined);
+    assert.equal(
+      (emptyMemberDraft.structuredContent as Record<string, unknown>).source,
+      "export class Order {}\n",
+    );
+    assert.equal(
+      Object.hasOwn(emptyMemberDraft.structuredContent as object, "members_included"),
+      false,
+    );
+    const memberDraft = await client.callTool({
+      name: "diagrams_scaffold",
+      arguments: { relative_path: "order.mmd", include_members: true },
+    });
+    assert.equal(memberDraft.isError, undefined);
+    const members = memberDraft.structuredContent as Record<string, unknown>;
+    assert.equal(members.include_members, true);
+    assert.equal(members.members_included, 2);
+    assert.equal(members.member_limit, 30);
+    assert.equal(members.members_capped, false);
+    assert.equal(members.written, false);
+    assert.match(members.source as string, /id: unknown;/);
+    assert.match(members.source as string, /submit\(\.\.\._args: unknown\[\]\): unknown/);
+    assert.match(members.source as string, /throw "Not implemented"/);
+    assert.equal((memberDraft.content as Array<{ text: string }>)[0].text, members.source);
+    assert.equal(Object.hasOwn(summary, "members_included"), false);
+    assert.equal(Object.hasOwn(summary, "include_members"), false);
+    assert.deepEqual((await fs.readdir(diagramsRoot)).sort(), ["model.mmd", "order.mmd"]);
+    assert.equal(await fs.readFile(path.join(diagramsRoot, "order.mmd"), "utf8"), memberDiagram);
+    assert.equal(await fs.readFile(path.join(root, "src-code", "model.ts"), "utf8"), code);
   } finally {
     await client.close();
     await server.close();

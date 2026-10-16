@@ -1,7 +1,11 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { MAX_ENTITY_NAME_CHARS, MAX_SCAFFOLD_SOURCE_BYTES } from "../../constants.js";
-import { buildScaffold, ScaffoldSourceTooLargeError } from "./scaffold.js";
+import {
+  buildScaffold,
+  buildScaffoldWithMembers,
+  ScaffoldSourceTooLargeError,
+} from "./scaffold.js";
 import type { DiagramType } from "../../types.js";
 
 async function codeDiagnostics(code: string): Promise<number[]> {
@@ -148,7 +152,9 @@ describe("scaffold service", () => {
     const diagram = prefix + "é".repeat(Math.floor(padding / 2)) + " ".repeat(padding % 2) + suffix;
     assert.equal(Buffer.byteLength(diagram, "utf8"), MAX_SCAFFOLD_SOURCE_BYTES);
     assert.ok(diagram.length < MAX_SCAFFOLD_SOURCE_BYTES);
-    assert.deepEqual(buildScaffold(diagram, "plantuml", 30).entities, ["A"]);
-    assert.throws(() => buildScaffold(diagram + "x", "plantuml", 30), ScaffoldSourceTooLargeError);
+    for (const build of [buildScaffold, buildScaffoldWithMembers]) {
+      assert.deepEqual(build(diagram, "plantuml", 30).entities, ["A"]);
+      assert.throws(() => build(diagram + "x", "plantuml", 30), ScaffoldSourceTooLargeError);
+    }
   });
 });
