@@ -10,8 +10,10 @@ import {
 import {
   buildScaffold,
   buildScaffoldWithMembers,
+  buildScaffoldWithTypes,
   SCAFFOLD_HEURISTIC_WARNING,
   SCAFFOLD_MEMBERS_HEURISTIC_WARNING,
+  SCAFFOLD_TYPES_HEURISTIC_WARNING,
 } from "../services/scaffold/scaffold.js";
 import { MAX_SCAFFOLD_MEMBERS_PER_CLASS } from "../services/scaffold/members.js";
 import { handleToolError } from "./toolError.js";
@@ -39,6 +41,15 @@ const InputSchema = z
         "Opt-in heuristic member stubs from plain class NAME { ... } blocks only (default: false). " +
           "False keeps empty classes with no new keys; true adds throwing stubs plus members metadata.",
       ),
+    include_types: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Opt-in heuristic field types for member stubs (default: false). " +
+          "True implies include_members=true with no invalid combinations; false adds no new keys. " +
+          "True resolves field labels to string, number, boolean, bigint, or exactly an emitted class name, " +
+          "optionally with one [] suffix, emitting accepted fields as name!: Type and all other fields as name: unknown.",
+      ),
   })
   .strict();
 
@@ -60,16 +71,19 @@ This reads heuristic entity-name candidates through the existing extractor uncha
 
 With include_members=true, simple top-level multiline class NAME { blocks can add member stubs. Names must be bare ASCII identifiers; quoted, aliased, generic, nested, or decorated classes are outside this subset. The first substantive line must be @startuml (PlantUML) or classDiagram (Mermaid).
 
-Supported members: optional +, -, #, or ~ visibility; fields name: Type, Type name, or bare name; methods name(args) with an optional single-token return label, or PlantUML Type name(args). Fields become unknown; methods accept ..._args: unknown[], return unknown, and throw the literal "Not implemented". Argument names, types, modifiers, and bodies are not recovered. Member names use the same ASCII identifier grammar and length cap as class names; constructor and prototype are excluded. Duplicate names keep their first occurrence across field/method collisions and repeated class blocks.
+Supported members: optional +, -, #, or ~ visibility; fields name: Type, Type name, or bare name; methods name(args) with an optional single-token return label, or PlantUML Type name(args). Without include_types, fields become unknown; methods accept ..._args: unknown[], return unknown, and throw the literal "Not implemented". Argument names, types, modifiers, and bodies are not recovered. Member names use the same ASCII identifier grammar and length cap as class names; constructor and prototype are excluded. Duplicate names keep their first occurrence across field/method collisions and repeated class blocks.
 
 Unsupported syntax is skipped, including constructors, initializers, implementation bodies, relationships, and external Class : member notation. Whole-line comments, PlantUML block comments, and note bodies are ignored. Each emitted class receives at most ${MAX_SCAFFOLD_MEMBERS_PER_CLASS} members; members_capped reports an additional recognized unique name beyond that limit. This is a heuristic subset, not a full parser.
 
-It never writes, renders, fetches, or executes: one traversal-protected store read, pure filtering and emission, no new dependencies. Nothing lands outside the response until you save it with an explicit write. Still read-only with include_members=true.
+With include_types=true (which implies include_members=true), accepted field labels resolve to a strict case-sensitive subset only: string, number, boolean, bigint, or exactly an emitted class name, optionally with one [] suffix. Surrounding whitespace is trimmed but inner whitespace invalidates; there is no alias mapping and no any/unknown/null/undefined/void, unions, generics, objects, functions, qualified names, or nested arrays. Classes past max_entities, skipped candidates, and nonexistent classes fall back to unknown. Accepted fields emit as name!: Type (definite assignment for strict TypeScript); every other emitted field keeps the member-mode name: unknown;. Methods stay literal throwing stubs with no recovered params or returns. Class references are heuristic labels only, with no supplied runtime value or relations claimed. typed_fields counts accepted emitted fields and unresolved_fields counts emitted fields falling back to unknown (never methods or skipped/over-cap members).
+
+It never writes, renders, fetches, or executes: one traversal-protected store read, pure filtering and emission, no new dependencies. Nothing lands outside the response until you save it with an explicit write. Still read-only with include_members=true or include_types=true.
 
 Args:
   - relative_path (string, required): Path to the diagram, relative to the diagrams root
   - max_entities (integer 1-${MAX_GENERATE_ENTITIES}, default 30): Hard cap on emitted classes
   - include_members (boolean, default false): Opt-in heuristic member stubs plus members metadata
+  - include_types (boolean, default false): Opt-in heuristic field types; true implies include_members=true plus typed metadata
 
 Returns:
   JSON with schema:
@@ -85,13 +99,17 @@ Returns:
     "skipped_entities": string[],        // invalid or reserved candidates, independent of the cap
     "skipped_count": number,             // length of "skipped_entities"
     "confidence": "heuristic",
-    "heuristic_warning": string,         // candidate-only limitations by default; member-mode limitations when include_members=true
+    "heuristic_warning": string,         // candidate-only limitations by default; member-mode limitations when include_members=true; typed-mode limitations when include_types=true
     "written": false,                    // always false; save the source yourself
     // include_members=true only:
     // "include_members": true,
     // "members_included": number,       // total emitted field+method stubs across emitted classes
     // "members_capped": boolean,        // true when a 31st unique supported member was found
     // "member_limit": ${MAX_SCAFFOLD_MEMBERS_PER_CLASS}  // fixed per-class member cap
+    // include_types=true only (implies the member keys above):
+    // "include_types": true,
+    // "typed_fields": number,          // emitted fields with an accepted type label (name!: Type)
+    // "unresolved_fields": number      // emitted fields falling back to name: unknown
   }
 
   Names are emitted only when they match /^[A-Za-z_][A-Za-z0-9_]*$/ at most ${MAX_ENTITY_NAME_CHARS} characters and avoid reserved and TypeScript-forbidden class names. Other candidates are listed in skipped_entities without further renaming. An empty candidate set returns empty source.
@@ -100,7 +118,8 @@ Examples:
   - Use when: "Draft class shells for the names in this diagram" -> relative_path="models/order.puml"
   - Use when: "Give me TypeScript stubs for the Mermaid model" -> relative_path="models/order.mmd", max_entities=10
   - Use when: "Draft shells with heuristic member stubs" -> relative_path="models/order.puml", include_members=true
-  - Don't use when: You want full members, types, or relations (out of scope; default emits empty classes only, opt-in emits heuristic unknown-typed throwing stubs only)
+  - Use when: "Draft stubs with heuristic field types" -> relative_path="models/order.puml", include_types=true
+  - Don't use when: You want full members, types, or relations (out of scope; default emits empty classes only, opt-in emits heuristic unknown-typed throwing stubs only, typed opt-in emits only the strict scalar/emitted-class subset with unknown fallback)
   - Don't use when: You want a diagram from code (use diagrams_generate)
 
 Error Handling:
@@ -122,9 +141,14 @@ Error Handling:
       try {
         const { content, type } = await ctx.diagramStore.read(params.relative_path);
 
-        const memberDraft = params.include_members
-          ? buildScaffoldWithMembers(content, type, params.max_entities)
+        const typedDraft = params.include_types
+          ? buildScaffoldWithTypes(content, type, params.max_entities)
           : undefined;
+        const memberDraft =
+          typedDraft ??
+          (params.include_members
+            ? buildScaffoldWithMembers(content, type, params.max_entities)
+            : undefined);
         const built = memberDraft ?? buildScaffold(content, type, params.max_entities);
         const base = {
           relative_path: toPosixPath(params.relative_path),
@@ -138,20 +162,31 @@ Error Handling:
           skipped_entities: built.skippedEntities,
           skipped_count: built.skippedCount,
           confidence: "heuristic" as const,
-          heuristic_warning: params.include_members
-            ? SCAFFOLD_MEMBERS_HEURISTIC_WARNING
-            : SCAFFOLD_HEURISTIC_WARNING,
+          heuristic_warning: typedDraft
+            ? SCAFFOLD_TYPES_HEURISTIC_WARNING
+            : memberDraft
+              ? SCAFFOLD_MEMBERS_HEURISTIC_WARNING
+              : SCAFFOLD_HEURISTIC_WARNING,
           written: false as const,
         };
-        const output = memberDraft
-          ? {
-              ...base,
-              include_members: true as const,
-              members_included: memberDraft.membersIncluded,
-              members_capped: memberDraft.membersCapped,
-              member_limit: memberDraft.memberLimit,
-            }
-          : base;
+        const output = {
+          ...base,
+          ...(memberDraft
+            ? {
+                include_members: true as const,
+                members_included: memberDraft.membersIncluded,
+                members_capped: memberDraft.membersCapped,
+                member_limit: memberDraft.memberLimit,
+              }
+            : {}),
+          ...(typedDraft
+            ? {
+                include_types: true as const,
+                typed_fields: typedDraft.typedFields,
+                unresolved_fields: typedDraft.unresolvedFields,
+              }
+            : {}),
+        };
 
         return {
           content: [{ type: "text" as const, text: built.source }],
