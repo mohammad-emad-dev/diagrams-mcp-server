@@ -7,12 +7,14 @@ import { registerDiagramsUpdate } from "./tools/diagramsUpdate.js";
 import { registerDiagramsDelete } from "./tools/diagramsDelete.js";
 import { registerDiagramsRender } from "./tools/diagramsRender.js";
 import { registerDiagramsExport } from "./tools/diagramsExport.js";
+import { registerDiagramsSaveExport } from "./tools/diagramsSaveExport.js";
 import { registerDiagramsCheckConsistency } from "./tools/diagramsCheckConsistency.js";
 import { registerDiagramsGenerate } from "./tools/diagramsGenerate.js";
 import { registerDiagramsGenerateSequence } from "./tools/diagramsGenerateSequence.js";
 import { registerDiagramsDiff } from "./tools/diagramsDiff.js";
 import { registerDiagramsTemplate } from "./tools/diagramsTemplate.js";
 import { registerDiagramsListTemplates } from "./tools/diagramsListTemplates.js";
+import { registerDiagramsScaffold } from "./tools/diagramsScaffold.js";
 
 export function createDiagramServer(ctx: ServerContext): McpServer {
   const server = new McpServer({
@@ -27,12 +29,14 @@ export function createDiagramServer(ctx: ServerContext): McpServer {
   registerDiagramsDelete(server, ctx);
   registerDiagramsRender(server, ctx);
   registerDiagramsExport(server, ctx);
+  registerDiagramsSaveExport(server, ctx);
   registerDiagramsCheckConsistency(server, ctx);
   registerDiagramsGenerate(server, ctx);
   registerDiagramsGenerateSequence(server, ctx);
   registerDiagramsDiff(server, ctx);
   registerDiagramsTemplate(server, ctx);
   registerDiagramsListTemplates(server, ctx);
+  registerDiagramsScaffold(server, ctx);
 
   return server;
 }

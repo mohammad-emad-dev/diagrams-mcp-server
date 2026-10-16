@@ -4,16 +4,19 @@
 // secrets, or absolute paths.
 
 import {
+  HtmlExportExistsError,
   DiagramExistsError,
   DiagramNotFoundError,
   DiagramValidationError,
   PathTraversalError,
   UnsupportedDiagramExtensionError,
+  UnsupportedHtmlExportExtensionError,
 } from "../services/diagramStore.js";
 import { RenderError } from "../services/renderer.js";
 import { ScopeEscapeError } from "../services/scopeResolve.js";
 import { CustomTemplateError } from "../services/templates/customTemplates.js";
 import { CallOrderLimitError } from "../services/diff/callOrder.js";
+import { ScaffoldSourceTooLargeError } from "../services/scaffold/scaffold.js";
 
 export interface ToolErrorResult {
   content: [{ type: "text"; text: string }];
@@ -64,11 +67,14 @@ export function isExpectedToolError(err: unknown): err is Error {
     err instanceof PathTraversalError ||
     err instanceof DiagramValidationError ||
     err instanceof DiagramExistsError ||
+    err instanceof HtmlExportExistsError ||
     err instanceof UnsupportedDiagramExtensionError ||
+    err instanceof UnsupportedHtmlExportExtensionError ||
     err instanceof ScopeEscapeError ||
     err instanceof RenderError ||
     err instanceof CustomTemplateError ||
-    err instanceof CallOrderLimitError
+    err instanceof CallOrderLimitError ||
+    err instanceof ScaffoldSourceTooLargeError
   );
 }
 

@@ -41,12 +41,31 @@ export class UnsupportedDiagramExtensionError extends Error {
   }
 }
 
+export class UnsupportedHtmlExportExtensionError extends Error {
+  constructor(relativePath: string) {
+    super(
+      `'${relativePath}' does not have the .html export extension. ` +
+        `HTML exports must be saved with a .html path inside the diagrams root.`,
+    );
+    this.name = "UnsupportedHtmlExportExtensionError";
+  }
+}
+
 export class DiagramExistsError extends Error {
   constructor(relativePath: string) {
     super(
       `Diagram '${relativePath}' already exists. Use diagrams_update to modify it, or set overwrite=true.`,
     );
     this.name = "DiagramExistsError";
+  }
+}
+
+export class HtmlExportExistsError extends Error {
+  constructor(relativePath: string) {
+    super(
+      `HTML export '${relativePath}' already exists. Choose a different output_path or remove the existing target yourself.`,
+    );
+    this.name = "HtmlExportExistsError";
   }
 }
 
@@ -395,6 +414,60 @@ export class DiagramStore {
       return candidate;
     }
     throw new Error("Could not create a temporary file for writing");
+  }
+
+  async writeHtmlExport(relativePath: string, html: string): Promise<void> {
+    if (
+      path.posix.isAbsolute(relativePath.replace(/\\/g, "/")) ||
+      path.win32.isAbsolute(relativePath)
+    ) {
+      throw new PathTraversalError(toPosixPath(relativePath));
+    }
+    const absolutePath = this.resolveSafe(relativePath);
+    await this.assertNoSymlinkEscape(absolutePath);
+    // Keep the diagram CRUD allow-list closed; validate before creating parents.
+    if (path.extname(absolutePath).toLowerCase() !== ".html") {
+      throw new UnsupportedHtmlExportExtensionError(toPosixPath(relativePath));
+    }
+    const parent = path.dirname(absolutePath);
+    await fs.mkdir(parent, { recursive: true });
+    // Parent swapped to a link after the walk must not redirect creation.
+    if ((await this.realpathInsideRoot(parent, relativePath)) === null) {
+      throw new PathTraversalError(toPosixPath(relativePath));
+    }
+    await this.realpathInsideRoot(absolutePath, relativePath);
+    await this.createHtmlExportFile(absolutePath, relativePath, html);
+  }
+
+  private async createHtmlExportFile(
+    absolutePath: string,
+    relativePath: string,
+    html: string,
+  ): Promise<void> {
+    const base = fsConstants.O_WRONLY | fsConstants.O_CREAT | NOFOLLOW;
+    let handle: FileHandle;
+    try {
+      handle = await fs.open(absolutePath, base | fsConstants.O_EXCL, 0o666);
+    } catch (err: unknown) {
+      if (isNodeError(err) && err.code === "ELOOP") {
+        throw new PathTraversalError(toPosixPath(relativePath));
+      }
+      if (isNodeError(err) && (err.code === "EEXIST" || err.code === "EISDIR")) {
+        throw new HtmlExportExistsError(toPosixPath(relativePath));
+      }
+      throw err;
+    }
+    try {
+      await handle.writeFile(html, "utf-8");
+    } catch (err: unknown) {
+      // The target is newly created (EXCL guarantees no overwrite), so a
+      // failed write must not leave a partial file behind. Close first so
+      // Windows releases the handle before removal.
+      await handle.close().catch(() => {});
+      await fs.rm(absolutePath, { force: true }).catch(() => {});
+      throw err;
+    }
+    await handle.close();
   }
 
   async delete(relativePath: string): Promise<void> {

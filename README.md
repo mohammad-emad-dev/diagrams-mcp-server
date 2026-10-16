@@ -24,7 +24,7 @@ I built this after running into the same problem while using AI to work on softw
 
 ## Features
 
-Thirteen tools in four groups. Items marked introduced in 0.8.0 shipped in this release. The read-only drafting tools (`diagrams_generate`, `diagrams_generate_sequence`, `diagrams_template`, `diagrams_export`) never write: they return source text and you save it yourself with `diagrams_create`.
+Fifteen tools in five groups (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0). Items marked introduced in 0.8.0 shipped in this release. The read-only drafting tools (`diagrams_generate`, `diagrams_generate_sequence`, `diagrams_template`, `diagrams_export`, `diagrams_scaffold`) never write: the generators and templates return diagram source to save with `diagrams_create`; `diagrams_export` returns HTML to save yourself or through the separate `diagrams_save_export` tool; `diagrams_scaffold` returns TypeScript to save yourself manually, never via `diagrams_create`.
 
 ### Manage diagrams
 
@@ -42,6 +42,7 @@ Thirteen tools in four groups. Items marked introduced in 0.8.0 shipped in this 
 |---|---|
 | `diagrams_render` | Render a diagram to SVG/PNG |
 | `diagrams_export` | **Package a stored diagram and its rendered SVG into one self-contained HTML file (SVG as base64 image)** — fully offline, no external resources, nothing written to disk |
+| `diagrams_save_export` | **Save the same self-contained HTML bundle inside the diagrams root as a `.html` file** — refuses existing targets, never overwrites |
 
 ### Check and compare
 
@@ -59,11 +60,17 @@ Thirteen tools in four groups. Items marked introduced in 0.8.0 shipped in this 
 | `diagrams_generate_sequence` | **Draft a PlantUML or Mermaid sequence diagram from the message-call patterns in a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
 | `diagrams_template`          | **Instantiate a minimal, always-valid starter skeleton (class, sequence, C4-context, or project-local custom) in PlantUML or Mermaid** — one declaration per entity, nothing inferred, nothing written |
 
+### Draft code from diagrams
+
+| Tool | What it does |
+|---|---|
+| `diagrams_scaffold` | **Unreleased after 0.8.0: draft empty exported TypeScript classes from the heuristic entity-name candidates in a stored diagram** — candidate-only draft, nothing written |
+
 ### Tool notes
 
 #### Argument validation (introduced in 0.8.0)
 
-All 13 tools reject unknown argument keys over MCP instead of silently ignoring them. For example, `include_sorce` is rejected; the export option is `include_source`. This change was introduced in v0.8.0. Existing fields, defaults, refinements, and response shapes are unchanged. The SDK dependency now requires `^1.30.0`, matching the already-installed and locked version verified with full-schema registration.
+All 15 tools (thirteen in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0) reject unknown argument keys over MCP instead of silently ignoring them. For example, `include_sorce` is rejected; the export option is `include_source`. This change was introduced in v0.8.0. Existing fields, defaults, refinements, and response shapes are unchanged. The SDK dependency now requires `^1.30.0`, matching the already-installed and locked version verified with full-schema registration.
 
 #### Call-name extraction (introduced in 0.8.0)
 
@@ -91,6 +98,14 @@ Introduced in 0.8.0: TypeScript files additionally use AST-backed extraction fro
 
 Introduced in 0.8.0 — sequence-generation option: set `include_call_parentheses: true` on `diagrams_generate_sequence` to emit labels such as `charge()` in either format. This lets the existing heuristic call-name extractor recognize generated operations in consistency checks and optional call-order diffs. The default is `false`, preserving plain labels and existing output. Structured `messages[].message` values remain bare operation names. Empty parentheses mark a call; they do not reproduce its arguments or signature. Call extraction still follows the ASCII name grammar described above.
 
+UNRELEASED correction after 0.8.0: AST-backed TypeScript sequence generation
+applies the same conservative callback-argument rule to constructors as to
+ordinary calls. For `new Task(() => charge(), before())`, `charge` is counted
+in `deferred_count` and excluded from emitted messages, while `before` stays
+direct. The constructor itself remains outside the call graph. This classifies
+callback-origin evidence; it does not assert that a constructor invokes its
+callback asynchronously. The non-AST fallback is unchanged.
+
 #### `diagrams_diff`
 
 `diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
@@ -106,6 +121,16 @@ Introduced in 0.8.0: `template="custom"` with `custom_template="<id>"` loads `<P
 #### `diagrams_export`
 
 `diagrams_export` is the sharing tool that closes the loop: **package a stored diagram and its rendered SVG into one self-contained HTML file** that opens anywhere, inside or outside the repo. It is packaging of two artifacts the server already produces — the stored source and the locally rendered SVG — so it adds no dependency (the HTML is string concatenation) and no new write surface: the tool never writes a file, the HTML comes back as text, and you decide where it lands. Introduced in 0.8.0: the SVG is embedded as a base64 data image (`<img src="data:image/svg+xml;base64,...">`), not live inline SVG — scripts and external resources are disabled by SVG-image processing, so SVG text is no longer selectable. The wrapper CSP is `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation in the image is the security boundary; encoded renderer markup is not claimed sanitized or removed. See [SVG as an image](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image) for the restrictions. The diagram's POSIX `relative_path` is the only path in the document. With `include_source` (the default), the source is escaped into a collapsible native `<details>` block needing no JavaScript; `false` omits it. Rendering follows `diagrams_render` exactly, including CLI requirements and opt-in remote fallback, and `rendered_with` reports the path (`local-plantuml` / `remote-plantuml` / `mmdc`). A bundle larger than the byte cap is refused outright — `truncated` is always `false`. The whole encoded HTML (larger than the raw SVG) is what the 5,000,000-byte cap measures; `svg_chars` measures the decoded SVG source after preamble strip, not the base64 length. Browser probe outside the repo: Chrome showed a hostile SVG as a 120×40 image with no HTTP requests or active DOM, while the standalone-SVG control ran its script. The export limits are listed under [Export limits](#export-limits).
+
+#### `diagrams_save_export` (unreleased after 0.8.0)
+
+`diagrams_save_export` saves the same self-contained HTML bundle inside the diagrams root: it reads `relative_path`, renders with the same rules as `diagrams_export`, builds the same bundle, and writes it to `output_path` (a `.html` path relative to the diagrams root, case-insensitive). The response is a short acknowledgement plus the same summary fields as `diagrams_export` with `output_path` added; the HTML itself is not returned. The bundle is measured against the same 5,000,000-byte cap before any output directory or file is created, so an over-cap request writes nothing. The target must not exist: it is created exclusively and refused atomically when present, with no overwrite option. `output_path` must end in `.html`; other extensions, escaping paths, symlink targets, and directories are refused. Saved HTML is excluded from diagram listing and CRUD; choose another output path or remove an existing export yourself before saving again. See [Export limits](#export-limits).
+
+#### `diagrams_scaffold` (unreleased after 0.8.0)
+
+`diagrams_scaffold` is the code-from-diagram starter: **give it a stored diagram path and it hands back empty exported TypeScript classes, one per heuristic entity-name candidate, to review and save yourself manually as TypeScript, never via `diagrams_create`.** It reads one diagram through the traversal-protected store and reuses the existing `extractEntities(source, type)` unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as `charge`. It does NOT recover class kinds, members, field types, relations, or runtime behavior. Every result carries `confidence: "heuristic"` with a `heuristic_warning` stating these limits; review the draft before saving.
+
+Names are emitted only when they match `/^[A-Za-z_][A-Za-z0-9_]*$/` at most 60 characters and avoid reserved and TypeScript-forbidden class names (strict reserved words plus `eval`/`arguments`/`any`/`unknown`/`never`/`number`/`string`/`boolean`/`symbol`/`object`/`undefined`/`bigint` and related keywords). Anything else is never renamed: it is listed in `skipped_entities`/`skipped_count` independently of the emission cap. Ordering and dedupe follow the extractor; the cap applies to valid names only. An empty candidate set succeeds with empty source, not placeholder classes. The scaffold limits are listed under [Scaffold limits](#scaffold-limits).
 
 ## Pagination and source windows
 
@@ -514,9 +539,21 @@ Custom-template bounds (introduced in 0.8.0): `custom_template` id 1–64 chars 
 }
 ```
 
+### Scaffold limits
+
+Every `diagrams_scaffold` run (unreleased after 0.8.0) observes these caps. `max_entities` (1–60, default 30) bounds the emitted classes; the limits below are the hard ceilings:
+
+| Limit | Value | How you see it |
+|---|---|---|
+| Emitted classes | 60 declarations | `entities_available` reports the valid candidates before the cap and `entities_capped` is true when any were dropped; `entity_limit` reports the applied cap |
+| Diagram source size | 1,000,000 UTF-8 bytes | a larger source is refused with `isError: true` naming the byte ceiling; nothing partial is returned or extracted |
+| Entity name shape | identifier at most 60 chars, no reserved names | invalid or reserved candidates are listed in `skipped_entities`/`skipped_count` independently of the cap, never renamed |
+
+The scaffold is a candidate-only draft: names come from the shared diagram extractor (declarations, aliases, namespaces, components, participants, call names), not from recovered types. Class kinds, members, field types, relations, and runtime behavior are out of scope. An empty candidate set succeeds with empty source and the heuristic warning, not placeholder classes.
+
 ### Export limits
 
-Every `diagrams_export` run observes this cap on the finished HTML document:
+Every `diagrams_export` and `diagrams_save_export` run observes this cap on the finished HTML document:
 
 | Limit | Value | How you see it |
 |---|---|---|
@@ -552,9 +589,9 @@ The agent calls `diagrams_check_consistency`, which reports:
 ```
 src/
 ├── index.ts                       # CLI dispatch (setup | --help | serve) + stdio wiring
-├── server.ts                      # createDiagramServer(ctx): McpServer + 12 tool registrations
+├── server.ts                      # createDiagramServer(ctx): McpServer + 15 tool registrations (13 in 0.8.0 plus diagrams_save_export and diagrams_scaffold unreleased after 0.8.0)
 ├── context.ts                     # Resolves PROJECT_ROOT / DIAGRAMS_DIR once at startup
-├── constants.ts                   # Shared constants (incl. MAX_CUSTOM_TEMPLATE_* + MAX_EXPORT_HTML_BYTES, introduced in 0.8.0)
+├── constants.ts                   # Shared constants (incl. MAX_CUSTOM_TEMPLATE_* + MAX_EXPORT_HTML_BYTES, introduced in 0.8.0, plus MAX_SCAFFOLD_SOURCE_BYTES unreleased after 0.8.0)
 ├── types.ts                       # Shared TypeScript types
 ├── constants.test.ts / packaging.test.ts / setup.test.ts  # Colocated root tests
 ├── setup/                         # Guided client-setup wizard (scopes, pre-flight checks)
@@ -579,6 +616,8 @@ src/
 │   │   └── types.ts               # Shared rendering contracts and dependency seams
 │   ├── scopeResolve.ts            # Bounds read-only tool scopes to PROJECT_ROOT
 │   ├── *.test.ts                   # Colocated service tests: store, validator, renderer, scope, normalize, checker
+│   ├── scaffold/                  # diagrams_scaffold candidate filtering and TypeScript emission (unreleased after 0.8.0)
+│   │   └── scaffold.ts            # Pure buildScaffold over shared extractEntities plus ScaffoldSourceTooLargeError
 │   ├── consistencyChecker/        # Diagram <-> code drift detection
 │   │   ├── index.ts               # checkConsistency orchestration (scan, match, report)
 │   │   ├── fileAnalysis.ts        # Read and analyze bounded code files
@@ -598,7 +637,7 @@ src/
 │   ├── diff/                      # diagrams_diff comparison
 │   │   ├── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
 │   │   └── callOrder.ts           # bounded recognized call-order comparison (introduced in 0.8.0)
-│   ├── export/                    # diagrams_export bundle builder (pure, no filesystem)
+│   ├── export/                    # diagrams_export + diagrams_save_export bundle builder (pure, no filesystem)
 │   │   ├── htmlBundle.ts          # SVG-as-image HTML wrapper + CSP from SVG + source
 │   │   └── exportGoldens.test.ts  # Exact wrapper structure locked per variant
 │   ├── generate/                  # diagrams_generate entity collection and emitters
@@ -613,9 +652,10 @@ src/
 │       ├── customTemplates.ts     # .diagrams-templates/<id>.json loader (introduced in 0.8.0) (+ customTemplates.test.ts)
 │       ├── templateCatalog.ts     # bounded candidate discovery (introduced in 0.8.0) (+ templateCatalog.test.ts)
 │       └── templateGoldens.test.ts # Exact emitted source per (template, format)
-├── tools/                         # One MCP tool adapter per file (13 tools) + shared toolError; *.test.ts colocated per tool
+├── tools/                         # One MCP tool adapter per file (15 tools) + shared toolError; *.test.ts colocated per tool
 │   ├── diffInput.ts               # diagrams_diff validation and stored/inline side loading
-│   └── diffSummary.ts             # diagrams_diff text summaries
+│   ├── diffSummary.ts             # diagrams_diff text summaries
+│   └── diagramsScaffold.ts        # diagrams_scaffold code-from-diagram draft (unreleased after 0.8.0)
 └── integration/
     └── mcpServer.test.ts          # End-to-end server surface tests
 ```
@@ -637,8 +677,10 @@ need no package-script edits. Build before running `npm test`.
 -   All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected. Windows-style `\` separators work as path separators on every platform, so `..\..` traversal is rejected on Linux too.
 - `diagrams_check_consistency`, `diagrams_generate`, and `diagrams_generate_sequence` only *read* your codebase — they never modify code or diagrams. Both generators resolve their `scope` against `PROJECT_ROOT` and refuse (without reading anything) any path that would land outside it; their output is source text you save yourself with `diagrams_create`.
 - `diagrams_diff` is read-only too: stored sides are read through the same traversal-protected store as `diagrams_get`, inline sides never touch the filesystem at all, and input-shape errors are reported before any file is opened. Errors and logs never include diagram source, only the names being reported.
+- `diagrams_scaffold` (unreleased after 0.8.0) is read-only too: one stored diagram read through the same traversal-protected store, then pure filtering and TypeScript emission with no rendering, network, execution, or writes. Over-cap sources are rejected before extraction, never truncated.
 - `diagrams_template` built-ins touch no filesystem at all — no project root, no diagrams directory, no state between calls. Introduced in 0.8.0, custom templates are read-only: one `<PROJECT_ROOT>/.diagrams-templates/<id>.json` regular-file read (symlinks rejected), nothing written; the supplied title and entity names are expanded into the selected template.
-- `diagrams_export` reads one diagram through the same traversal-protected store as `diagrams_get` and returns the bundle as text — it writes nothing, so the store's extension allow-list never opens to `.html`. Introduced in 0.8.0: the artifact embeds the SVG as a base64 data image under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`; scripts and external resources are disabled by SVG-image processing, not by claimed sanitization or removal of encoded markup. The only path it carries is the diagram's POSIX `relative_path`. Remote PlantUML rendering, when you opt into it, sends diagram source to the configured server; that is the renderer's existing path, unchanged.
+- `diagrams_export` reads one diagram through the same traversal-protected store as `diagrams_get` and returns the bundle as text — it writes nothing, so the store's diagram extension allow-list never opens to `.html`. Introduced in 0.8.0: the artifact embeds the SVG as a base64 data image under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`; scripts and external resources are disabled by SVG-image processing, not by claimed sanitization or removal of encoded markup. The only path it carries is the diagram's POSIX `relative_path`. Remote PlantUML rendering, when you opt into it, sends diagram source to the configured server; that is the renderer's existing path, unchanged.
+- `diagrams_save_export` writes the same bundle inside the diagrams root through the dedicated `DiagramStore.writeHtmlExport` path only: `.html` (case-insensitive) with exclusive create, the same traversal/symlink/canonical checks as diagram writes, and no overwrite option. Diagram `read`/`write`/`delete`/`list`/`exists` gates still reject `.html`, and over-cap bundles are refused before any output directory or file is created.
 - No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
 - Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
 
@@ -650,9 +692,13 @@ Implemented in the unpublished 0.7.0 development wave, included in 0.8.0 (see [R
 - Sequence diagrams both ways: `diagrams_generate_sequence` drafts them from call-graph edges, and the checker compares message ordering (callbacks deferred, never sequenced)
 - Diagram diffing (`diagrams_diff`), starter skeletons (`diagrams_template`), and self-contained HTML export (`diagrams_export`)
 
+Unreleased after 0.8.0, partially delivering code-from-diagram scaffolding:
+
+- `diagrams_scaffold` drafts empty exported TypeScript classes from heuristic entity-name candidates (aliases, namespaces, components, participants, and call names). It does NOT recover class kinds, members, field types, relations, or runtime behavior. Members, relations, and additional languages remain open.
+
 Still open:
 
-- Code-from-diagram scaffolding: generate a class skeleton from a diagram (the reverse of `diagrams_generate`)
+- Code-from-diagram follow-ups: members, relations, and languages beyond the initial TypeScript empty-class draft
 - AST-backed precision for more languages, as demand dictates
 - Export hardening follow-up: introduced in 0.8.0, image isolation replaces live-SVG export; the historical allowlist-sanitizer proposal in `docs/next-features.md` is not implemented (tracked there)
 

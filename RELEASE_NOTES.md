@@ -1,3 +1,49 @@
+# Release notes — Unreleased after 0.8.0
+
+Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0).
+
+New: `diagrams_save_export` adds a fourteenth MCP tool. It saves the same
+self-contained HTML bundle `diagrams_export` returns (SVG as a base64 data
+image under `default-src 'none'; img-src data:; style-src 'unsafe-inline';
+base-uri 'none'; form-action 'none'`) inside the diagrams root as a `.html`
+file. Inputs are `relative_path`, `output_path` (`.html`, case-insensitive),
+and `include_source` (default `true`); there is no overwrite option and the
+response carries only a short acknowledgement plus `relative_path`,
+`output_path`, `diagram_type`, `format`, `bytes`, `svg_chars`,
+`source_included`, `truncated: false`, and `rendered_with`. The bundle is
+measured against the existing 5,000,000-byte cap before any output directory or file
+is created, and existing targets are refused atomically. Writes go through the
+new `DiagramStore.writeHtmlExport` path only; diagram `read`/`write`/`delete`/
+`list`/`exists` gates still reject `.html`, and `diagrams_export` keeps its
+read-only response and cap behavior unchanged.
+
+- AST-backed TypeScript sequence generation excludes inline callback bodies
+  passed to constructors, using the same policy as ordinary call arguments.
+  Eager constructor arguments remain direct; constructor names are not emitted.
+  This is conservative static evidence, not a claim of asynchronous execution.
+  The non-AST fallback is unchanged.
+
+New: `diagrams_scaffold` adds a fifteenth MCP tool. It drafts empty exported
+TypeScript classes from the heuristic entity-name candidates in a stored
+diagram. It reads one diagram through the traversal-protected store, reuses
+the existing `extractEntities(source, type)` unchanged, and emits
+`export class Name {}` per emittable name with no writes, rendering, network,
+or execution. Save the emitted TypeScript yourself manually, never via
+`diagrams_create`.
+
+Candidate-only draft limits: names may include aliases, namespaces,
+components, participants, and call names such as `charge`; class
+kinds, members, field types, relations, and runtime behavior are not
+recovered. Only `^[A-Za-z_][A-Za-z0-9_]*$` names at most 60 characters outside
+the reserved and TypeScript-forbidden set are emitted; the rest are reported in
+`skipped_entities`/`skipped_count` without renaming. Valid candidates before
+the requested cap (default 30, maximum 60) are counted in `entities_available`;
+over-cap UTF-8 sources above
+1,000,000 bytes are rejected before extraction. Empty candidate sets succeed
+with empty source. Members, relations, and additional languages remain open.
+
+---
+
 # Release notes — 0.8.0
 
 Package, runtime, lockfile, and registry metadata are aligned to `0.8.0`.

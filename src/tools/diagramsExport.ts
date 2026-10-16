@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { MAX_EXPORT_HTML_BYTES, toPosixPath } from "../constants.js";
 import type { DiagramType } from "../types.js";
-import { buildExportBundle } from "../services/export/htmlBundle.js";
+import { buildSizedExportBundle } from "../services/export/htmlBundle.js";
 import { renderDiagramWithProvenance } from "../services/renderer.js";
 import type { RenderResult } from "../services/renderer.js";
 import { handleRenderError, handleToolError } from "./toolError.js";
@@ -41,7 +41,7 @@ interface ExportResponseRequest {
 
 function formatExportResponse({ params, source, type, rendered }: ExportResponseRequest) {
   const { buffer, renderedWith } = rendered;
-  const { html, svgChars } = buildExportBundle({
+  const { html, svgChars, byteLength } = buildSizedExportBundle({
     relativePath: params.relative_path,
     diagramType: type,
     svg: buffer.toString("utf-8"),
@@ -53,7 +53,6 @@ function formatExportResponse({ params, source, type, rendered }: ExportResponse
   // finished document, so a caller never saves a diagram with half its
   // rendering. The message names the ceiling and the diagram, never the
   // source or any absolute path.
-  const byteLength = Buffer.byteLength(html, "utf-8");
   if (byteLength > MAX_EXPORT_HTML_BYTES) {
     const message =
       `Error: The export bundle for '${toPosixPath(params.relative_path)}' is ` +
