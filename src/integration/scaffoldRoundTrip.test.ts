@@ -1,0 +1,65 @@
+import { it } from "node:test";
+import assert from "node:assert/strict";
+import { promises as fs } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { createDiagramServer } from "../server.js";
+import { DiagramStore } from "../services/diagramStore.js";
+
+it("drafts class shells from a generated and stored diagram through the MCP SDK", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "diagrams-scaffold-sdk-"));
+  const diagramsRoot = path.join(root, "diagrams");
+  const code = "export class Widget { id = 1; }\nexport interface Payment { amount: number; }\n";
+  const server = createDiagramServer({
+    diagramStore: new DiagramStore(diagramsRoot),
+    codeRootDir: root,
+  });
+  const client = new Client({ name: "scaffold-round-trip", version: "1.0.0" });
+  try {
+    await fs.mkdir(path.join(root, "src-code"));
+    await fs.writeFile(path.join(root, "src-code", "model.ts"), code, "utf8");
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const generated = await client.callTool({
+      name: "diagrams_generate",
+      arguments: { scope: "src-code", format: "mermaid" },
+    });
+    assert.equal(generated.isError, undefined);
+    const diagram = (generated.structuredContent as Record<string, unknown>)?.source;
+    assert.equal(typeof diagram, "string");
+    const created = await client.callTool({
+      name: "diagrams_create",
+      arguments: { relative_path: "model.mmd", content: diagram },
+    });
+    assert.equal(created.isError, undefined);
+    const scaffold = await client.callTool({
+      name: "diagrams_scaffold",
+      arguments: { relative_path: "model.mmd" },
+    });
+    assert.equal(scaffold.isError, undefined);
+    const summary = scaffold.structuredContent as Record<string, unknown>;
+    assert.equal(summary?.written, false);
+    assert.equal(summary?.confidence, "heuristic");
+    assert.equal(summary?.entity_limit, 30);
+    const source = summary?.source;
+    assert.equal(typeof source, "string");
+    assert.match(source as string, /export class Widget \{\}/);
+    assert.match(source as string, /export class Payment \{\}/);
+    assert.doesNotMatch(source as string, /amount|id =/);
+    assert.equal((scaffold.content as Array<{ text: string }>)[0].text, source);
+    assert.deepEqual(await fs.readdir(diagramsRoot), ["model.mmd"]);
+    assert.deepEqual(await fs.readdir(root), ["diagrams", "src-code"]);
+    assert.deepEqual(await fs.readdir(path.join(root, "src-code")), ["model.ts"]);
+    assert.equal(await fs.readFile(path.join(root, "src-code", "model.ts"), "utf8"), code);
+    assert.equal(await fs.readFile(path.join(diagramsRoot, "model.mmd"), "utf8"), diagram);
+  } finally {
+    await client.close();
+    await server.close();
+    assert.equal(path.dirname(path.resolve(root)), path.resolve(os.tmpdir()));
+    assert.ok(path.basename(root).startsWith("diagrams-scaffold-sdk-"));
+    await fs.rm(root, { recursive: true, force: true });
+  }
+});

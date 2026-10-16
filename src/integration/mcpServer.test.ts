@@ -24,6 +24,7 @@ const EXPECTED_TOOLS = [
   "diagrams_list_templates",
   "diagrams_render",
   "diagrams_save_export",
+  "diagrams_scaffold",
   "diagrams_template",
   "diagrams_update",
 ];
@@ -143,7 +144,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     }
   });
 
-  it("discovers all 14 tools", async () => {
+  it("discovers all 15 tools", async () => {
     const { tools } = await getClient().listTools();
     assert.deepEqual(tools.map((tool) => tool.name).sort(), EXPECTED_TOOLS);
   });
@@ -1247,5 +1248,78 @@ describe("MCP stdio integration (dist/index.js)", () => {
       assert.ok(!textOf(result).includes("charge()"));
       assert.equal(result.structuredContent?.written, false);
     }
+  });
+
+  it("scaffolds TypeScript classes from a stored diagram over real stdio", async () => {
+    const before = await callTool("diagrams_list", { type_filter: "all" });
+    const beforeCount = (before.structuredContent as { count: number }).count;
+    const relativePath = "models/scaffold-demo.puml";
+    const content = "@startuml\nclass User\nclass Order\nclass class\n@enduml\n";
+    const created = await callTool("diagrams_create", { relative_path: relativePath, content });
+    assert.equal(created.isError, undefined);
+    try {
+      const result = await callTool("diagrams_scaffold", { relative_path: relativePath });
+      assert.equal(result.isError, undefined);
+      const structured = result.structuredContent as {
+        relative_path: string;
+        language: string;
+        source: string;
+        entities: string[];
+        entities_included: number;
+        entities_available: number;
+        entities_capped: boolean;
+        entity_limit: number;
+        skipped_entities: string[];
+        skipped_count: number;
+        confidence: string;
+        heuristic_warning: string;
+        written: boolean;
+      };
+      assert.equal(structured.relative_path, relativePath);
+      assertPosixPath(structured.relative_path, "scaffold relative_path");
+      assert.equal(structured.language, "typescript");
+      assert.deepEqual(structured.entities, ["User", "Order"]);
+      assert.equal(structured.entities_included, 2);
+      assert.equal(structured.entities_available, 2);
+      assert.equal(structured.entities_capped, false);
+      assert.equal(structured.entity_limit, 30);
+      assert.deepEqual(structured.skipped_entities, ["class"]);
+      assert.equal(structured.skipped_count, 1);
+      assert.equal(structured.confidence, "heuristic");
+      assert.match(structured.heuristic_warning, /aliases/);
+      assert.match(structured.heuristic_warning, /does NOT recover|does not recover/i);
+      assert.equal(structured.written, false);
+      assert.equal(textOf(result), structured.source);
+      assert.equal(structured.source, "export class User {}\n\nexport class Order {}\n");
+
+      const after = await callTool("diagrams_list", { type_filter: "all" });
+      assert.equal((after.structuredContent as { count: number }).count, beforeCount + 1);
+    } finally {
+      const deleted = await callTool("diagrams_delete", { relative_path: relativePath });
+      assert.equal(deleted.isError, undefined);
+    }
+    const relisted = await callTool("diagrams_list", { type_filter: "all" });
+    assert.equal((relisted.structuredContent as { count: number }).count, beforeCount);
+  });
+
+  it("rejects unknown scaffold arguments and missing/traversal paths over real stdio", async () => {
+    const bad = await callTool("diagrams_scaffold", {
+      relative_path: "models/scaffold-demo.puml",
+      output_dir: "elsewhere",
+    });
+    assert.equal(bad.isError, true);
+    assert.match(textOf(bad), /output_dir/);
+    assert.ok(!textOf(bad).includes(projectRoot));
+
+    const missing = await callTool("diagrams_scaffold", {
+      relative_path: "models/scaffold-missing.puml",
+    });
+    assert.equal(missing.isError, true);
+    assert.match(textOf(missing), /No diagram found at 'models\/scaffold-missing\.puml'/);
+
+    const traversal = await callTool("diagrams_scaffold", { relative_path: "../escape.puml" });
+    assert.equal(traversal.isError, true);
+    assert.match(textOf(traversal), /outside the diagrams root/);
+    assert.ok(!textOf(traversal).includes(projectRoot));
   });
 });
