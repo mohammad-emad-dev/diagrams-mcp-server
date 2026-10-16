@@ -181,6 +181,14 @@ export function collectTsCalls(sourceFile: unknown, ts: TsModule): TsCallAnalysi
     });
   }
 
+  function visitCallArguments(
+    args: readonly tsTypes.Expression[] | undefined,
+    context: CallContext,
+  ): void {
+    if (!args) return;
+    for (const argument of args) visit(argument, { ...context, inCallArgument: true });
+  }
+
   function visitCall(node: tsTypes.CallExpression, context: CallContext): void {
     const callee = calleeNameAndPos(ts, node, root);
     if (callee) {
@@ -193,7 +201,12 @@ export function collectTsCalls(sourceFile: unknown, ts: TsModule): TsCallAnalysi
       });
     }
     visit(node.expression, { ...context, inCallArgument: false });
-    for (const argument of node.arguments) visit(argument, { ...context, inCallArgument: true });
+    visitCallArguments(node.arguments, context);
+  }
+
+  function visitNew(node: tsTypes.NewExpression, context: CallContext): void {
+    visit(node.expression, { ...context, inCallArgument: false });
+    visitCallArguments(node.arguments, context);
   }
 
   function visit(node: tsTypes.Node, context: CallContext): void {
@@ -214,6 +227,7 @@ export function collectTsCalls(sourceFile: unknown, ts: TsModule): TsCallAnalysi
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node))
       return visitCallback(node, context);
     if (ts.isCallExpression(node)) return visitCall(node, context);
+    if (ts.isNewExpression(node)) return visitNew(node, context);
     visitChildren(node, context);
   }
 

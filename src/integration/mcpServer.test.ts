@@ -1174,4 +1174,40 @@ describe("MCP stdio integration (dist/index.js)", () => {
     const deleted = await callTool("diagrams_delete", { relative_path: relativePath });
     assert.equal(deleted.isError, undefined);
   });
+
+  it("excludes constructor callback bodies while retaining eager calls over stdio", async () => {
+    const scope = "src-constructor-callbacks";
+    const directory = path.join(projectRoot, scope);
+    await fs.mkdir(directory);
+    await fs.writeFile(
+      path.join(directory, "flow.ts"),
+      [
+        "export function run() {",
+        "  new Task(() => charge(), before());",
+        "  after();",
+        "}",
+        "export function charge() {}",
+        "export function before() {}",
+        "export function after() {}",
+      ].join("\n"),
+      "utf-8",
+    );
+    for (const format of ["puml", "mermaid"] as const) {
+      const result = await callTool("diagrams_generate_sequence", {
+        scope,
+        format,
+        include_call_parentheses: true,
+      });
+      assert.equal(result.isError, undefined);
+      const messages = result.structuredContent?.messages as Array<{ message: string }>;
+      assert.deepEqual(
+        messages.map((message) => message.message),
+        ["before", "after"],
+      );
+      assert.equal(result.structuredContent?.deferred_count, 1);
+      assert.deepEqual(result.structuredContent?.unresolved_callees, []);
+      assert.ok(!textOf(result).includes("charge()"));
+      assert.equal(result.structuredContent?.written, false);
+    }
+  });
 });

@@ -91,6 +91,14 @@ Introduced in 0.8.0: TypeScript files additionally use AST-backed extraction fro
 
 Introduced in 0.8.0 — sequence-generation option: set `include_call_parentheses: true` on `diagrams_generate_sequence` to emit labels such as `charge()` in either format. This lets the existing heuristic call-name extractor recognize generated operations in consistency checks and optional call-order diffs. The default is `false`, preserving plain labels and existing output. Structured `messages[].message` values remain bare operation names. Empty parentheses mark a call; they do not reproduce its arguments or signature. Call extraction still follows the ASCII name grammar described above.
 
+UNRELEASED correction after 0.8.0: AST-backed TypeScript sequence generation
+applies the same conservative callback-argument rule to constructors as to
+ordinary calls. For `new Task(() => charge(), before())`, `charge` is counted
+in `deferred_count` and excluded from emitted messages, while `before` stays
+direct. The constructor itself remains outside the call graph. This classifies
+callback-origin evidence; it does not assert that a constructor invokes its
+callback asynchronously. The non-AST fallback is unchanged.
+
 #### `diagrams_diff`
 
 `diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
