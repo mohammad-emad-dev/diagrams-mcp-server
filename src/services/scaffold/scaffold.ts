@@ -1,4 +1,4 @@
-// Candidate names retain the shared extractor's behavior in both scaffold modes.
+// Candidate names retain the shared extractor's behavior in all scaffold modes.
 
 import { MAX_ENTITY_NAME_CHARS, MAX_SCAFFOLD_SOURCE_BYTES } from "../../constants.js";
 import type { DiagramType } from "../../types.js";
@@ -8,6 +8,7 @@ import {
   extractScaffoldMembers,
   type ScaffoldMember,
 } from "./members.js";
+import { resolveTypedFieldType } from "./fieldTypes.js";
 
 /** Diagram source larger than the scaffold byte cap. Rejected before extraction. */
 export class ScaffoldSourceTooLargeError extends Error {
@@ -107,6 +108,17 @@ export const SCAFFOLD_MEMBERS_HEURISTIC_WARNING =
   "before saving; remove or rename anything you do not intend to implement, then save it " +
   "as TypeScript yourself.";
 
+export const SCAFFOLD_TYPES_HEURISTIC_WARNING =
+  "Scaffold field types are a heuristic strict subset from plain class NAME { ... } blocks only " +
+  "(bare ASCII names; no quotes, aliases, generics, or stereotypes). Field name and type labels are heuristics; " +
+  "only string, number, boolean, bigint, or exactly an emitted class name, optionally with one [] suffix, is emitted " +
+  "as `name!: Type;`, and every other label falls back to `name: unknown;`. Class references are labels only with no " +
+  "supplied runtime value or relations. Methods remain throwing stubs " +
+  "`name(..._args: unknown[]): unknown`, so argument and return labels are ignored, and visibility/static/readonly/abstract " +
+  "modifiers are lost. Unsupported lines, note bodies, comments, constructors, initializers, relations, and runtime behavior " +
+  "are skipped, never executed or emitted. Review every name, member, and type before saving; remove or rename anything you do " +
+  "not intend to implement, then save it as TypeScript yourself.";
+
 const SCAFFOLD_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /** True when a candidate can be emitted bare as an exported class name. */
@@ -149,6 +161,7 @@ function emitScaffoldSource(names: string[]): string {
 function emitScaffoldSourceWithMembers(
   names: string[],
   membersByClass: Map<string, ScaffoldMember[]>,
+  fieldDeclaration: (member: ScaffoldMember) => string,
 ): string {
   if (names.length === 0) return "";
   const blocks = names.map((name) => {
@@ -158,7 +171,7 @@ function emitScaffoldSourceWithMembers(
     const body = members
       .map((member) =>
         member.kind === "field"
-          ? `  ${member.name}: unknown;`
+          ? fieldDeclaration(member)
           : `  ${member.name}(..._args: unknown[]): unknown { throw "Not implemented"; }`,
       )
       .join("\n");
@@ -231,12 +244,68 @@ export function buildScaffoldWithMembers(
   const { membersByClass, membersCapped } = extractScaffoldMembers(source, type, scaffold.entities);
   return {
     ...scaffold,
-    source: emitScaffoldSourceWithMembers(scaffold.entities, membersByClass),
+    source: emitScaffoldSourceWithMembers(
+      scaffold.entities,
+      membersByClass,
+      unknownFieldDeclaration,
+    ),
     membersIncluded: [...membersByClass.values()].reduce(
       (total, members) => total + members.length,
       0,
     ),
     membersCapped,
     memberLimit: MAX_SCAFFOLD_MEMBERS_PER_CLASS,
+  };
+}
+
+export interface ScaffoldWithTypesResult extends ScaffoldWithMembersResult {
+  typedFields: number;
+  unresolvedFields: number;
+}
+
+function unknownFieldDeclaration(member: ScaffoldMember): string {
+  return `  ${member.name}: unknown;`;
+}
+
+function typedFieldDeclaration(member: ScaffoldMember, emitted: ReadonlySet<string>): string {
+  const resolved = resolveTypedFieldType(member.typeLabel, emitted);
+  return resolved ? `  ${member.name}!: ${resolved};` : unknownFieldDeclaration(member);
+}
+
+/**
+ * Build a typed scaffold from diagram source. Reuses the base candidate flow
+ * and the same bounded member parser as the member mode; only field emission
+ * resolves the strict scalar/class-name subset, everything else falls back.
+ */
+export function buildScaffoldWithTypes(
+  source: string,
+  type: DiagramType,
+  maxEntities: number,
+): ScaffoldWithTypesResult {
+  const scaffold = buildScaffold(source, type, maxEntities);
+  const { membersByClass, membersCapped } = extractScaffoldMembers(source, type, scaffold.entities);
+  const emitted = new Set(scaffold.entities);
+  let typedFields = 0;
+  let unresolvedFields = 0;
+  for (const members of membersByClass.values()) {
+    for (const member of members) {
+      if (member.kind !== "field") continue;
+      if (resolveTypedFieldType(member.typeLabel, emitted)) typedFields += 1;
+      else unresolvedFields += 1;
+    }
+  }
+  return {
+    ...scaffold,
+    source: emitScaffoldSourceWithMembers(scaffold.entities, membersByClass, (member) =>
+      typedFieldDeclaration(member, emitted),
+    ),
+    membersIncluded: [...membersByClass.values()].reduce(
+      (total, members) => total + members.length,
+      0,
+    ),
+    membersCapped,
+    memberLimit: MAX_SCAFFOLD_MEMBERS_PER_CLASS,
+    typedFields,
+    unresolvedFields,
   };
 }

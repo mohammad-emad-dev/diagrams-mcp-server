@@ -128,11 +128,15 @@ Introduced in 0.8.0: `template="custom"` with `custom_template="<id>"` loads `<P
 
 #### `diagrams_scaffold` (unreleased after 0.8.0)
 
-`diagrams_scaffold` is the code-from-diagram starter: **give it a stored diagram path and it hands back exported TypeScript class shells, one per heuristic entity-name candidate, to review and save yourself manually as TypeScript, never via `diagrams_create`.** It reads one diagram through the traversal-protected store and reuses the existing `extractEntities(source, type)` unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as `charge`. By default the classes are empty and the response shape is unchanged. Every result carries `confidence: "heuristic"` with a `heuristic_warning`; class kinds, field types, relations, and runtime behavior are not recovered.
+`diagrams_scaffold` is the code-from-diagram starter: **give it a stored diagram path and it hands back exported TypeScript class shells, one per heuristic entity-name candidate, to review and save yourself manually as TypeScript, never via `diagrams_create`.** It reads one diagram through the traversal-protected store and reuses the existing `extractEntities(source, type)` unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as `charge`. By default the classes are empty and the response shape is unchanged. Every result carries `confidence: "heuristic"` with a `heuristic_warning`; class kinds, relations, and runtime behavior are not recovered. Field labels can optionally be retained through the limited type mode below.
 
 Unreleased after 0.8.0: set `include_members: true` to draft fields and methods from simple top-level multiline `class Name {` blocks in PlantUML or Mermaid `classDiagram`. This subset accepts bare class names, field names with type labels (`id: string` or `string id`), and method names with argument lists (`submit(payment)`), optionally prefixed with `+`, `-`, `#`, or `~`. Fields become `id: unknown;`; methods accept `..._args: unknown[]`, return `unknown`, and throw `"Not implemented"`. Type labels, argument declarations, modifiers, and implementations are discarded. Unsupported syntax is skipped; this is not a full diagram parser. Quoted/aliased/generic/nested class declarations, external `Class : member` declarations, relationships, and constructors are not recovered.
 
-For example, call `diagrams_scaffold({ "relative_path": "models/order.mmd", "include_members": true })`. The opt-in response adds `include_members: true`, `members_included` (total emitted fields and methods), `members_capped`, and `member_limit: 30`. Each emitted class gets at most 30 unique member names in encounter order; a name shared by a field and method keeps its first occurrence. The cap flag reports additional recognized unique names, not unsupported syntax. Omitting the flag or passing `false` keeps the original empty-class source and omits these extra fields. Review every stub before saving; methods intentionally fail until implemented.
+For example, call `diagrams_scaffold({ "relative_path": "models/order.mmd", "include_members": true })`. The opt-in response adds `include_members: true`, `members_included` (total emitted fields and methods), `members_capped`, and `member_limit: 30`. Each emitted class gets at most 30 unique member names in encounter order; a name shared by a field and method keeps its first occurrence. The cap flag reports additional recognized unique names, not unsupported syntax. When `include_types` is false, omitting `include_members` or passing `false` keeps the original empty-class source and omits these extra fields. Review every stub before saving; methods intentionally fail until implemented.
+
+Unreleased after 0.8.0: `include_types: true` enables member generation and retains supported field labels. It implies `include_members: true` even when that flag is omitted or explicitly false. Allowed labels are exactly `string`, `number`, `boolean`, `bigint`, or an emitted class name, optionally followed by one `[]`. Matching is case-sensitive. For example, `id: string` emits `id!: string;`, and `children: Order[]` emits `children!: Order[];` only if `Order` is also emitted. Primitive labels also work in the existing `string id` form; array labels use the `children: Order[]` form. The `!` permits strict TypeScript compilation without inventing an initializer; it supplies no runtime value for the field.
+
+Call `diagrams_scaffold({ "relative_path": "models/order.mmd", "include_types": true })`. The response includes member metadata plus `include_types: true`, `typed_fields`, and `unresolved_fields`, counting only emitted fields. Recognized fields with missing or unsupported labels remain `name: unknown;`. Unsupported labels include `String` (unless that exact class is emitted), `any`, `unknown`, unions, generics, nested arrays, qualified names, and references to classes dropped by `max_entities`. Such fallbacks increase `unresolved_fields`; skipped syntax and methods do not. Method parameters and returns remain `unknown` stubs. Omitting `include_types` or passing false preserves the existing empty-class or unknown-member mode and adds no type metadata. This preserves explicit labels heuristically; it does not infer types from code or infer relationships.
 
 Names are emitted only when they match `/^[A-Za-z_][A-Za-z0-9_]*$/` at most 60 characters and avoid reserved and TypeScript-forbidden class names (strict reserved words plus `eval`/`arguments`/`any`/`unknown`/`never`/`number`/`string`/`boolean`/`symbol`/`object`/`undefined`/`bigint` and related keywords). Anything else is never renamed: it is listed in `skipped_entities`/`skipped_count` independently of the emission cap. Ordering and dedupe follow the extractor; the cap applies to valid names only. An empty candidate set succeeds with empty source, not placeholder classes. The scaffold limits are listed under [Scaffold limits](#scaffold-limits).
 
@@ -553,8 +557,9 @@ Every `diagrams_scaffold` run (unreleased after 0.8.0) observes these caps. `max
 | Diagram source size | 1,000,000 UTF-8 bytes | a larger source is refused with `isError: true` naming the byte ceiling; nothing partial is returned or extracted |
 | Entity name shape | identifier at most 60 chars, no reserved names | invalid or reserved candidates are listed in `skipped_entities`/`skipped_count` independently of the cap, never renamed |
 | Members per emitted class (opt-in) | 30 unique names | `member_limit` reports 30; `members_included` totals emitted members and `members_capped` reports a recognized name beyond a class limit |
+| Retained field label (type mode) | 62 characters after trimming | longer labels fall back to `unknown`; only the explicit supported token grammar is emitted |
 
-Names come from the shared diagram extractor (declarations, aliases, namespaces, components, participants, call names), not from recovered types. Default classes are empty; `include_members` adds only the limited member stubs described above. Class kinds, field types, relations, and runtime behavior are not recovered. An empty candidate set succeeds with empty source and the heuristic warning, not placeholder classes.
+Names come from the shared diagram extractor (declarations, aliases, namespaces, components, participants, call names), not from recovered types. Default classes are empty; `include_members` adds the limited member stubs described above, while `include_types` also retains supported field labels. Class kinds, relations, and runtime behavior are not recovered. An empty candidate set succeeds with empty source and the heuristic warning, not placeholder classes.
 
 ### Export limits
 
@@ -623,7 +628,8 @@ src/
 │   ├── *.test.ts                   # Colocated service tests: store, validator, renderer, scope, normalize, checker
 │   ├── scaffold/                  # diagrams_scaffold candidate filtering and TypeScript emission (unreleased after 0.8.0)
 │   │   ├── scaffold.ts            # Pure buildScaffold over shared extractEntities plus ScaffoldSourceTooLargeError
-│   │   └── members.ts             # Optional bounded class-member subset parser
+│   │   ├── members.ts             # Optional bounded class-member subset parser
+│   │   └── fieldTypes.ts          # Exact supported field-label resolver
 │   ├── consistencyChecker/        # Diagram <-> code drift detection
 │   │   ├── index.ts               # checkConsistency orchestration (scan, match, report)
 │   │   ├── fileAnalysis.ts        # Read and analyze bounded code files
@@ -700,11 +706,11 @@ Implemented in the unpublished 0.7.0 development wave, included in 0.8.0 (see [R
 
 Unreleased after 0.8.0, partially delivering code-from-diagram scaffolding:
 
-- `diagrams_scaffold` drafts exported TypeScript classes from heuristic entity-name candidates (aliases, namespaces, components, participants, and call names). Optional `include_members` adds unknown fields and throwing method stubs from a limited class-block grammar. Class kinds, field types, relations, and runtime behavior are not recovered.
+- `diagrams_scaffold` drafts exported TypeScript classes from heuristic entity-name candidates (aliases, namespaces, components, participants, and call names). Optional `include_members` adds unknown fields and throwing method stubs; `include_types` also retains supported primitive/class field labels and one-dimensional arrays. Class kinds, relations, and runtime behavior are not recovered.
 
 Still open:
 
-- Code-from-diagram follow-ups: broader member syntax and type recovery, relations, and languages beyond TypeScript
+- Code-from-diagram follow-ups: broader member syntax, richer field and method types, relations, and languages beyond TypeScript
 - AST-backed precision for more languages, as demand dictates
 - Export hardening follow-up: introduced in 0.8.0, image isolation replaces live-SVG export; the historical allowlist-sanitizer proposal in `docs/next-features.md` is not implemented (tracked there)
 

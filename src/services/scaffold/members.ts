@@ -6,7 +6,10 @@ export const MAX_SCAFFOLD_MEMBERS_PER_CLASS = 30;
 export interface ScaffoldMember {
   kind: "field" | "method";
   name: string;
+  typeLabel?: string;
 }
+
+export const MAX_SCAFFOLD_TYPE_LABEL_CHARS = MAX_ENTITY_NAME_CHARS + 2;
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CLASS_OPEN = /^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{$/;
@@ -38,25 +41,41 @@ function methodName(signature: string, type: DiagramType): string | undefined {
   return undefined;
 }
 
-function fieldName(signature: string): string | undefined {
+function retainTypeLabel(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.length > MAX_SCAFFOLD_TYPE_LABEL_CHARS) return undefined;
+  return trimmed;
+}
+
+function fieldInfo(signature: string): { name: string | undefined; typeLabel?: string } {
   const colon = signature.indexOf(":");
   if (colon !== -1) {
-    const label = signature.slice(colon + 1).trim();
-    return label && !label.includes(":") ? signature.slice(0, colon).trim() : undefined;
+    const rawLabel = signature.slice(colon + 1).trim();
+    if (!rawLabel || rawLabel.includes(":")) return { name: undefined };
+    return { name: signature.slice(0, colon).trim(), typeLabel: retainTypeLabel(rawLabel) };
   }
   const tokens = signature.split(/\s+/);
-  if (tokens.length === 1) return tokens[0];
-  if (tokens.length === 2 && IDENTIFIER.test(tokens[0])) return tokens[1];
-  return undefined;
+  if (tokens.length === 1) return { name: tokens[0] };
+  if (tokens.length === 2 && IDENTIFIER.test(tokens[0]))
+    return { name: tokens[1], typeLabel: retainTypeLabel(tokens[0]) };
+  return { name: undefined };
 }
 
 function parseMember(line: string, type: DiagramType): ScaffoldMember | undefined {
-  // Only validated names survive; implementation text and type labels never reach the emitter.
+  // Only validated names survive; raw labels are retained bounded for typed
+  // emission and never reach the unknown/method emitters.
   if (/[{};="'`]/.test(line)) return undefined;
   const signature = line.replace(/^[+\-#~]\s*/, "");
-  const kind = /[()]/.test(signature) ? "method" : "field";
-  const name = kind === "method" ? methodName(signature, type) : fieldName(signature);
-  return name && isMemberName(name) ? { kind, name } : undefined;
+  if (/[()]/.test(signature)) {
+    const name = methodName(signature, type);
+    return name && isMemberName(name) ? { kind: "method", name } : undefined;
+  }
+  const field = fieldInfo(signature);
+  const name = field.name;
+  if (!name || !isMemberName(name)) return undefined;
+  return field.typeLabel
+    ? { kind: "field", name, typeLabel: field.typeLabel }
+    : { kind: "field", name };
 }
 
 function* plantUmlLines(source: string): Generator<string> {

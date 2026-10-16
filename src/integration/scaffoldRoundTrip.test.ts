@@ -90,6 +90,29 @@ it("drafts class shells from a generated and stored diagram through the MCP SDK"
     assert.match(members.source as string, /submit\(\.\.\._args: unknown\[\]\): unknown/);
     assert.match(members.source as string, /throw "Not implemented"/);
     assert.equal((memberDraft.content as Array<{ text: string }>)[0].text, members.source);
+    const typedDraft = await client.callTool({
+      name: "diagrams_scaffold",
+      arguments: { relative_path: "order.mmd", include_types: true },
+    });
+    assert.equal(typedDraft.isError, undefined);
+    const typed = typedDraft.structuredContent as Record<string, unknown>;
+    assert.equal(typed.include_members, true, "types imply member generation");
+    assert.equal(typed.include_types, true);
+    assert.equal(typed.members_included, 2);
+    assert.equal(typed.typed_fields, 1);
+    assert.equal(typed.unresolved_fields, 0);
+    assert.equal(typed.written, false);
+    assert.match(typed.source as string, /id!: string;/);
+    assert.match(typed.source as string, /submit\(\.\.\._args: unknown\[\]\): unknown/);
+    assert.equal((typedDraft.content as Array<{ text: string }>)[0].text, typed.source);
+    assert.equal(Object.hasOwn(members, "include_types"), false);
+    assert.equal(Object.hasOwn(members, "typed_fields"), false);
+    const explicitUntyped = await client.callTool({
+      name: "diagrams_scaffold",
+      arguments: { relative_path: "order.mmd", include_members: true, include_types: false },
+    });
+    assert.equal(explicitUntyped.isError, undefined);
+    assert.deepEqual(explicitUntyped.structuredContent, memberDraft.structuredContent);
     assert.equal(Object.hasOwn(summary, "members_included"), false);
     assert.equal(Object.hasOwn(summary, "include_members"), false);
     assert.deepEqual((await fs.readdir(diagramsRoot)).sort(), ["model.mmd", "order.mmd"]);

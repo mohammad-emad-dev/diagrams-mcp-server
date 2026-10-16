@@ -2,9 +2,20 @@
 
 Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0).
 
+`diagrams_scaffold` also accepts `include_types` (default `false`), which implies
+member generation. It retains explicit field labels from the supported subset:
+`string`, `number`, `boolean`, `bigint`, or an emitted class name, optionally with
+one `[]`. Accepted fields use definite assignment (`name!: Type;`) without a
+runtime initializer. Missing/unsupported labels and references to non-emitted
+classes fall back to `unknown`. Type-mode responses add `include_types: true`,
+`typed_fields`, and `unresolved_fields` alongside member metadata. Methods stay
+unknown stubs. Existing modes remain unchanged; no semantic type inference or
+relationships are added.
+
 `diagrams_scaffold` now accepts `include_members` (default `false`). Opt-in mode
 drafts fields as `unknown` and methods as throwing stubs from a limited grammar
-of plain multiline PlantUML/Mermaid class blocks. It discards types, arguments,
+of plain multiline PlantUML/Mermaid class blocks. Without `include_types`, it
+discards field labels too; all modes discard method arguments, return labels,
 modifiers, and implementation text. Only selected emitted classes receive
 members, capped at 30 unique names per class. Opt-in responses add
 `include_members: true`, `members_included`, `members_capped`, and `member_limit`.

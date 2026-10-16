@@ -4,6 +4,7 @@ import { MAX_ENTITY_NAME_CHARS, MAX_SCAFFOLD_SOURCE_BYTES } from "../../constant
 import {
   buildScaffold,
   buildScaffoldWithMembers,
+  buildScaffoldWithTypes,
   ScaffoldSourceTooLargeError,
 } from "./scaffold.js";
 import type { DiagramType } from "../../types.js";
@@ -152,7 +153,7 @@ describe("scaffold service", () => {
     const diagram = prefix + "é".repeat(Math.floor(padding / 2)) + " ".repeat(padding % 2) + suffix;
     assert.equal(Buffer.byteLength(diagram, "utf8"), MAX_SCAFFOLD_SOURCE_BYTES);
     assert.ok(diagram.length < MAX_SCAFFOLD_SOURCE_BYTES);
-    for (const build of [buildScaffold, buildScaffoldWithMembers]) {
+    for (const build of [buildScaffold, buildScaffoldWithMembers, buildScaffoldWithTypes]) {
       assert.deepEqual(build(diagram, "plantuml", 30).entities, ["A"]);
       assert.throws(() => build(diagram + "x", "plantuml", 30), ScaffoldSourceTooLargeError);
     }
