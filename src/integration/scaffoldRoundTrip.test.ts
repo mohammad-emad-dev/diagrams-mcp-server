@@ -113,9 +113,50 @@ it("drafts class shells from a generated and stored diagram through the MCP SDK"
     });
     assert.equal(explicitUntyped.isError, undefined);
     assert.deepEqual(explicitUntyped.structuredContent, memberDraft.structuredContent);
+    const relationDiagram =
+      'classDiagram\nclass Order {\nid: string\n}\nclass Customer\nclass Item\nOrder --> Customer : customer\nOrder --> "*" Item : items\n';
+    const createdRelations = await client.callTool({
+      name: "diagrams_create",
+      arguments: { relative_path: "relations.mmd", content: relationDiagram },
+    });
+    assert.equal(createdRelations.isError, undefined);
+    const relationDraft = await client.callTool({
+      name: "diagrams_scaffold",
+      arguments: { relative_path: "relations.mmd", include_relations: true },
+    });
+    assert.equal(relationDraft.isError, undefined);
+    const relations = relationDraft.structuredContent as Record<string, unknown>;
+    assert.equal(relations.include_relations, true);
+    assert.equal(relations.include_types, true);
+    assert.equal(relations.include_members, true);
+    assert.equal(relations.members_included, 3);
+    assert.equal(relations.typed_fields, 3);
+    assert.equal(relations.relations_included, 2);
+    assert.equal(relations.relations_skipped, 0);
+    assert.equal(relations.relations_capped, false);
+    assert.equal(relations.relation_limit, 300);
+    assert.equal(relations.written, false);
+    assert.match(relations.source as string, /customer!: Customer;/);
+    assert.match(relations.source as string, /items!: Item\[\];/);
+    assert.equal((relationDraft.content as Array<{ text: string }>)[0].text, relations.source);
+    const disabledRelations = await client.callTool({
+      name: "diagrams_scaffold",
+      arguments: { relative_path: "order.mmd", include_types: true, include_relations: false },
+    });
+    assert.equal(disabledRelations.isError, undefined);
+    assert.deepEqual(disabledRelations.structuredContent, typedDraft.structuredContent);
+    assert.equal(Object.hasOwn(typed, "relations_included"), false);
     assert.equal(Object.hasOwn(summary, "members_included"), false);
     assert.equal(Object.hasOwn(summary, "include_members"), false);
-    assert.deepEqual((await fs.readdir(diagramsRoot)).sort(), ["model.mmd", "order.mmd"]);
+    assert.deepEqual((await fs.readdir(diagramsRoot)).sort(), [
+      "model.mmd",
+      "order.mmd",
+      "relations.mmd",
+    ]);
+    assert.equal(
+      await fs.readFile(path.join(diagramsRoot, "relations.mmd"), "utf8"),
+      relationDiagram,
+    );
     assert.equal(await fs.readFile(path.join(diagramsRoot, "order.mmd"), "utf8"), memberDiagram);
     assert.equal(await fs.readFile(path.join(root, "src-code", "model.ts"), "utf8"), code);
   } finally {
