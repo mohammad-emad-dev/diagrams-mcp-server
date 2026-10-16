@@ -1,6 +1,7 @@
 # Architecture
 
-Describes the repository as released in 0.8.0. CLI dispatch lives in
+Describes the repository as released in 0.8.0 plus `diagrams_scaffold`
+(unreleased after 0.8.0). CLI dispatch lives in
 `src/index.ts`; MCP construction lives in `src/server.ts`
 (`createDiagramServer`).
 
@@ -13,8 +14,8 @@ cleanup, local verification results, and remaining release checks.
 MCP client (stdio)
   -> src/index.ts main()            # CLI dispatch: setup | --help | serve
   -> src/context.ts                 # one ServerContext for the process
-  -> src/server.ts                  # createDiagramServer(ctx): builds McpServer, registers 13 tools
-  -> src/tools/diagrams*.ts         # 13 tool adapters, one file per tool
+  -> src/server.ts                  # createDiagramServer(ctx): builds McpServer, registers 14 tools
+  -> src/tools/diagrams*.ts         # 14 tool adapters, one file per tool
   -> src/services/*                 # filesystem, analysis, rendering, emitters
   -> src/tools/toolError.ts         # expected vs. unexpected error mapping
 ```
@@ -22,7 +23,7 @@ MCP client (stdio)
 `main()` serves by: `createServerContext()`, `diagramStore.ensureRootExists()`,
 `createDiagramServer(ctx)`, then `server.connect(new StdioServerTransport())`.
 `createDiagramServer` builds `new McpServer({ name: "diagrams-mcp-server",
-... })`, runs the thirteen `registerDiagrams*` calls, and returns the server.
+... })`, runs the fourteen `registerDiagrams*` calls, and returns the server.
 `setup` dispatches to `runSetup` in `src/setup/index.ts` (clients, prompts,
 terminal helpers in the same directory); `--help` / `-h` prints help and exits.
 
@@ -51,12 +52,13 @@ and first write, while subsequent key events still render the updated state.
   its evidence types, `AnalyzerTier` (`reliable` / `experimental` / `generic`).
 - `src/constants.ts` — `toPosixPath`, `EXTENSION_TO_TYPE` (`.puml`, `.plantuml`,
   `.mmd`, `.mermaid`), `TYPE_TO_EXTENSION`, `DEFAULT_DIAGRAMS_DIR`, and the
-  `MAX_*` caps for pagination, rendering, generation, templates (incl. `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000, introduced in 0.8.0), and export.
+  `MAX_*` caps for pagination, rendering, generation, templates (incl. `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000, introduced in 0.8.0), export, and scaffold (`MAX_SCAFFOLD_SOURCE_BYTES` 1,000,000, unreleased after 0.8.0).
 - `src/tools/toolError.ts` — `handleToolError` / `handleRenderError`: expected
   domain errors (`DiagramNotFoundError`, `PathTraversalError`,
   `DiagramValidationError`, `DiagramExistsError`,
-  `UnsupportedDiagramExtensionError`, `ScopeEscapeError`, `RenderError`) pass
-  through with their message; everything else is logged to stderr (name only)
+  `UnsupportedDiagramExtensionError`, `ScopeEscapeError`, `RenderError`,
+  `CustomTemplateError`, `CallOrderLimitError`, `ScaffoldSourceTooLargeError`)
+  pass through with their message; everything else is logged to stderr (name only)
   and returned as a generic internal-error result.
 
 ## Tools (`src/tools/`)
@@ -83,6 +85,7 @@ render step is unit-testable without a CLI or the network.
 | `diagrams_diff`              | `diagramsDiff.ts`             |
 | `diagrams_template`          | `diagramsTemplate.ts`         |
 | `diagrams_list_templates`    | `diagramsListTemplates.ts`    |
+| `diagrams_scaffold`          | `diagramsScaffold.ts`         |
 
 Adapters validate input with strict Zod schemas and map failures through
 `toolError.ts`. Successful responses pair `content` with `structuredContent`:
@@ -91,7 +94,7 @@ source tools return their source as text, report tools return a summary, and
 `toolOutput.test.ts` file next to the adapters tests the content/structured
 contract through captured registrations.
 
-Introduced in 0.8.0: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 13 tools and verify rejected mutation requests leave files unchanged.
+Introduced in 0.8.0: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 14 tools (thirteen in 0.8.0 plus `diagrams_scaffold`) and verify rejected mutation requests leave files unchanged.
 
 `diagramsDiff.ts` delegates its input schema, validation, and side loading to
 `diffInput.ts`, and its text summaries to `diffSummary.ts`. Validation runs
@@ -108,6 +111,10 @@ SVG to a private formatter that builds the HTML and enforces the UTF-8 byte cap.
 Formatting stays inside each adapter's existing error boundary.
 `diagramsCheckConsistency.ts` also keeps report formatting private to the
 adapter, including evidence field names, summary branches, and scan warnings.
+Unreleased after 0.8.0, `diagramsScaffold.ts` reads one stored diagram, builds
+empty TypeScript classes through `services/scaffold/scaffold.ts`, and reports
+candidate-only counts with a heuristic warning; the text block is the emitted
+source itself.
 
 ## Services (`src/services/`)
 
@@ -214,6 +221,7 @@ adapter, including evidence field names, summary branches, and scan warnings.
 - `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
   byte-identical output. Introduced in 0.8.0: `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
+- `scaffold/scaffold.ts` — unreleased after 0.8.0, pure code-from-diagram draft: `buildScaffold` checks the 1,000,000 UTF-8 byte cap before calling the shared `extractEntities` unchanged, partitions candidates into emittable and skipped names (identifier grammar, 60 chars, conservative reserved set, order-preserving dedupe), caps valid names, and emits `export class Name {}` blocks. `ScaffoldSourceTooLargeError` is an expected error in `toolError.ts`. No filesystem, rendering, network, or execution.
 
 Introduced in 0.8.0, `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
 
@@ -232,8 +240,8 @@ exit code. New tests need no package-script edits. Build before testing.
 Lint and formatting checks cover both `src/` and `scripts/`.
 
 `src/integration/mcpServer.test.ts` drives the compiled `dist/index.js`
-over real stdio with the SDK client and asserts the thirteen names in
-`EXPECTED_TOOLS`; rendering stays stubbed or discovery-only there.
+over real stdio with the SDK client and asserts the fourteen names in
+`EXPECTED_TOOLS` (thirteen in 0.8.0 plus `diagrams_scaffold`); rendering stays stubbed or discovery-only there.
 
 Renderer tests give `TEMP`, `TMP`, and `TMPDIR` a file-owned temporary
 directory so parallel test workers cannot interfere with cleanup assertions.

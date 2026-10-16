@@ -108,3 +108,9 @@ export const MAX_DIFF_ORDER_CALLS = 10_000;
 // saves a diagram with half its rendering. Matches MAX_REMOTE_BODY_BYTES, the
 // same memory bound the renderer already applies to a fetched SVG.
 export const MAX_EXPORT_HTML_BYTES = 5_000_000;
+
+// Largest diagram source diagrams_scaffold reads before extraction. The UTF-8
+// byte length is checked before extractEntities runs, so an over-cap diagram
+// is rejected with a typed error instead of being truncated or partially
+// scanned. Matches the per-file scan bound the consistency checker applies.
+export const MAX_SCAFFOLD_SOURCE_BYTES = 1_000_000;

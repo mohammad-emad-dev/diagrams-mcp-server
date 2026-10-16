@@ -1,3 +1,23 @@
+# Release notes — unreleased after 0.8.0
+
+`diagrams_scaffold` drafts empty exported TypeScript classes from the
+heuristic entity-name candidates in a stored diagram. It reads one diagram
+through the traversal-protected store, reuses the existing
+`extractEntities(source, type)` unchanged, and emits `export class Name {}`
+per emittable name with no writes, rendering, network, or execution.
+
+Candidate-only draft limits: names may include aliases, namespaces,
+components, participants, and call names such as `charge`; class
+kinds, members, field types, relations, and runtime behavior are not
+recovered. Only `^[A-Za-z_][A-Za-z0-9_]*$` names at most 60 characters outside
+the reserved and TypeScript-forbidden set are emitted; the rest are reported in
+`skipped_entities`/`skipped_count` without renaming. Valid candidates before
+the 60-cap are counted in `entities_available`; over-cap UTF-8 sources above
+1,000,000 bytes are rejected before extraction. Empty candidate sets succeed
+with empty source. Members, relations, and additional languages remain open.
+
+---
+
 # Release notes — 0.8.0
 
 Package, runtime, lockfile, and registry metadata are aligned to `0.8.0`.

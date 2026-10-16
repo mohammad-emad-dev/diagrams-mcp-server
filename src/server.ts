@@ -13,6 +13,7 @@ import { registerDiagramsGenerateSequence } from "./tools/diagramsGenerateSequen
 import { registerDiagramsDiff } from "./tools/diagramsDiff.js";
 import { registerDiagramsTemplate } from "./tools/diagramsTemplate.js";
 import { registerDiagramsListTemplates } from "./tools/diagramsListTemplates.js";
+import { registerDiagramsScaffold } from "./tools/diagramsScaffold.js";
 
 export function createDiagramServer(ctx: ServerContext): McpServer {
   const server = new McpServer({
@@ -33,6 +34,7 @@ export function createDiagramServer(ctx: ServerContext): McpServer {
   registerDiagramsDiff(server, ctx);
   registerDiagramsTemplate(server, ctx);
   registerDiagramsListTemplates(server, ctx);
+  registerDiagramsScaffold(server, ctx);
 
   return server;
 }

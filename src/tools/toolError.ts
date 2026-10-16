@@ -14,6 +14,7 @@ import { RenderError } from "../services/renderer.js";
 import { ScopeEscapeError } from "../services/scopeResolve.js";
 import { CustomTemplateError } from "../services/templates/customTemplates.js";
 import { CallOrderLimitError } from "../services/diff/callOrder.js";
+import { ScaffoldSourceTooLargeError } from "../services/scaffold/scaffold.js";
 
 export interface ToolErrorResult {
   content: [{ type: "text"; text: string }];
@@ -68,7 +69,8 @@ export function isExpectedToolError(err: unknown): err is Error {
     err instanceof ScopeEscapeError ||
     err instanceof RenderError ||
     err instanceof CustomTemplateError ||
-    err instanceof CallOrderLimitError
+    err instanceof CallOrderLimitError ||
+    err instanceof ScaffoldSourceTooLargeError
   );
 }
 
