@@ -14,7 +14,8 @@
 // Participant resolution is case-insensitive declared-identifier matching: a
 // callee with no declaring file in the scope is reported in unresolvedCallees,
 // never attached to an invented participant (which class owns the method is a
-// type question, and out of scope).
+// type question, and out of scope). Senders use the call-site file so duplicate
+// caller names in other files cannot redirect their ownership.
 
 import { promises as fs } from "node:fs";
 import path from "node:path";
@@ -240,11 +241,9 @@ function collectCandidateMessages(
         }
         continue;
       }
-      // The call site physically lives in this file; the caller resolves
-      // through the same index when it declares the enclosing operation.
-      const from = resolveParticipant(operationIndex, edge.caller) ?? file.moduleName;
+      // A global caller lookup would misattribute calls when names collide.
       candidates.push({
-        from,
+        from: file.moduleName,
         to,
         message: edge.callee,
         line: edge.line,

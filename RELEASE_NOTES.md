@@ -1,5 +1,11 @@
 # Unreleased after 0.9.0
 
+Sequence generation now anchors each sender to the file containing the call
+site. Duplicate or case-colliding caller declarations in earlier files no
+longer redirect that sender. Callee lookup retains its case-insensitive first
+declaring participant behavior and same-basename merging. This applies with
+the optional TypeScript compiler and the heuristic fallback.
+
 Typed scaffold fields accept one nullable arm around a supported scalar or
 selected emitted-class type with an optional single array suffix. Both
 `string | null` and `null | string` emit `string | null`. This also applies to

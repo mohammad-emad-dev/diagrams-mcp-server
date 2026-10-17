@@ -239,7 +239,7 @@ keep their source and response shapes when this flag is false or omitted.
   Sequence generation builds its operation lookup after merging files that
   share a participant name. The first participant declaring a lowercase
   operation name wins, including when a later participant has an exact-case
-  match. Candidate caller and callee lookups reuse that index. Introduced in 0.8.0: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
+  match. Unreleased after 0.9.0: only callee lookup uses that index and the sender is always the file containing the call site. Duplicate or case-colliding caller names in earlier files cannot redirect a later file's sender. Same-basename participant merging is unchanged. Introduced in 0.8.0: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
   Introduced in 0.8.0: `SequenceOptions.includeCallParentheses` (wire: `include_call_parentheses`, default false) reaches only the sequence emitter. When enabled, labels append `()`; structured messages retain their operation names, and collection/capping behavior is unchanged.
 - `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield

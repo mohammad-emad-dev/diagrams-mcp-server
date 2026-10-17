@@ -68,7 +68,7 @@ const HEURISTIC_WARNING =
   "the call, which says nothing about what happens at run time. A call inside a callback, promise, " +
   "or listener is unknowable from source and is counted in deferred_count instead of being sequenced. " +
   "TypeScript uses AST call sites when its compiler is available, otherwise heuristic extraction. " +
-  "Participant mapping uses case-insensitive operation names and the first declaring file — " +
+  "Each sender is the file containing the call site. Callee mapping uses case-insensitive operation names and the first declaring file — " +
   "there is no type resolution, so a callee " +
   "no file in the scope declares is listed in unresolved_callees rather than attached to a guessed " +
   "participant. Message arguments, cross-language calls, and dynamic dispatch are out of scope. Treat " +
@@ -140,7 +140,7 @@ Static call-site order is not runtime order. This tool reads call sites in the o
 
 It is the generative flip side of the consistency checker's ordered call graph: the same caller-to-callee evidence, turned into a starter diagram instead of a verdict. It never writes: nothing lands in the diagrams directory without an explicit diagrams_create call.
 
-Participant mapping is declared-identifier equality only — a callee that no file in the scope declares is reported in unresolved_callees, never attached to an invented participant. Which class owns a method is a type question, and out of scope.
+Each sender is the file containing the call site even when another file declares the same caller name. Callee mapping uses case-insensitive declared-identifier equality and the first declaring participant in file order. A callee that no file in the scope declares is reported in unresolved_callees, never attached to an invented participant. Which class owns a method is a type question, and out of scope.
 
 Args:
   - scope (string, default "."): Relative path under the project root pointing at a file or a directory. Absolute paths and anything resolving outside the project root are refused
