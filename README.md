@@ -413,6 +413,10 @@ Local renderer commands have a default timeout of 20000 milliseconds
 Captured renderer streams are bounded at 1000000 characters each
 Remote PlantUML requests also have a 20000 millisecond timeout and a
 5000000 byte response ceiling
+In the unreleased source checkout the timeout covers headers and the full
+body download and the byte ceiling is enforced as decoded chunks arrive
+Oversized or failed downloads are stopped and unused HTTP error bodies
+are discarded
 These bounds do not turn external renderers into an application sandbox
 
 Tool execution failures are marked with isError set to true

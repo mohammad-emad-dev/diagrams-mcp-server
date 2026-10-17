@@ -2,6 +2,13 @@
 
 Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0).
 
+Remote PlantUML requests now retain their timeout through response body download
+and reject decoded streams as soon as they exceed 5,000,000 bytes. Oversized
+declared lengths are refused before payload buffering. Failed downloads and
+unused HTTP error bodies are aborted. Existing status and limit error messages
+and the injected `fetchRemote` response contract are preserved. No new dependency
+or remote-rendering permission is introduced.
+
 `diagrams_scaffold` adds `include_relations` (default `false`), implying typed
 member generation. Labeled top-level `Owner --> Target : role` links between
 explicit plain declared and emitted classes become typed fields; supported

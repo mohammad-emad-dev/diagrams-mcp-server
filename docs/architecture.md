@@ -162,7 +162,14 @@ keep their source and response shapes when this flag is false or omitted.
   files, and temporary-directory cleanup. The renderer entry retains backend
   selection, remote-fallback policy, and provenance reporting.
 - `renderer/plantumlRemote.ts` — PlantUML URL encoding, remote requests,
-  timeouts, and response-size checks. The renderer entry owns the fallback
+  timeouts, and response-size checks. Unreleased after 0.8.0, the production
+  fetch reads successful responses eagerly through a bounded decoded stream
+  while the request timer remains active through the body download. A fixed
+  5,000,000-byte buffer bounds retained chunk storage; the returned buffer is
+  sliced to the exact received size. Finalization aborts unread or failed
+  downloads and discards unused HTTP error bodies. Injected `fetchRemote`
+  implementations keep their existing response contract and are still checked
+  for declared and buffered size by the render layer. The renderer entry owns the fallback
   decision and re-exports `encodePlantUmlForUrl` and `defaultFetchRemote` for
   existing callers.
 - `scopeResolve.ts` — `resolveScope(projectRoot, scope)` bounds the read-only
