@@ -81,6 +81,9 @@ publish step uploads that exact verified tarball rather than rebuilding it.
 Existing npm versions skip fresh artifact acceptance and npm publication during
 recovery. MCP registration is checked separately. See
 [release recovery](release-recovery.md) for retry behavior and immutable tag rules.
+The current workflow waits for exact npm version visibility before a missing
+MCP registration with a bounded polling step. An accepted upload can still be
+processing and unavailable to the MCP validator during that interval.
 
 Verify both registries after publication:
 
