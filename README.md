@@ -38,7 +38,8 @@ Startup diagnostics use standard error so they do not occupy the protocol
 stream
 
 The project root defines the code analysis boundary
-The diagrams root defines the storage boundary
+The diagrams root defines the diagram storage boundary
+Custom template definitions are read separately beneath the project root
 These roots are resolved once when the server starts
 Diagram paths supplied to tools are relative to the diagrams root
 Code scopes supplied to analysis tools are relative to the project root
@@ -336,6 +337,10 @@ OPERATIONAL LIMITS AND FAILURE RECOVERY
 ======================================
 
 Consistency and code generation scans examine at most 5000 source files
+Directory traversal skips hidden directories and known dependency and build
+directories such as node_modules and dist and build and out and target
+Only files with recognized code extensions are collected
+An unmatched name in an excluded file is outside that scan result
 Files above 1000000 bytes are skipped
 The scanners limit concurrent file reads to 32
 Consistency evidence retains at most 10 matched file references per entity
@@ -401,10 +406,18 @@ root in order:
 
 Tests run from compiled output so build before running them
 The build removes stale output before compiling
-Use npm start to launch the built server for a locally configured MCP client
-The client must point to that checkout command to exercise unreleased tools
+For a local MCP client configure node as the server command and supply the
+absolute path to the compiled index JavaScript file under dist as its argument
+Set PROJECT_ROOT to the codebase that this local server should analyze
+This local entry exercises the unreleased tools
 The published setup command otherwise installs the published package through
 npx for its generated server entry
+
+Running npm ci in the checkout also supplies the development TypeScript
+compiler for compiler backed analysis
+Published installs normally use the fallback extractors
+Installing TypeScript only in the analyzed project does not guarantee that
+the server package can resolve it
 
 Continuous integration runs lint and formatting checks and a build and an
 entry point help check before the test suite
