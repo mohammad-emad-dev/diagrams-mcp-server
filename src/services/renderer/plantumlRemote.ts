@@ -37,6 +37,39 @@ export async function encodePlantUmlForUrl(source: string): Promise<string> {
   return result;
 }
 
+async function readCappedRemoteBody(response: Response): Promise<ArrayBuffer> {
+  if (!response.body) return new ArrayBuffer(0);
+  const reader = response.body.getReader();
+  const storage = new ArrayBuffer(MAX_REMOTE_BODY_BYTES);
+  const bytes = new Uint8Array(storage);
+  let size = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) return storage.slice(0, size);
+      if (size + chunk.value.byteLength > MAX_REMOTE_BODY_BYTES) throw overRemoteBodyCap();
+      bytes.set(chunk.value, size);
+      size += chunk.value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function bufferedRemoteResponse(response: Response): Promise<RemoteRenderResponse> {
+  if (!response.ok) return response;
+  const lengthHeader = response.headers.get("content-length");
+  const declared = lengthHeader === null ? null : Number(lengthHeader);
+  if (declared !== null && declared > MAX_REMOTE_BODY_BYTES) throw overRemoteBodyCap();
+  const body = await readCappedRemoteBody(response);
+  return {
+    ok: response.ok,
+    status: response.status,
+    contentLength: declared === null || Number.isNaN(declared) ? null : declared,
+    arrayBuffer: () => Promise.resolve(body),
+  };
+}
+
 // Exported as a test seam (same precedent as resolveSpawnTarget).
 export async function defaultFetchRemote(
   url: string,
@@ -46,16 +79,9 @@ export async function defaultFetchRemote(
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal });
-    const lengthHeader = response.headers.get("content-length");
-    const contentLength = lengthHeader === null ? null : Number(lengthHeader);
-    return {
-      ok: response.ok,
-      status: response.status,
-      contentLength: contentLength === null || Number.isNaN(contentLength) ? null : contentLength,
-      arrayBuffer: () => response.arrayBuffer(),
-    };
+    return await bufferedRemoteResponse(response);
   } catch (err: unknown) {
-    if (err instanceof Error && err.name === "AbortError") {
+    if (controller.signal.aborted) {
       throw new RenderError(
         `PlantUML rendering request timed out after ${timeoutMs}ms and was stopped. ` +
           `Install a local 'plantuml' CLI for offline rendering.`,
@@ -64,6 +90,8 @@ export async function defaultFetchRemote(
     throw err;
   } finally {
     clearTimeout(timer);
+    // Discard unread HTTP error bodies and stop failed or oversized downloads.
+    controller.abort();
   }
 }
 
@@ -82,9 +110,8 @@ export async function renderPlantUmlRemote(
         `Install a local 'plantuml' CLI for offline rendering, or check the diagram syntax.`,
     );
   }
-  // Bound the remote body before buffering it: a declared over-cap length
-  // rejects without reading, and the buffered length is re-checked for
-  // missing or lying headers. The error never includes body bytes.
+  // Injected fetch implementations retain the same response contract and still
+  // need these checks even though the production fetch caps its stream already.
   const declared = response.contentLength ?? null;
   if (declared !== null && declared > MAX_REMOTE_BODY_BYTES) {
     throw overRemoteBodyCap();
