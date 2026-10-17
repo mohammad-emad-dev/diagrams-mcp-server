@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { MAX_ENTITY_NAME_CHARS } from "../../constants.js";
 import { buildScaffold, buildScaffoldWithMembers, buildScaffoldWithTypes } from "./scaffold.js";
-import { resolveTypedFieldType } from "./fieldTypes.js";
 
 const primitivesDiagram =
   "@startuml\nclass Order {\n+id: string\n-total: number\n~paid: boolean\n+bigint version\n+customer: Customer\n+items: Item[]\n+tags: string[]\n+plain\n-Money amount\n+describe(id): string\n}\nclass Customer {}\nclass Item {}\n@enduml\n";
@@ -14,8 +13,43 @@ const cartDiagram =
 const fallbackDiagram =
   '@startuml\nclass Packet {\nname: string\nbyte: string\nbytes: string\nalias: String\ncount: integer\nflag: booleanish\nmaybe: any\nnothing: null\nundef: undefined\nblank: void\nboxed: List<string>\neither: string|number\nqualified: meta.Tag\nnested: Token[][]\nhandler: Function\npadded :  string\nspaced: str ing\nquoted: "secret"\nassigned = source\nrun();\nrecord: { id: string }\n}\nclass Token {}\n@enduml\n';
 
+const arrayWrapperCases = [
+  { name: "strings", label: "Array<string>", expected: "string[]" },
+  { name: "numbers", label: "Array<number>", expected: "number[]" },
+  { name: "booleans", label: "ReadonlyArray<boolean>", expected: "readonly boolean[]" },
+  { name: "bigints", label: "ReadonlyArray<bigint>", expected: "readonly bigint[]" },
+  { name: "users", label: "Array<WrapperUser>", expected: "WrapperUser[]" },
+  {
+    name: "readonlyUsers",
+    label: "ReadonlyArray<WrapperUser>",
+    expected: "readonly WrapperUser[]",
+  },
+  { name: "nullableUsers", label: "Array<WrapperUser> | null", expected: "WrapperUser[] | null" },
+  {
+    name: "nullableUsersReverse",
+    label: "null | Array<WrapperUser>",
+    expected: "WrapperUser[] | null",
+  },
+  {
+    name: "nullableReadonlyUsers",
+    label: "ReadonlyArray<WrapperUser> | null",
+    expected: "readonly WrapperUser[] | null",
+  },
+  {
+    name: "nullableReadonlyReverse",
+    label: "null | ReadonlyArray<WrapperUser>",
+    expected: "readonly WrapperUser[] | null",
+  },
+] as const;
+
+const arrayWrapperFields = arrayWrapperCases
+  .map(({ name, label }) => `${name}: ${label}`)
+  .join("\n");
+const arrayWrapperPlantUmlDiagram = `@startuml\nclass Owner {\n${arrayWrapperFields}\n}\nclass WrapperUser {}\n@enduml\n`;
+const arrayWrapperMermaidDiagram = `classDiagram\nclass Owner {\n${arrayWrapperFields}\n}\nclass WrapperUser {}\n`;
+
 const ledgerDiagram =
-  "@startuml\nclass Ledger {\nself: Ledger\npeer: Entry\nfar: Batch\nfarNullable: null | Batch\n}\nclass Entry {\nback: Ledger\n}\nclass Batch {\npeer: Entry\n}\n@enduml\n";
+  "@startuml\nclass Ledger {\nself: Ledger\npeer: Entry\nfar: Batch\nfarNullable: null | Batch\nfarArray: Array<Batch>\nfarReadonlyNullable: null | ReadonlyArray<Batch>\n}\nclass Entry {\nback: Ledger\n}\nclass Batch {\npeer: Entry\n}\n@enduml\n";
 
 const invalidNullableFields = `bareNull: null
 duplicateBareNull: null | null
@@ -160,11 +194,92 @@ describe("typed scaffold field types", () => {
       boundary.source,
       /tooLong: unknown;\n  tooLongIdentifier: unknown;\n  huge: unknown;/,
     );
-    const overlongIdentifier = "B".repeat(MAX_ENTITY_NAME_CHARS + 1);
-    assert.equal(
-      resolveTypedFieldType(overlongIdentifier, new Set([overlongIdentifier])),
-      undefined,
-    );
+  });
+
+  it("emits strict array wrappers and nullable arms in both dialects", () => {
+    const expectedTypedFields = arrayWrapperCases
+      .map(({ name, expected }) => `  ${name}!: ${expected};`)
+      .join("\n");
+    const expectedUnknownFields = arrayWrapperCases
+      .map(({ name }) => `  ${name}: unknown;`)
+      .join("\n");
+    const diagrams = [
+      { source: arrayWrapperPlantUmlDiagram, type: "plantuml" as const },
+      { source: arrayWrapperMermaidDiagram, type: "mermaid" as const },
+    ];
+
+    for (const diagram of diagrams) {
+      const typed = buildScaffoldWithTypes(diagram.source, diagram.type, 30);
+      assert.equal(
+        typed.source,
+        `export class Owner {\n${expectedTypedFields}\n}\n\nexport class WrapperUser {}\n`,
+      );
+      assert.equal(typed.typedFields, arrayWrapperCases.length);
+      assert.equal(typed.unresolvedFields, 0);
+      assert.equal(typed.membersIncluded, arrayWrapperCases.length);
+
+      const defaultDraft = buildScaffold(diagram.source, diagram.type, 30);
+      assert.equal(defaultDraft.source, "export class Owner {}\n\nexport class WrapperUser {}\n");
+      const memberDraft = buildScaffoldWithMembers(diagram.source, diagram.type, 30);
+      assert.equal(
+        memberDraft.source,
+        `export class Owner {\n${expectedUnknownFields}\n}\n\nexport class WrapperUser {}\n`,
+      );
+      assert.equal(memberDraft.membersIncluded, arrayWrapperCases.length);
+      assert.doesNotMatch(memberDraft.source, /!:|Array<|ReadonlyArray<|\| null/);
+    }
+  });
+
+  it("rejects malformed, nested, unsupported, and unselected wrapper elements", () => {
+    const malformedLabels = [
+      ["spaceBeforeOpen", "Array <string>"],
+      ["spaceAfterOpen", "Array< string>"],
+      ["spaceBeforeClose", "ReadonlyArray<string >"],
+      ["nestedGeneric", "Array<Array<string>>"],
+      ["nestedReadonly", "ReadonlyArray<ReadonlyArray<WrapperUser>>"],
+      ["nestedArray", "Array<string[]>"],
+      ["arrayOfReadonly", "Array<ReadonlyArray<WrapperUser>>"],
+      ["arraySuffix", "Array<string>[]"],
+      ["readonlySuffix", "ReadonlyArray<WrapperUser>[]"],
+      ["unionInside", "Array<string | null>"],
+      ["qualified", "ReadonlyArray<meta.User>"],
+      ["otherConstructor", "Set<string>"],
+      ["anyElement", "Array<any>"],
+      ["unknownElement", "ReadonlyArray<unknown>"],
+      ["nullElement", "Array<null>"],
+      ["undefinedElement", "ReadonlyArray<undefined>"],
+      ["missingClass", "Array<Missing>"],
+    ] as const;
+    const fields = malformedLabels.map(([name, label]) => `${name}: ${label}`).join("\n");
+    const diagrams = [
+      {
+        source: `@startuml\nclass Owner {\n${fields}\n}\nclass WrapperUser {}\n@enduml`,
+        type: "plantuml" as const,
+      },
+      {
+        source: `classDiagram\nclass Owner {\n${fields}\n}\nclass WrapperUser {}`,
+        type: "mermaid" as const,
+      },
+    ];
+    const expectedFields = malformedLabels.map(([name]) => `  ${name}: unknown;`).join("\n");
+
+    for (const diagram of diagrams) {
+      const typed = buildScaffoldWithTypes(diagram.source, diagram.type, 30);
+      assert.equal(
+        typed.source,
+        `export class Owner {\n${expectedFields}\n}\n\nexport class WrapperUser {}\n`,
+      );
+      assert.equal(typed.typedFields, 0);
+      assert.equal(typed.unresolvedFields, malformedLabels.length);
+      assert.equal(typed.membersIncluded, malformedLabels.length);
+
+      const defaultDraft = buildScaffold(diagram.source, diagram.type, 30);
+      assert.equal(defaultDraft.source, "export class Owner {}\n\nexport class WrapperUser {}\n");
+      const memberDraft = buildScaffoldWithMembers(diagram.source, diagram.type, 30);
+      assert.equal(memberDraft.membersIncluded, malformedLabels.length);
+      assert.equal(memberDraft.source.match(/: unknown;/g)?.length, malformedLabels.length);
+      assert.doesNotMatch(memberDraft.source, /Array<|ReadonlyArray<|meta\.User|Missing/);
+    }
   });
 
   it("canonicalizes one null arm and rejects other unions in both dialects", () => {
@@ -233,25 +348,49 @@ describe("typed scaffold field types", () => {
     }
   });
 
-  it("rejects empty nullable arms and enforces the raw label ceiling", () => {
+  it("rejects empty nullable arms and enforces label and atom boundaries", () => {
     const longestName = "A".repeat(60);
-    const emitted = new Set([longestName]);
-    const cases: Array<[string, string | undefined]> = [
-      ["string |", undefined],
-      ["| string", undefined],
-      ["string || null", undefined],
-      ["|", undefined],
-      ["null[] | string", undefined],
-      ["string | null[]", undefined],
-      ["(string) | null", undefined],
-      ["string[] | null", "string[] | null"],
-      [`${longestName}[] | null`, `${longestName}[] | null`],
-      [`${longestName}[]  | null`, undefined],
-      [`${"B".repeat(61)} | null`, undefined],
+    const tooLongName = "B".repeat(MAX_ENTITY_NAME_CHARS + 1);
+    const cases: Array<[string, string, string | undefined]> = [
+      ["emptyRight", "string |", undefined],
+      ["emptyLeft", "| string", undefined],
+      ["multipleArms", "string || null", undefined],
+      ["bothEmpty", "|", undefined],
+      ["nullArrayBefore", "null[] | string", undefined],
+      ["nullArrayAfter", "string | null[]", undefined],
+      ["simpleNullable", "string[] | null", "string[] | null"],
+      ["longNullable", `${longestName}[] | null`, `${longestName}[] | null`],
+      ["extraNullableWhitespace", `${longestName}[]  | null`, `${longestName}[] | null`],
+      ["extraWhitespaceAt82", `${longestName}[]${" ".repeat(14)}| null`, `${longestName}[] | null`],
+      ["readonlyAt82", `ReadonlyArray<${longestName}> | null`, `readonly ${longestName}[] | null`],
+      ["readonlyAt83", `ReadonlyArray<${longestName}>  | null`, undefined],
+      ["base60", longestName, longestName],
+      ["base61", tooLongName, undefined],
+      ["atom62", `${longestName}[]`, `${longestName}[]`],
+      ["atom63", `${longestName}[]x`, undefined],
+      ["wrapper60", `Array<${longestName}>`, `${longestName}[]`],
+      ["wrapper61", `Array<${tooLongName}>`, undefined],
     ];
-    for (const [label, expected] of cases) {
-      assert.equal(resolveTypedFieldType(label, emitted), expected, label);
-    }
+    const fields = cases.map(([name, label]) => `${name}: ${label}`).join("\n");
+    const diagram = `@startuml\nclass Limits {\n${fields}\n}\nclass ${longestName} {}\nclass ${tooLongName} {}\n@enduml`;
+    const limits = buildScaffoldWithTypes(diagram, "plantuml", 30);
+    const expectedFields = cases
+      .map(([name, , expected]) => `  ${name}${expected ? `!: ${expected}` : ": unknown"};`)
+      .join("\n");
+
+    assert.equal(
+      limits.source,
+      `export class Limits {\n${expectedFields}\n}\n\nexport class ${longestName} {}\n`,
+    );
+    assert.equal(
+      limits.typedFields,
+      cases.filter(([, , expected]) => expected !== undefined).length,
+    );
+    assert.equal(limits.unresolvedFields, cases.length - limits.typedFields);
+    assert.equal(limits.membersIncluded, cases.length);
+    assert.equal(limits.entitiesAvailable, 2);
+    assert.deepEqual(limits.entities, ["Limits", longestName]);
+    assert.deepEqual(limits.skippedEntities, [tooLongName]);
   });
 
   it("resolves references only to emitted classes, so cap-dropped ones fall back", () => {
@@ -261,11 +400,11 @@ describe("typed scaffold field types", () => {
     assert.equal(ledger.entitiesCapped, true);
     assert.equal(
       ledger.source,
-      "export class Ledger {\n  self!: Ledger;\n  peer!: Entry;\n  far: unknown;\n  farNullable: unknown;\n}\n\nexport class Entry {\n  back!: Ledger;\n}\n",
+      "export class Ledger {\n  self!: Ledger;\n  peer!: Entry;\n  far: unknown;\n  farNullable: unknown;\n  farArray: unknown;\n  farReadonlyNullable: unknown;\n}\n\nexport class Entry {\n  back!: Ledger;\n}\n",
     );
     assert.equal(ledger.typedFields, 3);
-    assert.equal(ledger.unresolvedFields, 2);
-    assert.equal(ledger.membersIncluded, 5);
+    assert.equal(ledger.unresolvedFields, 4);
+    assert.equal(ledger.membersIncluded, 7);
     assert.doesNotMatch(ledger.source, /Batch/);
   });
 
@@ -297,6 +436,7 @@ describe("typed scaffold field types", () => {
     const code = [
       buildScaffoldWithTypes(primitivesDiagram, "plantuml", 30),
       buildScaffoldWithTypes(cartDiagram, "mermaid", 30),
+      buildScaffoldWithTypes(arrayWrapperPlantUmlDiagram, "plantuml", 30),
       buildScaffoldWithTypes(fallbackDiagram, "plantuml", 30),
       buildScaffoldWithTypes(ledgerDiagram, "plantuml", 2),
       buildScaffoldWithTypes(archiveDiagram, "plantuml", 1),

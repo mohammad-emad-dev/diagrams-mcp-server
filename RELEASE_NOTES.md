@@ -1,5 +1,16 @@
 # Unreleased after 0.9.0
 
+Typed scaffolding accepts strict `Array<T>` and `ReadonlyArray<T>` labels for
+supported primitives or selected emitted class names. They emit `T[]` and
+`readonly T[]` respectively and may have one nullable arm in either order.
+Nested wrappers and arrays and other generic constructors remain unsupported.
+Wrapper syntax requires colon field notation and permits no internal whitespace.
+The raw label limit expands to 82 characters to fit the longest supported
+readonly wrapper and nullable arm. Existing identifier and plain atom limits
+remain 60 and 62 characters. Extra nullable separator whitespace also fits
+within the expanded raw limit. Default shells and unknown-member mode keep
+their output behavior.
+
 Sequence generation now anchors each sender to the file containing the call
 site. Duplicate or case-colliding caller declarations in earlier files no
 longer redirect that sender. Callee lookup retains its case-insensitive first
@@ -11,7 +22,7 @@ selected emitted-class type with an optional single array suffix. Both
 `string | null` and `null | string` emit `string | null`. This also applies to
 body fields when relationship mode implies typed members. Other unions and
 bare `null` remain unsupported. Unknown-member and default modes are unchanged.
-Labels remain bounded to 69 characters with a separate 60-character identifier
+Labels remain bounded to 82 characters with a separate 60-character identifier
 limit. Nullable labels use colon field notation and whitespace around the
 separator counts toward the raw label limit. No runtime value or file write
 is introduced.

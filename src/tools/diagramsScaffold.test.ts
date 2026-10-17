@@ -211,7 +211,7 @@ describe("diagrams_scaffold", () => {
     );
     await ctx.diagramStore.write(
       "models/relations.mmd",
-      "classDiagram\nclass Purchase {\nquantity: null|number\n}\nclass Buyer {}\nPurchase --> Buyer : buyer\n",
+      "classDiagram\nclass Purchase {\nquantity: null|ReadonlyArray<number>\n}\nclass Buyer {}\nPurchase --> Buyer : buyer\n",
       { overwrite: false },
     );
     const tool = captureTool(registerDiagramsScaffold, ctx);
@@ -235,7 +235,7 @@ describe("diagrams_scaffold", () => {
     assert.equal(related.include_relations, true);
     assert.equal(
       related.source,
-      "export class Purchase {\n  quantity!: number | null;\n  buyer!: Buyer;\n}\n\nexport class Buyer {}\n",
+      "export class Purchase {\n  quantity!: readonly number[] | null;\n  buyer!: Buyer;\n}\n\nexport class Buyer {}\n",
     );
     assert.equal(related.typed_fields, 2);
     assert.equal(related.unresolved_fields, 0);
