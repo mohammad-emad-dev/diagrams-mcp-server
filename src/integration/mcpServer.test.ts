@@ -1254,7 +1254,8 @@ describe("MCP stdio integration (dist/index.js)", () => {
     const before = await callTool("diagrams_list", { type_filter: "all" });
     const beforeCount = (before.structuredContent as { count: number }).count;
     const relativePath = "models/scaffold-demo.puml";
-    const content = "@startuml\nclass User\nclass Order\nclass class\n@enduml\n";
+    const content =
+      "@startuml\nclass User {\nname: string | null\norders: null | Order[]\n}\nclass Order\nclass class\n@enduml\n";
     const created = await callTool("diagrams_create", { relative_path: relativePath, content });
     assert.equal(created.isError, undefined);
     try {
@@ -1291,6 +1292,26 @@ describe("MCP stdio integration (dist/index.js)", () => {
       assert.equal(structured.written, false);
       assert.equal(textOf(result), structured.source);
       assert.equal(structured.source, "export class User {}\n\nexport class Order {}\n");
+
+      const nullable = await callTool("diagrams_scaffold", {
+        relative_path: relativePath,
+        include_types: true,
+      });
+      assert.equal(nullable.isError, undefined);
+      const typed = nullable.structuredContent as {
+        source: string;
+        typed_fields: number;
+        unresolved_fields: number;
+        written: boolean;
+      };
+      assert.equal(
+        typed.source,
+        "export class User {\n  name!: string | null;\n  orders!: Order[] | null;\n}\n\nexport class Order {}\n",
+      );
+      assert.equal(textOf(nullable), typed.source);
+      assert.equal(typed.typed_fields, 2);
+      assert.equal(typed.unresolved_fields, 0);
+      assert.equal(typed.written, false);
 
       const after = await callTool("diagrams_list", { type_filter: "all" });
       assert.equal((after.structuredContent as { count: number }).count, beforeCount + 1);

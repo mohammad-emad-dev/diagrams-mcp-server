@@ -10,7 +10,8 @@ export interface ScaffoldMember {
   typeLabel?: string;
 }
 
-export const MAX_SCAFFOLD_TYPE_LABEL_CHARS = MAX_ENTITY_NAME_CHARS + 2;
+export const MAX_SCAFFOLD_TYPE_ATOM_CHARS = MAX_ENTITY_NAME_CHARS + 2;
+export const MAX_SCAFFOLD_TYPE_LABEL_CHARS = MAX_SCAFFOLD_TYPE_ATOM_CHARS + " | null".length;
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const CLASS_OPEN = /^class\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{$/;

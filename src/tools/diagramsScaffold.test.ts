@@ -69,6 +69,11 @@ interface ScaffoldOutput {
   confidence: string;
   heuristic_warning: string;
   written: boolean;
+  include_types?: true;
+  typed_fields?: number;
+  unresolved_fields?: number;
+  include_relations?: true;
+  relations_included?: number;
 }
 
 function structuredOf(result: CapturedToolResult): ScaffoldOutput {
@@ -196,6 +201,51 @@ describe("diagrams_scaffold", () => {
     }
     assert.ok(!structured.source.includes("foo-bar"));
     assert.ok(!structured.source.includes("string"));
+  });
+
+  it("reports nullable field types in type and implied relation modes without writing output", async () => {
+    await ctx.diagramStore.write(
+      "models/typed.puml",
+      "@startuml\nclass Profile {\ndisplayName: string | null\nmalformed: Missing | null\n}\n@enduml\n",
+      { overwrite: false },
+    );
+    await ctx.diagramStore.write(
+      "models/relations.mmd",
+      "classDiagram\nclass Purchase {\nquantity: null|number\n}\nclass Buyer {}\nPurchase --> Buyer : buyer\n",
+      { overwrite: false },
+    );
+    const tool = captureTool(registerDiagramsScaffold, ctx);
+
+    const typed = structuredOf(
+      await callHandler(tool, { relative_path: "models/typed.puml", include_types: true }),
+    );
+    assert.equal(typed.include_types, true);
+    assert.equal(
+      typed.source,
+      "export class Profile {\n  displayName!: string | null;\n  malformed: unknown;\n}\n",
+    );
+    assert.equal(typed.typed_fields, 1);
+    assert.equal(typed.unresolved_fields, 1);
+    assert.match(typed.heuristic_warning, /null arm in either order/);
+    assert.ok(!typed.source.includes("Missing"));
+
+    const related = structuredOf(
+      await callHandler(tool, { relative_path: "models/relations.mmd", include_relations: true }),
+    );
+    assert.equal(related.include_relations, true);
+    assert.equal(
+      related.source,
+      "export class Purchase {\n  quantity!: number | null;\n  buyer!: Buyer;\n}\n\nexport class Buyer {}\n",
+    );
+    assert.equal(related.typed_fields, 2);
+    assert.equal(related.unresolved_fields, 0);
+    assert.equal(related.relations_included, 1);
+    assert.match(related.heuristic_warning, /null arm in either order/);
+
+    const filesAfter = new Set(await listAllFiles(projectRoot));
+    assert.equal(filesAfter.size, filesBefore.size + 2);
+    assert.ok(filesAfter.has(path.join("diagrams", "models", "typed.puml")));
+    assert.ok(filesAfter.has(path.join("diagrams", "models", "relations.mmd")));
   });
 
   it("returns empty source with a warning for an empty candidate set", async () => {

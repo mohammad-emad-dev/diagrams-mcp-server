@@ -1,4 +1,5 @@
-import { MAX_SCAFFOLD_TYPE_LABEL_CHARS } from "./members.js";
+import { MAX_ENTITY_NAME_CHARS } from "../../constants.js";
+import { MAX_SCAFFOLD_TYPE_ATOM_CHARS, MAX_SCAFFOLD_TYPE_LABEL_CHARS } from "./members.js";
 
 const SCALAR_TYPES: ReadonlySet<string> = new Set(["string", "number", "boolean", "bigint"]);
 
@@ -10,8 +11,29 @@ export function resolveTypedFieldType(
   if (!label) return undefined;
   const trimmed = label.trim();
   if (trimmed.length > MAX_SCAFFOLD_TYPE_LABEL_CHARS) return undefined;
-  const match = /^([A-Za-z_][A-Za-z0-9_]*)(\[\])?$/.exec(trimmed);
+  const arms = trimmed.split("|");
+  if (arms.length === 1) return resolveTypedAtom(trimmed, emitted);
+  if (arms.length !== 2) return undefined;
+  const [left, right] = arms.map((arm) => arm.trim());
+  return resolveNullableType(left, right, emitted);
+}
+
+function resolveNullableType(
+  left: string,
+  right: string,
+  emitted: ReadonlySet<string>,
+): string | undefined {
+  const atomLabel = left === "null" ? right : right === "null" ? left : undefined;
+  if (atomLabel === undefined || atomLabel === "null") return undefined;
+  const atom = resolveTypedAtom(atomLabel, emitted);
+  return atom ? `${atom} | null` : undefined;
+}
+
+function resolveTypedAtom(label: string, emitted: ReadonlySet<string>): string | undefined {
+  if (label.length > MAX_SCAFFOLD_TYPE_ATOM_CHARS) return undefined;
+  const match = /^([A-Za-z_][A-Za-z0-9_]*)(\[\])?$/.exec(label);
   if (!match) return undefined;
   const [, base, suffix = ""] = match;
+  if (base.length > MAX_ENTITY_NAME_CHARS) return undefined;
   return SCALAR_TYPES.has(base) || emitted.has(base) ? `${base}${suffix}` : undefined;
 }

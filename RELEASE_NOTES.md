@@ -1,3 +1,15 @@
+# Unreleased after 0.9.0
+
+Typed scaffold fields accept one nullable arm around a supported scalar or
+selected emitted-class type with an optional single array suffix. Both
+`string | null` and `null | string` emit `string | null`. This also applies to
+body fields when relationship mode implies typed members. Other unions and
+bare `null` remain unsupported. Unknown-member and default modes are unchanged.
+Labels remain bounded to 69 characters with a separate 60-character identifier
+limit. Nullable labels use colon field notation and whitespace around the
+separator counts toward the raw label limit. No runtime value or file write
+is introduced.
+
 # Release notes — 0.9.0
 
 Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, introduced in 0.9.0).
