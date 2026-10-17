@@ -1,4 +1,4 @@
-# Unreleased after 0.9.0
+# Release notes — 0.10.0
 
 Typed scaffolding accepts strict `Array<T>` and `ReadonlyArray<T>` labels for
 supported primitives or selected emitted class names. They emit `T[]` and

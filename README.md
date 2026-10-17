@@ -14,15 +14,15 @@ PROJECT STATUS
 ==============
 
 The project is a technical preview
-This document describes version zero nine zero with fifteen tools
+This document describes version zero ten zero with fifteen tools
 
-Version zero nine zero adds diagrams_save_export and diagrams_scaffold
+Version zero nine zero introduced diagrams_save_export and diagrams_scaffold
 The scaffold member and field type and named relationship modes described
 below are included in that version
 Check the installed package version when comparing its tool surface with main
 
-Main also includes unreleased extensions for nullable and array scaffold labels
-Those extensions described below are not included in version zero nine zero
+Version zero ten zero adds nullable and array scaffold labels and corrects
+sequence sender ownership when caller names collide across files
 
 The chart groups the fifteen tools by their primary purpose
 It describes the tool surface rather than project completion
@@ -296,7 +296,7 @@ It does not perform full type resolution
 
 diagrams_generate_sequence returns a static call flow draft
 It reports unresolved callees rather than inventing participants
-On main an unreleased correction keeps each sender tied to the file containing
+Since version zero ten zero each sender stays tied to the file containing
 the call site even when another file declares the same caller name
 Callee lookup still uses the first case insensitive declaring participant
 Calls inside callbacks are conservatively treated as deferred and excluded
@@ -376,10 +376,10 @@ Arguments and implementation behavior are not recovered
 include_types implies include_members
 It preserves only string or number or boolean or bigint or an exactly
 emitted class name with an optional single array suffix
-On main an unreleased extension also accepts exactly one null arm on either
+Since version zero ten zero this mode also accepts exactly one null arm on either
 side of that type and emits the type followed by | null
 For example a field labeled string | null remains nullable in the draft
-The same unreleased mode accepts `Array<T>` and `ReadonlyArray<T>` labels
+The same mode accepts `Array<T>` and `ReadonlyArray<T>` labels
 T must be a supported primitive or an emitted class name
 The first form emits T[] and the second emits readonly T[]
 Both can have one null arm and neither accepts nested arrays or other generics
