@@ -1,6 +1,6 @@
 # Release verification
 
-Use this process for the 0.9.0 preview line and later releases that include
+Use this process for the 0.10.0 preview line and later releases that include
 `scripts/probe-package.mjs`. The package remains a technical preview and the
 numeric version is published under npm's default `latest` tag.
 
@@ -41,7 +41,7 @@ have their own runtime requirements independent of the server engine range.
 ARTIFACTS="$(mktemp -d)"
 CONSUMER="$(mktemp -d)"
 npm pack --ignore-scripts --pack-destination "$ARTIFACTS"
-npm install --prefix "$CONSUMER" "$ARTIFACTS/diagrams-mcp-server-0.9.0.tgz" --omit=dev --ignore-scripts
+npm install --prefix "$CONSUMER" "$ARTIFACTS/diagrams-mcp-server-0.10.0.tgz" --omit=dev --ignore-scripts
 npm run probe:package -- "$CONSUMER"
 ```
 
@@ -50,7 +50,9 @@ package metadata and bin entry and uses the SDK resolved from that install.
 It verifies all fifteen tools through a real stdio subprocess. Four image calls
 exercise SVG and PNG output from both renderers. Additional calls check HTML
 export and persistence and exclusive creation and custom templates and typed
-association scaffolding. It checks unknown argument rejection and confirms
+association scaffolding including nullable and mutable and readonly array labels.
+A shadow caller declaration checks that sequence senders use the call-site file
+in the compiler-absent install. It checks unknown argument rejection and confirms
 saved HTML does not enter diagram discovery.
 
 The probe requires the optional TypeScript compiler to be absent. It validates
@@ -83,8 +85,8 @@ recovery. MCP registration is checked separately. See
 Verify both registries after publication:
 
 ```bash
-npm view diagrams-mcp-server@0.9.0 version dist.integrity
-curl --fail --silent --show-error 'https://registry.modelcontextprotocol.io/v0.1/servers/io.github.mohammad-emad-dev%2Fdiagrams-mcp-server/versions/0.9.0'
+npm view diagrams-mcp-server@0.10.0 version dist.integrity
+curl --fail --silent --show-error 'https://registry.modelcontextprotocol.io/v0.1/servers/io.github.mohammad-emad-dev%2Fdiagrams-mcp-server/versions/0.10.0'
 ```
 
 The npm version and artifact integrity must match the publication result.

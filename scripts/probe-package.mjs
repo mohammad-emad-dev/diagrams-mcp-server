@@ -25,7 +25,7 @@ const EXPECTED_TOOLS = [
 const DIAGRAM_PATH = "models/release.puml";
 const MERMAID_PATH = "models/release.mmd";
 const SOURCE =
-  "@startuml\n!pragma layout smetana\nclass User {\nname: string\n}\nclass Order\nUser --> Order : orders\n@enduml\n";
+  "@startuml\n!pragma layout smetana\nclass User {\nname: string\naliases: Array<string>\nhistory: null | ReadonlyArray<Order>\n}\nclass Order\nUser --> Order : orders\n@enduml\n";
 const MERMAID = "classDiagram\nclass User\nclass Order\nUser --> Order : orders\n";
 
 async function readJson(filename) {
@@ -57,6 +57,7 @@ async function installedPackage(installRoot) {
 
 async function prepareFixtures(root) {
   await fs.mkdir(path.join(root, "src"));
+  await fs.writeFile(path.join(root, "src/a-shadow.ts"), "export function checkout() {}\n");
   await fs.writeFile(
     path.join(root, "src/user.ts"),
     "export class User {}\nexport function checkout() { charge(); }\n",
@@ -129,6 +130,10 @@ async function verifyDrafts(context) {
   assert.equal(generated.structuredContent.written, false);
   const sequence = await call(context, "diagrams_generate_sequence", { scope: "src" });
   assert.ok(sequence.structuredContent.participants.length > 0);
+  assert.deepEqual(
+    sequence.structuredContent.messages.map(({ from, to, message }) => ({ from, to, message })),
+    [{ from: "user", to: "order", message: "charge" }],
+  );
   assert.equal(sequence.structuredContent.written, false);
 }
 
@@ -152,6 +157,10 @@ async function verifyStoredDiagrams(context) {
   });
   assert.equal(scaffold.structuredContent.relations_included, 1);
   assert.match(scaffold.structuredContent.source, /orders!: Order;/);
+  assert.match(scaffold.structuredContent.source, /aliases!: string\[\];/);
+  assert.match(scaffold.structuredContent.source, /history!: readonly Order\[\] \| null;/);
+  assert.equal(scaffold.structuredContent.typed_fields, 4);
+  assert.equal(scaffold.structuredContent.unresolved_fields, 0);
 }
 
 async function verifyImages(context) {

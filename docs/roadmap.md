@@ -1,6 +1,6 @@
 # Current roadmap
 
-This is the current milestone record for the 0.9.0 technical preview line.
+This is the current milestone record for the 0.10.0 technical preview line.
 The older [next features document](next-features.md) preserves its original
 phase checklists and is not an active backlog.
 
@@ -27,19 +27,19 @@ stdio from a production install without TypeScript and with actual local
 renderers. Publication makes this development available to registry installs
 only after the release workflow succeeds.
 
-## Further development candidates
-
-Unreleased after 0.9.0: sequence senders are anchored to the call-site file so
+Introduced in 0.10.0: sequence senders are anchored to the call-site file so
 duplicate caller names cannot redirect them. Callee lookup remains heuristic
 with first-declaring-participant precedence. Receiver and declaration analysis
 remain separate future work.
 
-Unreleased after 0.9.0: scaffolding syntax extensions support nullable scalar
+Introduced in 0.10.0: scaffolding syntax extensions support nullable scalar
 and emitted-class field labels with an optional single array suffix plus
 `Array<T>` and `ReadonlyArray<T>` wrappers for the same primitive or class bases.
 The existing typed mode emits canonical arrays and one `Type | null` form.
 Nested arrays and other generics and union types and inheritance remain outside
 these bounded extensions.
+
+## Further development candidates
 
 These are product extensions rather than missing cleanup or release checks.
 Each needs a bounded design and acceptance criteria before implementation.

@@ -23,7 +23,7 @@ import { writeFileClientConfig } from "./configuration.js";
 import { ask, confirmPrompt, pickClient, pickScope } from "./prompts.js";
 import { box, paint, renderBanner } from "./terminal.js";
 
-const SETUP_VERSION = "0.9.0"; // Keep in sync with package.json (checked at release).
+const SETUP_VERSION = "0.10.0"; // Keep in sync with package.json (checked at release).
 
 function runAddCommand(
   client: "claude-code" | "codex",
