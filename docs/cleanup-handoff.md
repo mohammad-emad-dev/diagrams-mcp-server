@@ -1,5 +1,9 @@
 # Cleanup handoff
 
+This document records the cleanup baseline rather than the current tool count
+or release verification. See the [current roadmap](roadmap.md) and
+[release checklist](release-checklist.md) for the 0.9.0 line.
+
 Structural cleanup is complete as of 2026-10-14. The project is ready to move
 from cleanup to selecting features and improvements. This milestone does not
 select or implement a new feature.

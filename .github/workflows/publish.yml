@@ -14,7 +14,7 @@ on:
         description: "Existing tag to recover (e.g. v0.8.0)"
         required: true
         type: string
-        default: "v0.8.0"
+        default: "v0.9.0"
 
 permissions:
   contents: read
@@ -40,10 +40,10 @@ jobs:
         with:
           ref: refs/tags/${{ env.SELECTED_TAG }}
 
-      - name: Use Node.js 20.x
+      - name: Use Node.js 22.x
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 20.x
+          node-version: 22.x
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
@@ -100,6 +100,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit fresh publication dependencies
+        if: steps.published.outputs.exists != 'true'
+        run: npm audit
+
       - name: Lint
         run: npm run lint
 
@@ -119,9 +123,47 @@ jobs:
         env:
           DISABLE_REMOTE_PLANTUML: "true"
 
-      - name: Publish to npm
+      - name: Prepare real local renderers
         if: steps.published.outputs.exists != 'true'
-        run: npm publish
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: |
+          RENDERERS="$RUNNER_TEMP/diagrams-release-renderers"
+          mkdir -p "$RENDERERS/bin"
+          npm install --prefix "$RENDERERS" @mermaid-js/mermaid-cli@12.0.0 --ignore-scripts --no-audit --no-fund
+          curl -fsSL "https://github.com/plantuml/plantuml/releases/download/v1.2026.9/plantuml-java8-1.2026.9.jar" -o "$RENDERERS/plantuml.jar"
+          echo "9de63b51b10517b783253e0964d1db9b574506b70ea2aa8c3fa107ac17db8f06  $RENDERERS/plantuml.jar" | sha256sum -c -
+          printf '%s\n' '{"args":["--no-sandbox"]}' > "$RENDERERS/puppeteer.json"
+          printf '#!/usr/bin/env bash\nexec java -jar "%s" "$@"\n' "$RENDERERS/plantuml.jar" > "$RENDERERS/bin/plantuml"
+          printf '#!/usr/bin/env bash\nexec node "%s" -p "%s" "$@"\n' "$RENDERERS/node_modules/@mermaid-js/mermaid-cli/src/cli.js" "$RENDERERS/puppeteer.json" > "$RENDERERS/bin/mmdc"
+          chmod +x "$RENDERERS/bin/plantuml" "$RENDERERS/bin/mmdc"
+          CHROME="$(command -v google-chrome || true)"
+          test -n "$CHROME" || { echo "Google Chrome not found"; exit 1; }
+          echo "PUPPETEER_EXECUTABLE_PATH=$CHROME" >> "$GITHUB_ENV"
+          echo "$RENDERERS/bin" >> "$GITHUB_PATH"
+          "$RENDERERS/bin/plantuml" -version
+          "$RENDERERS/bin/mmdc" --version
+
+      - name: Verify clean packaged install with real renderers
+        if: steps.published.outputs.exists != 'true'
+        env:
+          DISABLE_REMOTE_PLANTUML: "true"
+        run: |
+          ARTIFACTS="$RUNNER_TEMP/diagrams-release-artifacts"
+          CONSUMER="$RUNNER_TEMP/diagrams-release-consumer"
+          mkdir -p "$ARTIFACTS" "$CONSUMER"
+          npm pack --ignore-scripts --json --pack-destination "$ARTIFACTS" > "$ARTIFACTS/pack.json"
+          node -e "const p=JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))[0]; console.log(JSON.stringify({filename:p.filename,integrity:p.integrity,files:p.entryCount}))" "$ARTIFACTS/pack.json"
+          FILENAME="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'))[0].filename" "$ARTIFACTS/pack.json")"
+          TARBALL="$ARTIFACTS/$FILENAME"
+          npm install --prefix "$CONSUMER" "$TARBALL" --omit=dev --ignore-scripts --no-audit --no-fund
+          npm audit --prefix "$CONSUMER" --omit=dev
+          npm run probe:package -- "$CONSUMER"
+          echo "RELEASE_TARBALL=$TARBALL" >> "$GITHUB_ENV"
+
+      - name: Publish verified tarball to npm
+        if: steps.published.outputs.exists != 'true'
+        run: npm publish "$RELEASE_TARBALL"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

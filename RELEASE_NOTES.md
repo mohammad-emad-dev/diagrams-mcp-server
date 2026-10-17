@@ -1,6 +1,13 @@
-# Release notes — Unreleased after 0.8.0
+# Release notes — 0.9.0
 
-Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0).
+Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, introduced in 0.9.0).
+
+The SDK dependency floor is now `^1.31.0` and the lockfile uses SDK 1.32.1 with
+updated affected transitive dependencies. Release verification resolved audit
+findings affecting five dependency packages without adding production dependencies or changing
+the Node engine range. Fresh publication also runs `npm audit` and a clean
+tarball acceptance probe with actual local renderers before uploading that exact
+verified tarball.
 
 Local PlantUML and Mermaid SVG or PNG output is now limited to 5,000,000 bytes
 before base64 encoding or HTML bundling. The reader stats and reads the same

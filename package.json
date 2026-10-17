@@ -1,6 +1,6 @@
 {
   "name": "diagrams-mcp-server",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "mcpName": "io.github.mohammad-emad-dev/diagrams-mcp-server",
   "description": "Technical Preview (V1 Preview): local-first MCP server for managing, rendering, and checking PlantUML and Mermaid architecture diagrams alongside your codebase.",
   "type": "module",
@@ -32,6 +32,7 @@
     "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\"",
     "prepack": "npm run build",
     "probe:prod": "node evaluations/prod-activation/probe.mjs",
+    "probe:package": "node scripts/probe-package.mjs",
     "start": "node dist/index.js",
     "dev": "tsc --watch"
   },
@@ -47,7 +48,7 @@
   "author": "Mohammad Emad",
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.31.0",
     "zod": "^3.24.1"
   },
   "devDependencies": {
