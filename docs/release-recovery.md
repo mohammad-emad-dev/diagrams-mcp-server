@@ -1,5 +1,10 @@
 # Recovering partial release publication
 
+Fresh publications from the 0.9.0 line first install the candidate tarball and
+exercise all fifteen tools with real local renderers. The workflow publishes
+that verified tarball. When npm already contains the selected version those
+fresh-publication steps are skipped and MCP recovery proceeds independently.
+
 The first `v0.8.0` publication run published npm successfully, then failed MCP
 registration because the validator could not yet see that npm version.
 The version tag remains unchanged. Recovery uses the updated workflow on

@@ -14,25 +14,26 @@ PROJECT STATUS
 ==============
 
 The project is a technical preview
-The published package version is zero eight zero with thirteen tools
-The current main branch registers fifteen tools
+This document describes version zero nine zero with fifteen tools
 
-diagrams_save_export and diagrams_scaffold are unreleased additions after
-version zero eight zero
+Version zero nine zero adds diagrams_save_export and diagrams_scaffold
 The scaffold member and field type and named relationship modes described
-below belong to the current source checkout
-Installing the published package does not enable these unreleased additions
+below are included in that version
+Check the installed package version when comparing its tool surface with main
 
-The chart shows tool availability on main rather than project completion
-The two source only tools require a local checkout until a new release
+The chart groups the fifteen tools by their primary purpose
+It describes the tool surface rather than project completion
 
 ```mermaid
 pie showData
-    accTitle: Tool availability on main
-    accDescr: Thirteen published tools and two unreleased tools
-    title Tool availability on main
-    "Published tools" : 13
-    "Unreleased tools" : 2
+    accTitle: Tool categories
+    accDescr: Five storage tools and three rendering tools and two analysis tools and four diagram drafting and template tools and one code drafting tool
+    title Tool categories
+    "Diagram storage" : 5
+    "Rendering and sharing" : 3
+    "Analysis and comparison" : 2
+    "Diagram drafting and templates" : 4
+    "Code drafting" : 1
 ```
 
 The package declares Node 18 or newer as its runtime requirement
@@ -147,6 +148,7 @@ Rendering requires a working external renderer on PATH
 PlantUML uses the plantuml command
 Mermaid uses the mmdc command from the Mermaid CLI package
 The server package does not install either renderer for you
+External renderer packages have their own runtime requirements
 
 To install the Mermaid command:
 
@@ -343,7 +345,7 @@ Setting it to false omits the source section entirely
 The finished HTML document must fit within 5000000 UTF-8 bytes
 Oversized exports fail instead of returning a partial document
 
-The unreleased diagrams_save_export tool saves the same HTML bundle beneath
+diagrams_save_export saves the same HTML bundle beneath
 the diagrams root through an explicit output_path
 The target must use the HTML extension and must not already exist
 The size check runs before output directories or the output file are created
@@ -353,7 +355,7 @@ Saved HTML files do not become diagrams in the inventory or CRUD tools
 TypeScript scaffolding from diagrams
 ------------------------------------
 
-The unreleased diagrams_scaffold tool returns TypeScript source for review
+diagrams_scaffold returns TypeScript source for review
 It reads one stored diagram and does not save or execute the proposed code
 The default output consists of empty exported classes derived from heuristic
 name candidates
@@ -411,13 +413,13 @@ before treating any result as complete
 
 Local renderer commands have a default timeout of 20000 milliseconds
 Captured renderer streams are bounded at 1000000 characters each
-In the unreleased source checkout local SVG and PNG image files are limited
+Since version zero nine zero local SVG and PNG image files are limited
 to 5000000 bytes before base64 encoding or HTML bundling
 Oversized image files are refused and the temporary render directory is removed
 Split or simplify the diagram before trying again
 Remote PlantUML requests also have a 20000 millisecond timeout and a
 5000000 byte response ceiling
-In the unreleased source checkout the timeout covers headers and the full
+Since version zero nine zero the timeout covers headers and the full
 body download and the byte ceiling is enforced as decoded chunks arrive
 Oversized or failed downloads are stopped and unused HTTP error bodies
 are discarded
@@ -454,6 +456,8 @@ The scripts directory owns clean builds and compiled test discovery
 The dist directory is generated build output
 The docs directory holds detailed architecture and project handoff records
 The architecture document describes module ownership and request paths
+The roadmap document records completed milestones and future candidates
+The release checklist records package verification and publication steps
 CONTRIBUTING describes the contribution workflow
 RELEASE_NOTES records versioned changes
 The cleanup handoff and next features documents preserve historical context
@@ -473,7 +477,7 @@ The build removes stale output before compiling
 For a local MCP client configure node as the server command and supply the
 absolute path to the compiled index JavaScript file under dist as its argument
 Set PROJECT_ROOT to the codebase that this local server should analyze
-This local entry exercises the unreleased tools
+This local entry exercises the current source checkout
 The published setup command otherwise installs the published package through
 npx for its generated server entry
 

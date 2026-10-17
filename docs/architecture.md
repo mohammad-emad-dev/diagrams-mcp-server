@@ -1,6 +1,6 @@
 # Architecture
 
-Describes the current checkout, including the unreleased `diagrams_save_export` and `diagrams_scaffold` tools after 0.8.0. CLI dispatch lives in
+Describes version 0.9.0 with all fifteen tools including `diagrams_save_export` and `diagrams_scaffold`. CLI dispatch lives in
 `src/index.ts`; MCP construction lives in `src/server.ts`
 (`createDiagramServer`).
 
@@ -51,7 +51,7 @@ and first write, while subsequent key events still render the updated state.
   its evidence types, `AnalyzerTier` (`reliable` / `experimental` / `generic`).
 - `src/constants.ts` — `toPosixPath`, `EXTENSION_TO_TYPE` (`.puml`, `.plantuml`,
   `.mmd`, `.mermaid`), `TYPE_TO_EXTENSION`, `DEFAULT_DIAGRAMS_DIR`, and the
-  `MAX_*` caps for pagination, rendering, generation, templates (incl. `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000, introduced in 0.8.0), export, and scaffold (`MAX_SCAFFOLD_SOURCE_BYTES` 1,000,000, unreleased after 0.8.0).
+  `MAX_*` caps for pagination, rendering, generation, templates (incl. `MAX_CUSTOM_TEMPLATE_BYTES` 65,536, `MAX_CUSTOM_TEMPLATE_NAME_CHARS` 64, `MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS` 1,000,000, introduced in 0.8.0), export, and scaffold (`MAX_SCAFFOLD_SOURCE_BYTES` 1,000,000, introduced in 0.9.0).
 - `src/tools/toolError.ts` — `handleToolError` / `handleRenderError`: expected
   domain errors (`DiagramNotFoundError`, `PathTraversalError`,
   `DiagramValidationError`, `DiagramExistsError`,
@@ -94,7 +94,7 @@ source tools return their source as text, report tools return a summary, and
 `toolOutput.test.ts` file next to the adapters tests the content/structured
 contract through captured registrations.
 
-Introduced in 0.8.0: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 15 tools in the current checkout (thirteen in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0) and verify rejected mutation requests leave files unchanged.
+Introduced in 0.8.0: register adapters with `inputSchema: InputSchema`, passing the complete Zod object. Passing `InputSchema.shape` makes the SDK reconstruct a plain object and loses root strictness. Full schemas preserve unknown-key rejection over MCP alongside existing defaults and field refinements; real stdio tests cover all 15 tools in the current checkout (thirteen in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, introduced in 0.9.0) and verify rejected mutation requests leave files unchanged.
 
 `diagramsDiff.ts` delegates its input schema, validation, and side loading to
 `diffInput.ts`, and its text summaries to `diffSummary.ts`. Validation runs
@@ -111,7 +111,7 @@ SVG to a private formatter that builds the HTML and enforces the UTF-8 byte cap.
 Formatting stays inside each adapter's existing error boundary.
 `diagramsCheckConsistency.ts` also keeps report formatting private to the
 adapter, including evidence field names, summary branches, and scan warnings.
-Unreleased after 0.8.0, `diagramsScaffold.ts` reads one stored diagram, builds
+Introduced in 0.9.0, `diagramsScaffold.ts` reads one stored diagram, builds
 TypeScript class shells through `services/scaffold/scaffold.ts`, and reports
 candidate counts with a heuristic warning; the text block is the emitted
 source itself. `include_members` defaults to false. Opt-in results also report
@@ -159,7 +159,7 @@ keep their source and response shapes when this flag is false or omitted.
   re-exports `RenderError`, `runCommand`, `resolveSpawnTarget`, and the
   `SpawnTarget` type so existing callers keep their imports.
 - `renderer/local.ts` — local Mermaid and PlantUML execution, input/output
-  files, and temporary-directory cleanup. Unreleased after 0.8.0, both backends
+  files, and temporary-directory cleanup. Introduced in 0.9.0, both backends
   share a private bounded image reader using `MAX_LOCAL_IMAGE_BYTES` (5,000,000).
   It stats and reads one open handle and bounds the read to the cap plus one byte
   even if the output grows after stat. The handle closes before directory cleanup
@@ -167,7 +167,7 @@ keep their source and response shapes when this flag is false or omitted.
   while the external command runs. The renderer entry retains backend
   selection, remote-fallback policy, and provenance reporting.
 - `renderer/plantumlRemote.ts` — PlantUML URL encoding, remote requests,
-  timeouts, and response-size checks. Unreleased after 0.8.0, the production
+  timeouts, and response-size checks. Introduced in 0.9.0, the production
   fetch reads successful responses eagerly through a bounded decoded stream
   while the request timer remains active through the body download. A fixed
   5,000,000-byte buffer bounds retained chunk storage; the returned buffer is
@@ -244,8 +244,8 @@ keep their source and response shapes when this flag is false or omitted.
 - `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
   byte-identical output. Introduced in 0.8.0: `templates/customTemplates.ts` is the separate read-only loader for `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (strict `puml`/`mermaid` objects, `{{title}}`/`{{entities}}` + `{{name}}` single-pass expansion, 65,536-byte / 1,000,000-char bounds, regular-files-only).
-- `scaffold/scaffold.ts` — unreleased after 0.8.0, pure code-from-diagram draft: `buildScaffold` checks the 1,000,000 UTF-8 byte cap before calling the shared `extractEntities` unchanged, partitions candidates into emittable and skipped names (identifier grammar, 60 chars, conservative reserved set, order-preserving dedupe), caps valid names, and emits `export class Name {}` blocks. `ScaffoldSourceTooLargeError` is an expected error in `toolError.ts`. No filesystem, rendering, network, or execution.
-- `scaffold/members.ts` — unreleased after 0.8.0, opt-in subset parser for plain multiline class blocks in PlantUML and Mermaid class diagrams. Only emitted class names receive descriptors, at most 30 unique member names per class. Member-only mode emits `unknown` fields; methods discard signature details and throw until implemented. Unsupported syntax is skipped. Defaults still emit empty shells; the unknown-member mode ignores type labels. Neither mode recovers relations or behavior.
+- `scaffold/scaffold.ts` — introduced in 0.9.0, pure code-from-diagram draft: `buildScaffold` checks the 1,000,000 UTF-8 byte cap before calling the shared `extractEntities` unchanged, partitions candidates into emittable and skipped names (identifier grammar, 60 chars, conservative reserved set, order-preserving dedupe), caps valid names, and emits `export class Name {}` blocks. `ScaffoldSourceTooLargeError` is an expected error in `toolError.ts`. No filesystem, rendering, network, or execution.
+- `scaffold/members.ts` — introduced in 0.9.0, opt-in subset parser for plain multiline class blocks in PlantUML and Mermaid class diagrams. Only emitted class names receive descriptors, at most 30 unique member names per class. Member-only mode emits `unknown` fields; methods discard signature details and throw until implemented. Unsupported syntax is skipped. Defaults still emit empty shells; the unknown-member mode ignores type labels. Neither mode recovers relations or behavior.
 - `buildScaffoldWithTypes` adds explicit field-label preservation over the same bounded member extraction, resolved through `scaffold/fieldTypes.ts`. Labels are retained only up to 62 characters; accepted types are `string`, `number`, `boolean`, `bigint`, or selected emitted class names, optionally with one array suffix. Accepted fields receive definite-assignment markers; unresolved labels stay `unknown`. No initializer values, imports, relationship inference, or method-type recovery are generated.
 - `scaffold/diagramLines.ts` shares the existing dialect-header, comment, note and brace handling. `scaffoldDiagramLines` feeds the member parser; `topLevelScaffoldLines` excludes block contents for relationship scanning. Moving these helpers preserves the existing member modes.
 - `scaffold/relations.ts` adds bounded named-arrow fields through `appendScaffoldRelations`: first collect explicit plain class declarations among emitted names, then scan labeled `Owner --> Target : role` links. Supported quoted target multiplicities (`*`, `0..*`, `1..*`) yield arrays. It copies member arrays, preserves body members, and appends the first eligible field per role. Limits are 30 total members per class and 300 appended relationship fields; counts continue after caps without retaining an edge list. Unsupported syntax and non-top-level lines do not count as candidates.
@@ -269,7 +269,7 @@ Lint and formatting checks cover both `src/` and `scripts/`.
 
 `src/integration/mcpServer.test.ts` drives the compiled `dist/index.js`
 over real stdio with the SDK client and asserts the fifteen names in
-`EXPECTED_TOOLS` (thirteen in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0); rendering stays stubbed or discovery-only there.
+`EXPECTED_TOOLS` (thirteen in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, introduced in 0.9.0); rendering stays stubbed or discovery-only there.
 
 Renderer tests give `TEMP`, `TMP`, and `TMPDIR` a file-owned temporary
 directory so parallel test workers cannot interfere with cleanup assertions.
@@ -304,4 +304,4 @@ directory so parallel test workers cannot interfere with cleanup assertions.
    `src/integration/mcpServer.test.ts` when the server surface changes. Add a
    README table row when a tool ships.
 
-Unreleased after 0.8.0: `diagrams_save_export` (`diagramsSaveExport.ts`) saves a self-contained HTML bundle through the dedicated `DiagramStore.writeHtmlExport` method. This path accepts only `.html`, creates files exclusively, and leaves the normal diagram extension gates intact. Both export tools use the same bundle builder and UTF-8 byte limit; only the explicit save tool writes. Export files are excluded from normal diagram listing and CRUD.
+Introduced in 0.9.0: `diagrams_save_export` (`diagramsSaveExport.ts`) saves a self-contained HTML bundle through the dedicated `DiagramStore.writeHtmlExport` method. This path accepts only `.html`, creates files exclusively, and leaves the normal diagram extension gates intact. Both export tools use the same bundle builder and UTF-8 byte limit; only the explicit save tool writes. Export files are excluded from normal diagram listing and CRUD.

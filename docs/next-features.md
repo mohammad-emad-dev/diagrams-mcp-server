@@ -1,5 +1,10 @@
 # Next Features — Historical Development Phase Reference
 
+For current completed milestones and optional development candidates use the
+[current roadmap](roadmap.md). The 0.9.0 line includes all original feature
+proposals plus HTML persistence and TypeScript scaffolding. Historical
+checkboxes below retain the original phase record.
+
 > **Status (historical record, not current backlog):** this file is the design
 > and acceptance record for the v0.6.0 development phase, preserved for cleanup
 > handoff. It is not the authoritative current backlog — see `README.md` and
@@ -820,6 +825,8 @@ is scheduled; each needs its own order before work starts.
       Current status note (introduced in 0.8.0 for export isolation; allowlist sanitizer not implemented): no allowlist sanitizer shipped; live-SVG export is replaced by SVG-as-image isolation in `src/services/export/htmlBundle.ts` (`<img src="data:image/svg+xml;base64,...">` under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`). Isolation is the boundary — encoded markup is not claimed sanitized or removed. Restrictions: [SVG as an image](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image). Probe outside repo: Chrome showed hostile SVG as a 120×40 image with no requests or active DOM; standalone-SVG control ran its script.
 - [ ] **In-repo `.html` saving (from Phase 5).** Needs its own store method, never
       a loosened extension check on `DiagramStore`.
+      Current status: implemented in 0.9.0 as `diagrams_save_export` through the
+      dedicated `DiagramStore.writeHtmlExport` path. The unchecked box is historical.
 - [ ] **Rename verdict via call-site analysis (from Phase 2).** Rename confidence
       stays `"heuristic"` until this exists.
 - [ ] **Semantic type resolution for sequence participants (from Phase 3).**

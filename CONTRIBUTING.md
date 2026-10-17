@@ -1,6 +1,6 @@
 # Contributing to diagrams-mcp-server
 
-This is a personal project kept up by one maintainer, currently a Technical Preview (v0.6.0). Outside contributions are welcome, but the scope stays small on purpose: everything should serve the drift-detection loop of listing diagrams, reading source, checking consistency, reporting evidence, and updating only when asked. If an idea does not fit that loop, open an issue first before writing code.
+This is a personal project kept up by one maintainer, currently a Technical Preview (v0.9.0). Outside contributions are welcome, but the scope stays small on purpose: everything should serve the drift-detection loop of listing diagrams, reading source, checking consistency, reporting evidence, and updating only when asked. If an idea does not fit that loop, open an issue first before writing code.
 
 ## Requirements
 
@@ -29,6 +29,10 @@ Two environment variables control what the server sees:
 `examples/` is the reference fixture project: `examples/src/user.ts` plus two diagrams under `examples/diagrams/models/`. Point the server at it to try the full loop locally.
 
 ## Checks to run before a pull request
+
+The [current roadmap](docs/roadmap.md) separates completed work from optional
+extensions. Release candidates also follow the
+[packaged acceptance checklist](docs/release-checklist.md) with real renderers.
 
 Run all four, in this order:
 
