@@ -34,10 +34,12 @@ duplicate caller names cannot redirect them. Callee lookup remains heuristic
 with first-declaring-participant precedence. Receiver and declaration analysis
 remain separate future work.
 
-Unreleased after 0.9.0: the first scaffolding syntax extension supports nullable
-scalar and emitted-class field labels with an optional single array suffix.
-It uses the existing typed mode and emits one canonical `Type | null` form.
-Other union types and inheritance remain outside this bounded extension.
+Unreleased after 0.9.0: scaffolding syntax extensions support nullable scalar
+and emitted-class field labels with an optional single array suffix plus
+`Array<T>` and `ReadonlyArray<T>` wrappers for the same primitive or class bases.
+The existing typed mode emits canonical arrays and one `Type | null` form.
+Nested arrays and other generics and union types and inheritance remain outside
+these bounded extensions.
 
 These are product extensions rather than missing cleanup or release checks.
 Each needs a bounded design and acceptance criteria before implementation.

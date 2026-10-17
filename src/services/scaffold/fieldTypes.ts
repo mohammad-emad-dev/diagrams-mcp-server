@@ -30,10 +30,22 @@ function resolveNullableType(
 }
 
 function resolveTypedAtom(label: string, emitted: ReadonlySet<string>): string | undefined {
+  const arrayMatch = /^(Array|ReadonlyArray)<([A-Za-z_][A-Za-z0-9_]*)>$/.exec(label);
+  if (arrayMatch) {
+    const [, wrapper, element] = arrayMatch;
+    const base = resolveSupportedBaseType(element, emitted);
+    if (!base) return undefined;
+    return wrapper === "ReadonlyArray" ? `readonly ${base}[]` : `${base}[]`;
+  }
   if (label.length > MAX_SCAFFOLD_TYPE_ATOM_CHARS) return undefined;
   const match = /^([A-Za-z_][A-Za-z0-9_]*)(\[\])?$/.exec(label);
   if (!match) return undefined;
   const [, base, suffix = ""] = match;
+  const resolvedBase = resolveSupportedBaseType(base, emitted);
+  return resolvedBase ? `${resolvedBase}${suffix}` : undefined;
+}
+
+function resolveSupportedBaseType(base: string, emitted: ReadonlySet<string>): string | undefined {
   if (base.length > MAX_ENTITY_NAME_CHARS) return undefined;
-  return SCALAR_TYPES.has(base) || emitted.has(base) ? `${base}${suffix}` : undefined;
+  return SCALAR_TYPES.has(base) || emitted.has(base) ? base : undefined;
 }

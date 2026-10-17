@@ -21,8 +21,8 @@ The scaffold member and field type and named relationship modes described
 below are included in that version
 Check the installed package version when comparing its tool surface with main
 
-Main also includes an unreleased extension for nullable scaffold field types
-The nullable syntax described below is not included in version zero nine zero
+Main also includes unreleased extensions for nullable and array scaffold labels
+Those extensions described below are not included in version zero nine zero
 
 The chart groups the fifteen tools by their primary purpose
 It describes the tool surface rather than project completion
@@ -379,7 +379,11 @@ emitted class name with an optional single array suffix
 On main an unreleased extension also accepts exactly one null arm on either
 side of that type and emits the type followed by | null
 For example a field labeled string | null remains nullable in the draft
-Nullable labels require colon field notation and fit within 69 characters
+The same unreleased mode accepts `Array<T>` and `ReadonlyArray<T>` labels
+T must be a supported primitive or an emitted class name
+The first form emits T[] and the second emits readonly T[]
+Both can have one null arm and neither accepts nested arrays or other generics
+Wrapper and nullable labels require colon field notation and fit within 82 characters
 Whitespace around the separator counts toward that limit
 Other unions and bare null remain unsupported
 Unsupported field labels remain unknown

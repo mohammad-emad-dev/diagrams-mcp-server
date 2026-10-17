@@ -1255,7 +1255,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     const beforeCount = (before.structuredContent as { count: number }).count;
     const relativePath = "models/scaffold-demo.puml";
     const content =
-      "@startuml\nclass User {\nname: string | null\norders: null | Order[]\n}\nclass Order\nclass class\n@enduml\n";
+      "@startuml\nclass User {\nname: string | null\norders: null | ReadonlyArray<Order>\naliases: Array<string>\n}\nclass Order\nclass class\n@enduml\n";
     const created = await callTool("diagrams_create", { relative_path: relativePath, content });
     assert.equal(created.isError, undefined);
     try {
@@ -1306,10 +1306,10 @@ describe("MCP stdio integration (dist/index.js)", () => {
       };
       assert.equal(
         typed.source,
-        "export class User {\n  name!: string | null;\n  orders!: Order[] | null;\n}\n\nexport class Order {}\n",
+        "export class User {\n  name!: string | null;\n  orders!: readonly Order[] | null;\n  aliases!: string[];\n}\n\nexport class Order {}\n",
       );
       assert.equal(textOf(nullable), typed.source);
-      assert.equal(typed.typed_fields, 2);
+      assert.equal(typed.typed_fields, 3);
       assert.equal(typed.unresolved_fields, 0);
       assert.equal(typed.written, false);
 
