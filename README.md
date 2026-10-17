@@ -1,732 +1,440 @@
-# diagrams-mcp-server
+DIAGRAMS MCP SERVER
+===================
 
-> **Technical Preview (V1 Preview, v0.8.0)** — local-first MCP server for
-> PlantUML and Mermaid diagrams: manage, render, and share them, check them
-> against your codebase, and draft new ones from your code.
+Engineering documentation for a local first MCP server that keeps PlantUML
+and Mermaid diagrams beside the code they describe
 
-[![CI](https://github.com/mohammad-emad-dev/diagrams-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/mohammad-emad-dev/diagrams-mcp-server/actions/workflows/ci.yml)
-[![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.7%2B-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![MCP](https://img.shields.io/badge/MCP-stdio-6f42c1)](https://modelcontextprotocol.io/)
-[![PlantUML](https://img.shields.io/badge/PlantUML-supported-2f855a)](https://plantuml.com/)
-[![Mermaid](https://img.shields.io/badge/Mermaid-supported-ff3670)](https://mermaid.js.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+The server gives an MCP client a controlled interface for reading and
+maintaining diagram source and for comparing that source with a codebase
+It also produces reviewable diagram drafts and rendered exports
+Source files remain the editable record of the architecture
 
-An MCP (Model Context Protocol) server that gives AI coding agents structured access to your project's **PlantUML** and **Mermaid** architecture diagrams. It can list, read, create, update, and delete diagrams, render and export them, check them against the codebase, diff two versions, and draft new diagrams from code or from starter skeletons — all locally, with no accounts and no network calls unless you explicitly opt in.
 
-Works with **any MCP-compatible client** over stdio: Claude Code, Codex (Desktop & CLI), Antigravity (IDE, 2.0 & CLI), OpenCode (Desktop & CLI), Cursor, and VS Code. See [Client setup](#client-setup) below.
+PROJECT STATUS
+==============
 
-## Why this exists
+The project is a technical preview
+The published package version is zero eight zero with thirteen tools
+The current main branch registers fifteen tools
 
-I built this after running into the same problem while using AI to work on software design. The diagram was in one place, the code was in another, and I kept having to paste context into the conversation. After a few rounds, it became hard to tell whether the diagram still described the project. I wanted a small local MCP server that could keep the diagram in the project, let the agent read it, and check it against the code when needed.
+diagrams_save_export and diagrams_scaffold are unreleased additions after
+version zero eight zero
+The scaffold member and field type and named relationship modes described
+below belong to the current source checkout
+Installing the published package does not enable these unreleased additions
 
-`diagrams-mcp-server` keeps diagrams in the project next to the code so an agent can read and check them in the same workflow. It uses the standard stdio MCP transport and does not require client-specific server code.
+The package declares Node 18 or newer as its runtime requirement
+Continuous integration checks Node 20 and Node 22 on Ubuntu and Windows
+The TypeScript compiler is a development dependency rather than a required
+production dependency
 
-## Features
 
-Fifteen tools in five groups (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0). Items marked introduced in 0.8.0 shipped in this release. The read-only drafting tools (`diagrams_generate`, `diagrams_generate_sequence`, `diagrams_template`, `diagrams_export`, `diagrams_scaffold`) never write: the generators and templates return diagram source to save with `diagrams_create`; `diagrams_export` returns HTML to save yourself or through the separate `diagrams_save_export` tool; `diagrams_scaffold` returns TypeScript to save yourself manually, never via `diagrams_create`.
+SYSTEM MODEL
+============
 
-### Manage diagrams
+An MCP client starts the server as a child process and exchanges protocol
+messages over standard input and standard output
+Startup diagnostics use standard error so they do not occupy the protocol
+stream
 
-| Tool | What it does |
-|---|---|
-| `diagrams_list` | List all PlantUML/Mermaid diagrams in the project, with extracted titles and explicit `offset`/`limit` pagination |
-| `diagrams_get` | Read the raw source of a diagram, in full or as an explicit `offset`/`max_chars` window |
-| `diagrams_create` | Create a new diagram file (refuses to overwrite) |
-| `diagrams_update` | Replace an existing diagram's content |
-| `diagrams_delete` | Delete a diagram (explicit, marked `destructiveHint`) |
+The project root defines the code analysis boundary
+The diagrams root defines the diagram storage boundary
+Custom template definitions are read separately beneath the project root
+These roots are resolved once when the server starts
+Diagram paths supplied to tools are relative to the diagrams root
+Code scopes supplied to analysis tools are relative to the project root
 
-### Render and share
+The request flow is:
 
-| Tool | What it does |
-|---|---|
-| `diagrams_render` | Render a diagram to SVG/PNG |
-| `diagrams_export` | **Package a stored diagram and its rendered SVG into one self-contained HTML file (SVG as base64 image)** — fully offline, no external resources, nothing written to disk |
-| `diagrams_save_export` | **Save the same self-contained HTML bundle inside the diagrams root as a `.html` file** — refuses existing targets, never overwrites |
+    MCP client over stdio
+        -> CLI startup and shared context
+        -> MCP server and tool registration
+        -> strict argument validation
+        -> tool adapter
+        -> storage or analysis or rendering service
+        -> MCP response with content and structured metadata
 
-### Check and compare
+Tool adapters own protocol contracts and response formatting
+Services own filesystem operations and analysis and source generation
+Renderers invoke external command line tools through a separate command
+boundary
+Expected domain failures become tool errors
+Unexpected failures return a generic error and are logged through the
+shared error handling layer
 
-| Tool | What it does |
-|---|---|
-| `diagrams_check_consistency` | **Compare class/interface/component names in a diagram against your actual codebase** and flag anything that looks outdated |
-| `diagrams_diff` | **Compare two diagram sources — two stored files, or a stored file against inline text — and report added, removed, and renamed entity names** |
 
-### Draft new diagrams
+INSTALLATION AND CLIENT CONNECTION
+==================================
 
-| Tool | What it does |
-|---|---|
-| `diagrams_list_templates` | **Introduced in 0.8.0: discover built-in kinds and project-local custom-template candidates** without reading template contents or writing files |
-| `diagrams_generate` | **Draft a PlantUML or Mermaid class diagram from a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
-| `diagrams_generate_sequence` | **Draft a PlantUML or Mermaid sequence diagram from the message-call patterns in a slice of your codebase**, returning source text to review and then save with `diagrams_create` |
-| `diagrams_template`          | **Instantiate a minimal, always-valid starter skeleton (class, sequence, C4-context, or project-local custom) in PlantUML or Mermaid** — one declaration per entity, nothing inferred, nothing written |
+Install the published server with npm:
 
-### Draft code from diagrams
+    npm install -g diagrams-mcp-server
 
-| Tool | What it does |
-|---|---|
-| `diagrams_scaffold` | **Unreleased after 0.8.0: draft exported TypeScript class shells from a stored diagram**, optionally with field and method stubs — heuristic draft, nothing written |
+Run guided setup from the project directory:
 
-### Tool notes
+    diagrams-mcp-server setup
 
-#### Argument validation (introduced in 0.8.0)
+The setup workflow supports Claude Code and Codex and Cursor and VS Code
+and OpenCode and Antigravity
+It checks the selected client and project path before applying its supported
+configuration method
+Some clients require a manual command that setup prints for you
 
-All 15 tools (thirteen in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0) reject unknown argument keys over MCP instead of silently ignoring them. For example, `include_sorce` is rejected; the export option is `include_source`. This change was introduced in v0.8.0. Existing fields, defaults, refinements, and response shapes are unchanged. The SDK dependency now requires `^1.30.0`, matching the already-installed and locked version verified with full-schema registration.
+For a noninteractive Codex setup:
 
-#### Call-name extraction (introduced in 0.8.0)
+    diagrams-mcp-server setup --client codex --yes
 
-Introduced in 0.8.0 — parser correction: valid one-character operation names such as `f()` and `_()` are recognized by consistency checks, name-based diffs, and optional call-order comparison. They count toward the 10,000-call limit like longer names. Plain labels remain ignored; recognized call names still use the existing ASCII identifier grammar. This correction was introduced in v0.8.0.
+For a Cursor configuration pinned to the current project:
 
-Introduced in 0.8.0 — message-call extraction also skips whole-line apostrophe and `%%` comments, plus PlantUML `/' ... '/` blocks beginning at the first non-whitespace character of a line. Calls inside these comments do not affect consistency call names, name-based diffs, or the optional call-order limit. Parsing resumes after a block closes; an unclosed block hides the rest of the source. Inline blocks after diagram content, nested blocks, and note text are not parsed specially. This applies to call names only; declaration and participant extraction remain heuristic. See [PlantUML comments](https://plantuml.com/commons) and [Mermaid sequence comments](https://mermaid.js.org/syntax/sequenceDiagram#comments).
+    diagrams-mcp-server setup --client cursor --scope project --yes
 
-#### `diagrams_list_templates` (introduced in 0.8.0)
+Global scope is the default and leaves PROJECT_ROOT out of the server entry
+The server then uses the working directory supplied by the launching client
+Project scope places PROJECT_ROOT in the configuration so the server stays
+attached to one codebase
+An explicit --project-root also pins the root
+VS Code setup writes project configuration
 
-Call with `{}` to discover the three built-in kinds and custom-template candidate names under `<PROJECT_ROOT>/.diagrams-templates`. Each custom result includes `custom_template` and a relative POSIX `relative_path`; use the identifier with `diagrams_template`, which validates the definition, selected dialect, and emitted source. Discovery reads directory entries only, so malformed JSON files can appear as candidates.
+After setup reload the client configuration and inspect its available tools
+Use diagrams_list to confirm the diagrams root before creating files
+An empty inventory is valid for a new project
 
-The tool writes nothing and does not create a missing template directory. It examines at most 1,000 entries (`MAX_TEMPLATE_SCAN_ENTRIES`), counting non-template entries too, plus one lookahead to detect a cap. A capped scan returns `truncated: true` and `scan_warning`; `custom_count` describes the returned candidates, not a full directory total. Returned names are sorted, but a capped subset depends on filesystem iteration order. Subdirectories, symlink files/directories, invalid identifiers, and extensions other than `.json` are excluded or rejected.
-
-#### `diagrams_check_consistency` It reads entity names from `class`/`interface`/`enum`/`component` declarations, aliases, namespaces, packages, sequence participants, message calls such as `charge(card)`, C4 blocks, and subgraph groupings. It then searches source files for matching identifiers, using declaration patterns for JavaScript/TypeScript, Python, PHP, and Java, and whole-word matching elsewhere. It helps detect common drift, such as a renamed or removed class or a component that has not been implemented. Structured output includes extracted, matched, and unmatched entities, per-entity file evidence, analyzer tiers, and an explicit heuristic confidence warning. The scan limits are listed under [Consistency scan limits](#consistency-scan-limits).
-
-#### `diagrams_generate`
-
-`diagrams_generate` is the generative flip side of that check: it reads the same declarations from a file or directory under your project root and drafts a class diagram from them — one box per declared name, plus `extends`/`implements` edges when the TypeScript compiler can evidence them. It is read-only and **never writes**: the source text comes back in the response, and nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call. It is a heuristic (name extraction, not full type modeling): member lists, generics, namespace nesting, and cross-file inheritance through re-exports are out of scope, and a scope without TypeScript-family files yields entities with no relations and a `dialect_note` saying why. Every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, and every cap reports itself in-band (`entities_capped` / `entities_available` / `relations_capped` / `truncated`), so a capped draft is never mistaken for a complete one. The generation limits are listed under [Generation limits](#generation-limits).
-
-#### `diagrams_generate_sequence`
-
-`diagrams_generate_sequence` drafts the other half of the picture: not the boxes, but the **conversation** between them. It reads the message-call patterns in a file or directory under your project root — participants named by module, merging files that share a basename — and emits ordered `from -> to : message` lines from the caller-to-callee edges the consistency checker's call graph already extracts. **Static call-site order is not runtime order**, and every result says so: a call inside a callback, promise, or listener is counted in `deferred_count` and excluded from the messages, because its real position in the conversation is unknowable from source. Participant mapping uses case-insensitive declared-identifier matching (the first declaring participant wins) — a callee that no file in the scope declares is listed in `unresolved_callees` rather than attached to an invented participant, because which class owns a method is a type question and out of scope. Like `diagrams_generate` it is read-only and **never writes** — nothing lands in `diagrams/` until you save it with an explicit `diagrams_create` call — and every result is labeled `confidence: "heuristic"` with a `heuristic_warning`, with every cap reporting itself in-band (`participants_capped` / `messages_capped` / `*_available` / `*_limit` / `truncated`). The sequence limits are listed under [Sequence limits](#sequence-limits).
-
-Introduced in 0.8.0: TypeScript files additionally use AST-backed extraction from `src/services/consistencyChecker/ts/tsCalls.ts` via optional `includeCalls` in `tsIndex.ts` — named functions, variable-bound arrows/functions, methods/accessors, object-literal identifier/quoted static bare-identifier properties holding arrow/function expressions, and quoted static class property initializers as operations; `f()`, `obj.m()` and `obj["m"]()` callees; enclosing-caller reset after each function; multiline callback arguments deferred, including calls inside callback object properties (`register({handler:()=>charge()})` never emits `charge`). Missing compiler, non-TS files, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner name matching, with no semantic type resolution and no runtime ordering.
-
-Introduced in 0.8.0 — sequence-generation option: set `include_call_parentheses: true` on `diagrams_generate_sequence` to emit labels such as `charge()` in either format. This lets the existing heuristic call-name extractor recognize generated operations in consistency checks and optional call-order diffs. The default is `false`, preserving plain labels and existing output. Structured `messages[].message` values remain bare operation names. Empty parentheses mark a call; they do not reproduce its arguments or signature. Call extraction still follows the ASCII name grammar described above.
-
-UNRELEASED correction after 0.8.0: AST-backed TypeScript sequence generation
-applies the same conservative callback-argument rule to constructors as to
-ordinary calls. For `new Task(() => charge(), before())`, `charge` is counted
-in `deferred_count` and excluded from emitted messages, while `before` stays
-direct. The constructor itself remains outside the call graph. This classifies
-callback-origin evidence; it does not assert that a constructor invokes its
-callback asynchronously. The non-AST fallback is unchanged.
-
-#### `diagrams_diff`
-
-`diagrams_diff` answers the review-time question that follows an edit: **what changed between two versions of the same diagram?** Each side supplies exactly one of a stored path or inline text, so unstaged edits can be compared without a round trip, and the two sides may even use different dialects — each is read with its own syntax. It reports `added` / `removed` / `renamed` entity names, the `unchanged` list, and the sequence-side `participants_*` / `calls_*` fields (`[]`, never absent, for class diagrams). Rename detection pairs a removed name with an added one only when the two are identical once lowercased and stripped of separators — the same shared normalizer the consistency checker uses to match names against code — so a genuine rename with a different spelling stays a plain add plus a remove, and every pair carries `confidence: "heuristic"`. It compares declared names only: member lists, layout, and style are out of scope, and it never patches or merges — it reports, and you edit. Like the other read-only tools it touches nothing on disk; a malformed request is rejected before any file is read.
-
-Introduced in 0.8.0 — `diagrams_diff` option: set `compare_call_order: true` to compare recognized message-call names in source order, preserving repeated calls. The response adds `call_order: { a, b, changed }`; `is_same` also accounts for this comparison. Each side is limited to 10,000 recognized calls (`MAX_DIFF_ORDER_CALLS`), and an over-limit comparison returns an error rather than partial arrays. It reuses the existing heuristic call grammar (for example, `charge()`); plain labels such as `charge`, endpoints, arguments, control flow, and runtime order are outside this comparison. Omit the option for the existing name-based diff. This was introduced in v0.8.0.
-
-#### `diagrams_template`
-
-`diagrams_template` is the blank-page tool that precedes all of them: **give it a kind, a dialect, and the entity names, and it hands back a minimal skeleton that already clears every syntax gate.** The three built-in kinds (class, sequence, C4-context × PlantUML, Mermaid) are fixed tables in `src/services/templates/skeletons.ts` — pure, no filesystem, no code scan, identical inputs yield byte-identical source. Unlike `diagrams_generate` there is no `confidence` field: one declaration per entity plus a TODO hint, nothing more. The PlantUML C4-context skeleton stays self-contained with plain rectangles (no C4-PlantUML stdlib fetch); Mermaid uses native `C4Context`. Nothing is ever written: the source comes back in the response until you save it with `diagrams_create`. The template limits are listed under [Template limits](#template-limits).
-
-Introduced in 0.8.0: `template="custom"` with `custom_template="<id>"` loads `<PROJECT_ROOT>/.diagrams-templates/<id>.json` (no env override). `custom_template` is 1–64 chars matching `/^[A-Za-z0-9_-]+$/`. The JSON may define optional `puml`/`mermaid` objects; the selected object must contain `source` and `entity` strings, and unknown fields are rejected. `source` supports `{{title}}`/`{{entities}}`, `entity` supports `{{name}}`, substituted once with no recursive expansion or eval. Reads are capped at 65,536 bytes and expansion at 1,000,000 UTF-16 chars; entity validation (1–20 names, identifier, 60 chars, no duplicates) is unchanged. Files must be regular files; symlinks are rejected. The loader is read-only, and `registerDiagramsTemplate(server, ctx)` takes an optional context (the factory passes `ctx`); custom results additionally return `custom_template`.
-
-#### `diagrams_export`
-
-`diagrams_export` is the sharing tool that closes the loop: **package a stored diagram and its rendered SVG into one self-contained HTML file** that opens anywhere, inside or outside the repo. It is packaging of two artifacts the server already produces — the stored source and the locally rendered SVG — so it adds no dependency (the HTML is string concatenation) and no new write surface: the tool never writes a file, the HTML comes back as text, and you decide where it lands. Introduced in 0.8.0: the SVG is embedded as a base64 data image (`<img src="data:image/svg+xml;base64,...">`), not live inline SVG — scripts and external resources are disabled by SVG-image processing, so SVG text is no longer selectable. The wrapper CSP is `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`. Isolation in the image is the security boundary; encoded renderer markup is not claimed sanitized or removed. See [SVG as an image](https://developer.mozilla.org/en-US/docs/Web/SVG/Guides/SVG_as_an_image) for the restrictions. The diagram's POSIX `relative_path` is the only path in the document. With `include_source` (the default), the source is escaped into a collapsible native `<details>` block needing no JavaScript; `false` omits it. Rendering follows `diagrams_render` exactly, including CLI requirements and opt-in remote fallback, and `rendered_with` reports the path (`local-plantuml` / `remote-plantuml` / `mmdc`). A bundle larger than the byte cap is refused outright — `truncated` is always `false`. The whole encoded HTML (larger than the raw SVG) is what the 5,000,000-byte cap measures; `svg_chars` measures the decoded SVG source after preamble strip, not the base64 length. Browser probe outside the repo: Chrome showed a hostile SVG as a 120×40 image with no HTTP requests or active DOM, while the standalone-SVG control ran its script. The export limits are listed under [Export limits](#export-limits).
-
-#### `diagrams_save_export` (unreleased after 0.8.0)
-
-`diagrams_save_export` saves the same self-contained HTML bundle inside the diagrams root: it reads `relative_path`, renders with the same rules as `diagrams_export`, builds the same bundle, and writes it to `output_path` (a `.html` path relative to the diagrams root, case-insensitive). The response is a short acknowledgement plus the same summary fields as `diagrams_export` with `output_path` added; the HTML itself is not returned. The bundle is measured against the same 5,000,000-byte cap before any output directory or file is created, so an over-cap request writes nothing. The target must not exist: it is created exclusively and refused atomically when present, with no overwrite option. `output_path` must end in `.html`; other extensions, escaping paths, symlink targets, and directories are refused. Saved HTML is excluded from diagram listing and CRUD; choose another output path or remove an existing export yourself before saving again. See [Export limits](#export-limits).
-
-#### `diagrams_scaffold` (unreleased after 0.8.0)
-
-`diagrams_scaffold` is the code-from-diagram starter: **give it a stored diagram path and it hands back exported TypeScript class shells, one per heuristic entity-name candidate, to review and save yourself manually as TypeScript, never via `diagrams_create`.** It reads one diagram through the traversal-protected store and reuses the existing `extractEntities(source, type)` unchanged, so candidates may include aliases, namespaces, components, participants, and call names such as `charge`. By default the classes are empty and the response shape is unchanged. Every result carries `confidence: "heuristic"` with a `heuristic_warning`; class kinds and runtime behavior are not recovered. Optional modes below can draft named-arrow fields and retain supported field labels.
-
-Unreleased after 0.8.0: set `include_members: true` to draft fields and methods from simple top-level multiline `class Name {` blocks in PlantUML or Mermaid `classDiagram`. This subset accepts bare class names, field names with type labels (`id: string` or `string id`), and method names with argument lists (`submit(payment)`), optionally prefixed with `+`, `-`, `#`, or `~`. Fields become `id: unknown;`; methods accept `..._args: unknown[]`, return `unknown`, and throw `"Not implemented"`. Type labels, argument declarations, modifiers, and implementations are discarded. Unsupported syntax is skipped; this is not a full diagram parser. Quoted/aliased/generic/nested class declarations, external `Class : member` declarations, relationships, and constructors are not recovered.
-
-For example, call `diagrams_scaffold({ "relative_path": "models/order.mmd", "include_members": true })`. The opt-in response adds `include_members: true`, `members_included` (total emitted fields and methods), `members_capped`, and `member_limit: 30`. Each emitted class gets at most 30 unique member names in encounter order; a name shared by a field and method keeps its first occurrence. The cap flag reports additional recognized unique names, not unsupported syntax. When `include_types` and `include_relations` are false, omitting `include_members` or passing `false` keeps the original empty-class source and omits these extra fields. Review every stub before saving; methods intentionally fail until implemented.
-
-Unreleased after 0.8.0: `include_types: true` enables member generation and retains supported field labels. It implies `include_members: true` even when that flag is omitted or explicitly false. Allowed labels are exactly `string`, `number`, `boolean`, `bigint`, or an emitted class name, optionally followed by one `[]`. Matching is case-sensitive. For example, `id: string` emits `id!: string;`, and `children: Order[]` emits `children!: Order[];` only if `Order` is also emitted. Primitive labels also work in the existing `string id` form; array labels use the `children: Order[]` form. The `!` permits strict TypeScript compilation without inventing an initializer; it supplies no runtime value for the field.
-
-Call `diagrams_scaffold({ "relative_path": "models/order.mmd", "include_types": true })`. The response includes member metadata plus `include_types: true`, `typed_fields`, and `unresolved_fields`, counting only emitted fields. Recognized fields with missing or unsupported labels remain `name: unknown;`. Unsupported labels include `String` (unless that exact class is emitted), `any`, `unknown`, unions, generics, nested arrays, qualified names, and references to classes dropped by `max_entities`. Such fallbacks increase `unresolved_fields`; skipped syntax and methods do not. Method parameters and returns remain `unknown` stubs. With `include_relations` false, omitting `include_types` or passing false preserves the existing empty-class or unknown-member mode and adds no type metadata. This preserves explicit labels heuristically; it does not infer types from code or infer relationships.
-
-Names are emitted only when they match `/^[A-Za-z_][A-Za-z0-9_]*$/` at most 60 characters and avoid reserved and TypeScript-forbidden class names (strict reserved words plus `eval`/`arguments`/`any`/`unknown`/`never`/`number`/`string`/`boolean`/`symbol`/`object`/`undefined`/`bigint` and related keywords). Anything else is never renamed: it is listed in `skipped_entities`/`skipped_count` independently of the emission cap. Ordering and dedupe follow the extractor; the cap applies to valid names only. An empty candidate set succeeds with empty source, not placeholder classes. The scaffold limits are listed under [Scaffold limits](#scaffold-limits).
-
-Unreleased after 0.8.0: `include_relations: true` also enables typed members and drafts fields from labeled top-level arrows. For example, `Order --> Customer : customer` emits `customer!: Customer;`. Both endpoints must be explicitly declared plain top-level classes and must survive `max_entities`; relationship endpoints never create extra classes. Supported declarations are `class Name`, a multiline `class Name {` block, and an empty `class Name {}`. Aliased, quoted, generic, nested and implicit class declarations are outside this subset.
-
-Use `diagrams_scaffold({ "relative_path": "models/order.mmd", "include_relations": true })`. This implies `include_types: true` and `include_members: true` even when explicitly false. The supported arrow is exactly `-->`, with a bare ASCII identifier label at most 60 characters (excluding `constructor` and `prototype`). An optional quoted target multiplicity before the target—`"*"`, `"0..*"`, or `"1..*"`—produces an array field, for example `Order --> "*" Item : items` emits `items!: Item[];`. Other arrows, multiplicities, free-text labels and unlabeled links are ignored. Labels are treated as proposed property names heuristically; no runtime values, ownership, lifetime, inheritance, or cardinality constraints are implemented.
-
-Existing body fields and methods win name conflicts regardless of arrow position. Relationship fields follow body members; the first accepted arrow for a given owner and property wins. The response adds `include_relations: true`, `relations_included`, `relations_skipped`, `relations_capped`, and `relation_limit: 300`, alongside type and member metadata. Skipped counts cover recognized arrow lines refused for absent/non-emitted/non-plain endpoints, forbidden or overlong role names, duplicate/conflicting names, or limits. Unsupported grammar and arrows inside notes, comments or nested blocks do not count. `relations_capped` reports a novel field refused by the 300-field total or 30-member class limit; the latter also sets `members_capped`. Duplicate names alone do not set cap flags. All field counts include appended relationship fields. With `include_relations` false or omitted, all previous source and response shapes remain unchanged.
-
-## Pagination and source windows
-
-Pagination is explicit and opt-in — the server never pages or truncates on its own.
-
-`diagrams_list` accepts optional `offset` (non-negative integer, default `0`) and `limit` (integer `1`–`500`). Omitting both returns every match. The response always includes `count` (items in this page), `total` (matches before paging), the effective `offset`/`limit`, and `has_more` (whether items after this page remain). An `offset` past the end returns an empty page with `has_more: false`, not an error. Example: first `diagrams_list({ "type_filter": "all", "limit": 10 })`, then `diagrams_list({ "type_filter": "all", "offset": 10, "limit": 10 })` while `has_more` is true.
-
-`diagrams_get` accepts optional `offset` (zero-based character offset, default `0`) and `max_chars` (integer `1`–`100000`). Omitting both returns the full source. The response always includes `is_partial`, the effective `offset`, `total_chars`, `returned_chars`, and `has_more`; the text block always equals the returned `content`, so a window is never silently truncated. An `offset` past the end of the source returns an `isError` result instead of an empty string. Example: `diagrams_get({ "relative_path": "models/big.puml", "offset": 0, "max_chars": 2000 })`, then repeat with `offset: 2000`.
-
-## Requirements
-
-- Node.js 18+ for running the server (runtime `engines: >=18` — the compiled `dist/` output, `npm test`, and `npm start` work on Node 18)
-- Node.js >=20.19 for the development toolchain (`npm ci`, `npm run lint`, `npm run format:check`, `npm run build`) — the ESLint 10 toolchain does not run on older Node versions
-- (Optional, for `diagrams_render`) [`@mermaid-js/mermaid-cli`](https://github.com/mermaid-js/mermaid-cli) for Mermaid rendering: `npm install -g @mermaid-js/mermaid-cli`
-- (Optional, for `diagrams_render`) A local `plantuml` CLI for offline PlantUML rendering. Without it, rendering fails with an actionable error unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true`, in which case it falls back to the public `plantuml.com` server over HTTPS. `DISABLE_REMOTE_PLANTUML=true` always disables the fallback, even when the allow flag is set.
-
-## Installation
-
-You need **Node.js 18+** — that is the only requirement. No accounts, no
-API keys, no separate services.
-
-### 1. Get the package (pick one way)
-
-#### Option A — no install (fastest way to try it)
-
-```bash
-npx diagrams-mcp-server --help
-```
-
-`npx` fetches the package on first use and caches it. Nothing is
-installed permanently, so this is the simplest way to try the server. The
-trade-off: the first run needs internet access, and MCP clients start the
-server fresh on every session — for daily use, prefer Option B.
-
-#### Option B — global install (recommended for daily use)
-
-```bash
-npm install -g diagrams-mcp-server
-diagrams-mcp-server --help   # prints the help text and exits 0
-```
-
-This puts a `diagrams-mcp-server` command on your PATH so any MCP client
-can launch it. To update later, just rerun the same command.
-
-#### Option C — project dependency (pin a version per project)
-
-```bash
-cd /path/to/your/project
-npm install diagrams-mcp-server
-npx diagrams-mcp-server --help
-```
-
-Use this when different projects should use different server versions.
-
-### 2. Connect it to your client
-
-Installing the package alone is not enough: your MCP client also needs a
-`diagrams` entry telling it how to launch the server. The one-command
-setup writes that entry for you — no hand-editing JSON:
-
-```bash
-npx diagrams-mcp-server setup            # interactive: pick client, then scope
-npx diagrams-mcp-server setup --client codex --yes   # non-interactive
-npx diagrams-mcp-server setup --client cursor --scope project --yes   # pin this project
-```
-
-Setup asks for the client first, then the scope (each skippable with a flag):
-
-- **Global (Recommended):** writes a clean entry with no `PROJECT_ROOT`
-  — the server attaches to whatever directory the client launches it
-  from. Best when you work across many projects.
-- **Project-specific:** asks for the project root and bakes it in
-  (`"env": { "PROJECT_ROOT": "..." }` for file-based clients,
-  `--env PROJECT_ROOT=...` for `claude`/`codex mcp add`). Best when one
-  config should always point at one project.
-
-For file-based clients (Cursor, VS Code, Antigravity)
-this merges the entry into the client's config file. For Claude Code and
-Codex it runs their `mcp add` command; if that CLI is not installed,
-setup prints the exact command to run yourself. For OpenCode it prints
-the command to run. Restart file-based clients afterwards so they pick
-it up.
-
-Setup opens with a version banner and runs pre-flight checks
-automatically: it warns when the `claude` or `codex` CLI is missing
-(printing the manual command instead), validates a project-scoped path
-(offering to create it), and ends with a summary of the client, scope,
-touched config, and status.
-Interactive prompts use arrow-key pickers (`↑↓` + `Enter`, `Esc`
-cancels) and `Yes`/`No` toggles; manual commands appear in boxed
-cards, and status output is color-highlighted (plain text when piped
-or when `NO_COLOR` is set). Every prompt is skipped when the matching
-flag is passed.
-
-### 3. Verify it works
-
-Restart your client, then ask your agent: "List my diagrams." It should
-call `diagrams_list` — an empty list on a fresh project means everything
-is wired up correctly.
-
-### From source (contributors)
-
-```bash
-git clone https://github.com/mohammad-emad-dev/diagrams-mcp-server.git
-cd diagrams-mcp-server
-npm ci
-npm run build
-npm test
-```
-
-`npm test` runs the full suite from `dist/` — unit, golden, and live-stdio
-integration tests that spawn the real server — so always build first. Before
-opening a PR, run all four gates: `npm run build`, `npm test`, `npm run lint`,
-`npm run format:check` (the last two need Node >=20.19).
-
-### Where the files live
-
-- Global install (`npm install -g diagrams-mcp-server`): the package lands in
-  the global `node_modules` (run `npm root -g` to find yours — e.g.
-  `C:\Users\<you>\AppData\Roaming\npm\node_modules` on Windows,
-  `/usr/local/lib/node_modules` on macOS/Linux) with launch shims on your
-  PATH, so `diagrams-mcp-server` runs from anywhere.
-- Project dependency (`npm install diagrams-mcp-server` inside a project):
-  the same payload under `<project>/node_modules/diagrams-mcp-server/`,
-  with the binary linked at `<project>/node_modules/.bin/diagrams-mcp-server`.
-- `npx diagrams-mcp-server`: uses the global install if present, else the
-  local one, else downloads and caches it — no manual file handling needed.
-
-All three run the same entry point (`dist/index.js`), so MCP clients can use
-whichever path fits: the global shim, the project's `.bin` binary, or
-`node <path>/dist/index.js` directly.
-
-### Lint and formatting
-
-```bash
-npm run lint          # ESLint over src/ and scripts/ (zero warnings allowed)
-npm run format:check  # Prettier check over src/ and scripts/
-```
-
-Both run in CI (`.github/workflows/ci.yml`, Node 20.x/22.x matrix) before the build. They cover
-source and test files under `src/` and build utilities under `scripts/` — `dist/`, `node_modules/`,
-`graphify-out/`, and packed tarballs are excluded via `eslint.config.mjs`
-and `.prettierignore`. These two commands require the development toolchain
-(Node >=20.19); the server runtime itself still supports Node >=18. `.gitattributes`
-pins all text files to LF, so Windows and Linux checkouts produce identical
-line endings and the format check gives the same result on every platform.
-
-### Local tarball install without publishing
-
-To install and run this Technical Preview from a local package file, create a
-tarball and install it in a separate consumer project:
-
-```bash
-npm pack   # runs the prepack build and writes diagrams-mcp-server-0.8.0.tgz
-cd /path/to/your/project
-npm init -y                       # if the consumer project has no package.json yet
-npm install /path/to/diagrams-mcp-server-0.8.0.tgz
-npx diagrams-mcp-server --help    # resolves the local install, exits 0
-```
-
-This installs only the published payload (`dist/` runtime files, `README.md`,
-`LICENSE`) — no tests, fixtures, or local configs — and
-changes nothing outside the consumer project (no global packages and no
-registry publish). The package file is local, but npm may still download the
-package dependencies from the registry during installation. Point any stdio MCP client at the installed binary
-(`node_modules/.bin/diagrams-mcp-server`) the same way as `dist/index.js`
-in [Client setup](#client-setup).
-
-## Uninstallation
-
-Uninstalling has two independent parts: disconnecting the server from
-your client, and removing the package. Do either or both.
-
-### 1. Disconnect it from your client
-
-Delete the `diagrams` entry from your client's configuration and restart
-the client:
-
-| Client | What to remove |
-|---|---|
-| Cursor | the `"diagrams"` block in `~/.cursor/mcp.json` or `.cursor/mcp.json` |
-| VS Code | the `"diagrams"` block in `.vscode/mcp.json` |
-| Antigravity | the `"diagrams"` block in `~/.gemini/config/mcp_config.json` (or `.agents/mcp_config.json`) |
-| Claude Code | run `claude mcp remove diagrams` |
-| Codex | the `[mcp_servers.diagrams]` section in `~/.codex/config.toml` |
-| OpenCode | the `"diagrams"` block in `opencode.jsonc` |
-
-### 2. Remove the package
-
-Match how you installed it:
-
-```bash
-npm uninstall -g diagrams-mcp-server   # global install (Option B)
-npm uninstall diagrams-mcp-server      # project dependency (Option C, run inside the project)
-```
-
-If you only ever used `npx` (Option A), there is nothing to uninstall —
-optionally clear the download cache with `npx clear-npx-cache`.
-
-### What stays behind
-
-Uninstalling never touches your diagram files: the `diagrams/` folder in
-your project is your own work and is left exactly as it is. Delete it
-manually only if you want the diagrams gone too.
-
-## Client setup
-
-`diagrams-mcp-server` speaks plain stdio MCP, so it works with any MCP-compatible client. Setup instructions for each below.
-
-All examples assume you built the server at `/absolute/path/to/diagrams-mcp-server` and want it attached to a project at `/absolute/path/to/your/project`. Replace both paths with your own. If you installed from the registry, use the global install path or your project's `node_modules/.bin/diagrams-mcp-server` instead of a build directory (see [Where the files live](#where-the-files-live)).
-
-### Claude Code
-
-```bash
-claude mcp add diagrams -- node /absolute/path/to/diagrams-mcp-server/dist/index.js
-```
-
-Set `PROJECT_ROOT` in your shell environment, or run Claude Code from within your project directory (it defaults to the current working directory).
-
-### Codex (Desktop & CLI)
-
-```bash
-codex mcp add diagrams -- node /absolute/path/to/diagrams-mcp-server/dist/index.js
-```
-
-Or add directly to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.diagrams]
-command = "node"
-args = ["/absolute/path/to/diagrams-mcp-server/dist/index.js"]
-env = { PROJECT_ROOT = "/absolute/path/to/your/project" }
-```
-
-### Antigravity (IDE, 2.0 & CLI)
-
-Antigravity IDE, Antigravity 2.0, and Antigravity CLI share one config file: `~/.gemini/config/mcp_config.json` (or `.agents/mcp_config.json` for project scope). Add:
-
-```json
-{
-  "mcpServers": {
-    "diagrams": {
-      "command": "node",
-      "args": ["/absolute/path/to/diagrams-mcp-server/dist/index.js"],
-      "env": {
-        "PROJECT_ROOT": "/absolute/path/to/your/project"
-      }
-    }
-  }
-}
-```
-
-You can also add it from the IDE: **Agent panel → ⋯ menu → MCP Servers → Manage MCP Servers → View raw config**, then paste the same block.
-
-### OpenCode (Desktop & CLI)
-
-```bash
-opencode mcp add
-```
-
-When prompted, choose **Local** as the server type and enter:
-
-```
-node /absolute/path/to/diagrams-mcp-server/dist/index.js
-```
-
-Or edit `opencode.jsonc` directly:
-
-```jsonc
-{
-  "mcp": {
-    "diagrams": {
-      "type": "local",
-      "command": ["node", "/absolute/path/to/diagrams-mcp-server/dist/index.js"],
-      "environment": {
-        "PROJECT_ROOT": "/absolute/path/to/your/project"
-      }
-    }
-  }
-}
-```
-
-### Cursor (Desktop & CLI)
-
-Add to `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` (project-scoped):
-
-```json
-{
-  "mcpServers": {
-    "diagrams": {
-      "command": "node",
-      "args": ["/absolute/path/to/diagrams-mcp-server/dist/index.js"],
-      "env": {
-        "PROJECT_ROOT": "/absolute/path/to/your/project"
-      }
-    }
-  }
-}
-```
-
-### VS Code (with GitHub Copilot)
-
-Add to `.vscode/mcp.json` in your workspace:
-
-```json
-{
-  "servers": {
-    "diagrams": {
-      "command": "node",
-      "args": ["/absolute/path/to/diagrams-mcp-server/dist/index.js"],
-      "env": {
-        "PROJECT_ROOT": "${workspaceFolder}"
-      }
-    }
-  }
-}
-```
-
-Or via the command palette: **MCP: Add Server → Command (stdio)**, then enter the same command and args.
-
-## Configuration
-
-| Environment variable | Default | Description |
-|---|---|---|
-| `PROJECT_ROOT` | current working directory | Root of the codebase this server is attached to (used by `diagrams_check_consistency`) |
-| `DIAGRAMS_DIR` | `diagrams` | Where diagram files live, relative to `PROJECT_ROOT` unless absolute |
-| `PLANTUML_SERVER_URL` | `https://www.plantuml.com/plantuml` | Override the public PlantUML rendering fallback (e.g. to point at a self-hosted instance) |
-| `ALLOW_REMOTE_PLANTUML` | unset (remote fallback disabled) | Set to exactly `true` to allow the remote PlantUML server fallback when no local `plantuml` CLI is installed. Any other value keeps remote rendering disabled. Mermaid is always local-only and unaffected |
-| `DISABLE_REMOTE_PLANTUML` | unset | Set to exactly `true` to never use the remote PlantUML server, even when `ALLOW_REMOTE_PLANTUML=true` is set. PlantUML rendering then requires a local `plantuml` CLI. Mermaid is always local-only and unaffected |
-
-### Consistency scan limits
-
-Every `diagrams_check_consistency` run observes these caps:
-
-| Limit | Value | How you see it |
-|---|---|---|
-| Files scanned | 5,000 source files | the result reports `truncated`, `scan_limit`, `files_scanned`, and `scan_warning` so a capped scan is never mistaken for a complete one — when `truncated` is true, unmatched results may be incomplete |
-| Per-file size | 1,000,000 bytes | larger files (usually generated bundles) are skipped silently |
-| Evidence per entity | 10 matched files | `matched_files` is capped; `matched_file_count` still reports the full count |
-| Concurrent file reads | 32 | bounds open handles while the scan runs |
-
-### Generation limits
-
-Every `diagrams_generate` run observes these caps. `max_entities` (1–60, default 30) bounds the emitted declarations; the limits below are the hard ceilings:
-
-| Limit | Value | How you see it |
-|---|---|---|
-| Emitted entities | 60 declarations | `entities_available` reports the total found and `entities_capped` is true when any were dropped; `entity_limit` reports the applied cap |
-| Emitted relations | 60 edges | `relations_available` reports the total evidenced and `relations_capped` is true when any were dropped by the cap or by an entity the cap removed — a diagram never references a box it does not declare |
-| Files scanned | 5,000 source files | the result reports `truncated`, `scan_limit`, `files_scanned`, and `scan_warning` so a capped scan is never mistaken for a complete one — when `truncated` is true, generated entities may be incomplete |
-| Per-file size | 1,000,000 bytes | larger files (usually generated bundles) are skipped |
-| Concurrent file reads | 32 | bounds open handles while the scan runs |
-
-When the TypeScript compiler is not installed (published installs have no `typescript` dependency), the tool degrades openly instead of failing: entities still come from declaration patterns, `relations` is empty, and `dialect_note` says relations are unavailable.
-
-### Sequence limits
-
-Every `diagrams_generate_sequence` run observes these caps. `max_participants` (1–20, default 8) bounds the declared participants and `max_messages` (1–50, default 20) bounds the emitted messages; the limits below are the hard ceilings:
-
-| Limit | Value | How you see it |
-|---|---|---|
-| Declared participants | 20 participants | `participants_available` reports the total found and `participants_capped` is true when any were dropped; `participant_limit` reports the applied cap |
-| Emitted messages | 50 messages | `messages_available` reports the total found and `messages_capped` is true when any were dropped by the cap or by a participant the cap removed — a message is never sent to a box the diagram does not declare; `message_limit` reports the applied cap |
-| Deferred call sites | Counted, never sequenced | `deferred_count` reports how many calls sit inside a callback, promise, or listener; they are excluded from `messages` because their runtime position is unknowable from source |
-| Unresolved callees | Reported, never guessed | `unresolved_callees` lists callees no participant in the scope declares, instead of inventing a participant for them |
-| Files scanned | 5,000 source files | the result reports `truncated`, `scan_limit`, `files_scanned`, and `scan_warning` so a capped scan is never mistaken for a complete one — when `truncated` is true, generated messages may be incomplete |
-| Per-file size | 1,000,000 bytes | larger files (usually generated bundles) are skipped |
-| Concurrent file reads | 32 | bounds open handles while the scan runs |
-
-When the TypeScript compiler is not installed (published installs have no `typescript` dependency), the tool degrades the same open way instead of failing: declared operations and call edges still come from the heuristic extractors, so participants and messages are still emitted.
-
-### Diff scope
-
-`diagrams_diff` reports, and never silently drops a change — but it deliberately compares less than a differencing tool can:
-
-| Compared | Not compared |
-|---|---|
-| Declared class/interface/enum/component names, aliases, namespaces, participants, and message calls | Member lists, attributes, and method signatures |
-| Added, removed, and renamed names (renames paired by the shared name normalizer) | Layout, position, ordering, styling, and theme |
-| Sequence participants and message calls, per dialect | Cross-file or cross-diagram references and resolved types |
-
-The tool has no caps of its own: both sides are already bounded by the two sources being compared, so every added, removed, and renamed name is reported in full. It reads nothing outside the diagrams root, and input-shape errors (a side given both or neither of its path and content, or inline content in no recognized dialect) are reported before any file is opened.
-
-### Template limits
-
-Every `diagrams_template` call observes these caps. There is no `max_*` argument to raise or lower — a skeleton is fixed scaffolding, so the ceilings below are the only shape it comes in:
-
-| Limit | Value | How you see it |
-|---|---|---|
-| Entities per skeleton | 20 names (`1`–`20`) | `entities_included` reports the count actually emitted, in the order given |
-| Entity name length | 60 characters | each name is emitted bare as a class, participant, or C4 alias, so this is the length that has to stay a legal identifier |
-| Title length | 200 characters | a longer title is rejected rather than truncated; whitespace-only is rejected rather than emitting an empty title line |
-| Built-in template kinds | 3 (`class`, `sequence`, `c4_context`) | fixed in `skeletons.ts`; introduced in 0.8.0, `custom` loads `<PROJECT_ROOT>/.diagrams-templates/<id>.json` instead                 |
-
-Every name must match `/^[A-Za-z_][A-Za-z0-9_]*$/` and no two may repeat — a duplicate would emit two declarations of the same box, so the second occurrence is rejected at its own index. A rejection comes back with `isError: true` and names the offending input; the emitted source always passes the same syntax gate `diagrams_create` applies, so a skeleton can be saved as-is.
-
-Custom-template bounds (introduced in 0.8.0): `custom_template` id 1–64 chars `/^[A-Za-z0-9_-]+$/`; file read 65,536 bytes (`MAX_CUSTOM_TEMPLATE_BYTES`); expansion 1,000,000 UTF-16 chars (`MAX_CUSTOM_TEMPLATE_OUTPUT_CHARS`); strict JSON (only optional `puml`/`mermaid` objects with required `source`/`entity` strings); regular files only, symlinks rejected. Example (verified against `FileSchema` in `customTemplates.ts`):
-
-```json
-{
-  "puml": {
-    "source": "@startuml\ntitle {{title}}\n{{entities}}\n@enduml\n",
-    "entity": "class {{name}}"
-  },
-  "mermaid": { "source": "classDiagram\n%% {{title}}\n{{entities}}\n", "entity": "class {{name}}" }
-}
-```
-
-### Scaffold limits
-
-Every `diagrams_scaffold` run (unreleased after 0.8.0) observes these caps. `max_entities` (1–60, default 30) bounds the emitted classes; the limits below are the hard ceilings:
-
-| Limit | Value | How you see it |
-|---|---|---|
-| Emitted classes | 60 declarations | `entities_available` reports the valid candidates before the cap and `entities_capped` is true when any were dropped; `entity_limit` reports the applied cap |
-| Diagram source size | 1,000,000 UTF-8 bytes | a larger source is refused with `isError: true` naming the byte ceiling; nothing partial is returned or extracted |
-| Entity name shape | identifier at most 60 chars, no reserved names | invalid or reserved candidates are listed in `skipped_entities`/`skipped_count` independently of the cap, never renamed |
-| Members per emitted class (opt-in) | 30 unique names | `member_limit` reports 30; `members_included` totals emitted members and `members_capped` reports a recognized name beyond a class limit |
-| Retained field label (type mode) | 62 characters after trimming | longer labels fall back to `unknown`; only the explicit supported token grammar is emitted |
-| Appended relationship fields (opt-in) | 300 total, within the 30-member class limit | `relation_limit` reports 300; skipped/cap metadata reports refused recognized candidates |
-
-Names come from the shared diagram extractor (declarations, aliases, namespaces, components, participants, call names), not from recovered types. Default classes are empty; `include_members` adds the limited member stubs described above, while `include_types` also retains supported field labels. Named-arrow fields require `include_relations`; class kinds and runtime behavior are not recovered. An empty candidate set succeeds with empty source and the heuristic warning, not placeholder classes.
-
-### Export limits
-
-Every `diagrams_export` and `diagrams_save_export` run observes this cap on the finished HTML document:
-
-| Limit | Value | How you see it |
-|---|---|---|
-| Bundle size | 5,000,000 bytes | a larger bundle is refused with `isError: true` naming the diagram and the ceiling; `truncated` is always `false`, so no partial file is ever returned or saved |
-
-Introduced in 0.8.0: the cap measures the whole HTML containing the base64 SVG image. `svg_chars` is the decoded SVG source length after XML-preamble strip, before base64 encoding.
-
-The SVG inside the bundle is bounded by what the renderer produced, and the renderer's own limits still apply on the way there. `include_source` is a boolean, not a size argument: the source block is either embedded in full or omitted, because a cut-off source next to a complete diagram would mislead a reader.
-
-## Example
-
-```
-diagrams/
-└── models/
-    └── user-class.puml
-```
-
-Ask your agent:
-
-> "Is the user-class diagram still accurate compared to the code?"
-
-The agent calls `diagrams_check_consistency`, which reports:
-
-```
-1 of 2 entities in 'models/user-class.puml' were NOT found in the codebase:
-- Order: 'Order' appears in the diagram but no matching identifier was
-  found in the scanned codebase. It may be renamed, removed, or not yet
-  implemented.
-```
-
-## Project layout
-
-```
-src/
-├── index.ts                       # CLI dispatch (setup | --help | serve) + stdio wiring
-├── server.ts                      # createDiagramServer(ctx): McpServer + 15 tool registrations (13 in 0.8.0 plus diagrams_save_export and diagrams_scaffold unreleased after 0.8.0)
-├── context.ts                     # Resolves PROJECT_ROOT / DIAGRAMS_DIR once at startup
-├── constants.ts                   # Shared constants (incl. MAX_CUSTOM_TEMPLATE_* + MAX_EXPORT_HTML_BYTES, introduced in 0.8.0, plus MAX_SCAFFOLD_SOURCE_BYTES unreleased after 0.8.0)
-├── types.ts                       # Shared TypeScript types
-├── constants.test.ts / packaging.test.ts / setup.test.ts  # Colocated root tests
-├── setup/                         # Guided client-setup wizard (scopes, pre-flight checks)
-│   ├── index.ts                   # runSetup orchestrator
-│   ├── clients.ts                 # Client catalog, PATH checks, compatibility exports
-│   ├── arguments.ts               # Setup flags and scope parsing
-│   ├── configuration.ts           # Config paths, server entries, merging, persistence
-│   ├── projectRoot.ts             # Project-root prompt loop and scope policy
-│   ├── prompts.ts                 # Interactive pickers and confirmations
-│   └── terminal.ts                # Banner, boxes, color
-├── services/
-│   ├── diagramStore.ts            # Safe filesystem CRUD (path-traversal protected)
-│   ├── store/diagramMetadata.ts    # File type detection and bounded title reading
-│   ├── diagramValidator.ts        # PlantUML/Mermaid syntax checks and dialect detection
-│   ├── nameNormalize.ts           # Shared lenient name normalizer (checker + diff)
-│   ├── renderer.ts                # Mermaid/PlantUML -> SVG/PNG rendering
-│   ├── renderer/
-│   │   ├── command.ts             # CLI resolution, Windows arguments, bounded process execution
-│   │   ├── error.ts               # Shared RenderError class
-│   │   ├── local.ts               # Local Mermaid/PlantUML backends and temporary-file cleanup
-│   │   ├── plantumlRemote.ts      # PlantUML URL encoding and bounded remote requests
-│   │   └── types.ts               # Shared rendering contracts and dependency seams
-│   ├── scopeResolve.ts            # Bounds read-only tool scopes to PROJECT_ROOT
-│   ├── *.test.ts                   # Colocated service tests: store, validator, renderer, scope, normalize, checker
-│   ├── scaffold/                  # diagrams_scaffold candidate filtering and TypeScript emission (unreleased after 0.8.0)
-│   │   ├── scaffold.ts            # Pure buildScaffold over shared extractEntities plus ScaffoldSourceTooLargeError
-│   │   ├── members.ts             # Optional bounded class-member subset parser
-│   │   ├── fieldTypes.ts          # Exact supported field-label resolver
-│   │   ├── diagramLines.ts        # Shared comment, note and scope scanning
-│   │   └── relations.ts           # Bounded named-arrow field drafting
-│   ├── consistencyChecker/        # Diagram <-> code drift detection
-│   │   ├── index.ts               # checkConsistency orchestration (scan, match, report)
-│   │   ├── fileAnalysis.ts        # Read and analyze bounded code files
-│   │   ├── entityMatching.ts      # Match names and collect issues and evidence
-│   │   ├── entities.ts            # Entity names from diagram source
-│   │   ├── codeAnalysis.ts        # Per-language declaration patterns
-│   │   ├── scanning.ts            # Filesystem walk with scan limits
-│   │   ├── sequence/              # Call-graph edges, participant mapping, message ordering
-│   │   │   ├── callGraph.ts / operationIndex.ts / participantMapping.ts
-│   │   │   ├── sequenceEntities.ts / sequenceMatch.ts / sequenceOrder.ts
-│   │   │   └── sequenceGoldens.test.ts / sequenceOrderGoldens.test.ts
-│   │   └── ts/                    # Optional TypeScript AST path (dynamic import only — never a static import, so published installs run without the compiler)
-│   │       ├── tsParse.ts         # Compiler availability probe (+ tsParse.test.ts)
-│   │       ├── tsSymbols.ts       # Declared symbols + heritage collection (+ tsSymbols.test.ts)
-│   │       ├── tsIndex.ts / tsHeritage.ts  # Index and extends/implements edges (+ tsIndex.test.ts, tsGoldens.test.ts)
-│   │       └── tsCalls.ts         # AST call edges for sequences via optional includeCalls (introduced in 0.8.0) (+ tsCalls.test.ts)
-│   ├── diff/                      # diagrams_diff comparison
-│   │   ├── diffDiagram.ts         # Pure added/removed/renamed + sequence fields
-│   │   └── callOrder.ts           # bounded recognized call-order comparison (introduced in 0.8.0)
-│   ├── export/                    # diagrams_export + diagrams_save_export bundle builder (pure, no filesystem)
-│   │   ├── htmlBundle.ts          # SVG-as-image HTML wrapper + CSP from SVG + source
-│   │   └── exportGoldens.test.ts  # Exact wrapper structure locked per variant
-│   ├── generate/                  # diagrams_generate entity collection and emitters
-│   │   ├── collectEntities.ts     # Scan a scope into ordered entities + relations
-│   │   ├── emitters.ts            # Pure PlantUML/Mermaid class-diagram emitters
-│   │   ├── sequence.ts            # diagrams_generate_sequence orchestration (participants, messages, caps)
-│   │   ├── sequenceEmitters.ts    # Pure PlantUML/Mermaid sequence emitters
-│   │   ├── scopeFiles.ts          # Scope walking shared by both generators
-│   │   └── types.ts               # Shared generation options, results, relations, and messages
-│   └── templates/                 # diagrams_template skeletons + custom loader (introduced in 0.8.0)
-│       ├── skeletons.ts           # Six pure built-in emitters: kind x dialect
-│       ├── customTemplates.ts     # .diagrams-templates/<id>.json loader (introduced in 0.8.0) (+ customTemplates.test.ts)
-│       ├── templateCatalog.ts     # bounded candidate discovery (introduced in 0.8.0) (+ templateCatalog.test.ts)
-│       └── templateGoldens.test.ts # Exact emitted source per (template, format)
-├── tools/                         # One MCP tool adapter per file (15 tools) + shared toolError; *.test.ts colocated per tool
-│   ├── diffInput.ts               # diagrams_diff validation and stored/inline side loading
-│   ├── diffSummary.ts             # diagrams_diff text summaries
-│   └── diagramsScaffold.ts        # diagrams_scaffold code-from-diagram draft (unreleased after 0.8.0)
-└── integration/
-    └── mcpServer.test.ts          # End-to-end server surface tests
-```
-
-See [docs/architecture.md](./docs/architecture.md) for the CLI → server
-composition → tools → services boundaries and how to extend them.
-`examples/` is the reference fixture project (`examples/src/user.ts` plus two
-diagrams under `examples/diagrams/models/`); `evaluations/` holds the
-read-only Q&A (`eval.xml`) and the AST activation probe
-(`prod-activation/probe.mjs`, `npm run probe:prod`).
-
-Tests live next to the source they cover (`*.test.ts`), compile to `dist/`,
-and run from there. `scripts/build.mjs` cleans `dist/` before compiling;
-`scripts/test.mjs` discovers compiled `*.test.js` recursively, so new tests
-need no package-script edits. Build before running `npm test`.
-
-## Security notes
-
--   All file operations are restricted to the configured diagrams directory; attempts to read/write outside it (e.g. via `../..`) are rejected. Windows-style `\` separators work as path separators on every platform, so `..\..` traversal is rejected on Linux too.
-- `diagrams_check_consistency`, `diagrams_generate`, and `diagrams_generate_sequence` only *read* your codebase — they never modify code or diagrams. Both generators resolve their `scope` against `PROJECT_ROOT` and refuse (without reading anything) any path that would land outside it; their output is source text you save yourself with `diagrams_create`.
-- `diagrams_diff` is read-only too: stored sides are read through the same traversal-protected store as `diagrams_get`, inline sides never touch the filesystem at all, and input-shape errors are reported before any file is opened. Errors and logs never include diagram source, only the names being reported.
-- `diagrams_scaffold` (unreleased after 0.8.0) is read-only too: one stored diagram read through the same traversal-protected store, then pure filtering and TypeScript emission with no rendering, network, execution, or writes. Over-cap sources are rejected before extraction, never truncated.
-- `diagrams_template` built-ins touch no filesystem at all — no project root, no diagrams directory, no state between calls. Introduced in 0.8.0, custom templates are read-only: one `<PROJECT_ROOT>/.diagrams-templates/<id>.json` regular-file read (symlinks rejected), nothing written; the supplied title and entity names are expanded into the selected template.
-- `diagrams_export` reads one diagram through the same traversal-protected store as `diagrams_get` and returns the bundle as text — it writes nothing, so the store's diagram extension allow-list never opens to `.html`. Introduced in 0.8.0: the artifact embeds the SVG as a base64 data image under `default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'`; scripts and external resources are disabled by SVG-image processing, not by claimed sanitization or removal of encoded markup. The only path it carries is the diagram's POSIX `relative_path`. Remote PlantUML rendering, when you opt into it, sends diagram source to the configured server; that is the renderer's existing path, unchanged.
-- `diagrams_save_export` writes the same bundle inside the diagrams root through the dedicated `DiagramStore.writeHtmlExport` path only: `.html` (case-insensitive) with exclusive create, the same traversal/symlink/canonical checks as diagram writes, and no overwrite option. Diagram `read`/`write`/`delete`/`list`/`exists` gates still reject `.html`, and over-cap bundles are refused before any output directory or file is created.
-- No credentials or external accounts are required for any tool. `diagrams_render` for PlantUML never leaves the machine unless remote rendering is explicitly enabled with `ALLOW_REMOTE_PLANTUML=true` — and never when `DISABLE_REMOTE_PLANTUML=true` is set, which takes precedence. Mermaid rendering never leaves the machine.
-- Local renderer processes run with a timeout and bounded stdout/stderr capture (1,000,000 characters per stream, enforced while collecting). A renderer that exceeds the cap or its timeout budget is stopped: its output pipes are closed and the process is killed, and rendering fails with an actionable error that never includes captured output, paths, or environment values. On timeout, the error is delivered immediately rather than waiting for a descendant process that inherited the renderer's output pipes (for example through the Windows `cmd.exe` shim chain) to release them.
-
-## Roadmap
-
-Implemented in the unpublished 0.7.0 development wave, included in 0.8.0 (see [RELEASE_NOTES.md](./RELEASE_NOTES.md)):
-
-- TypeScript AST path for consistency checking — stricter matching plus `extends`/`implements` edges when the compiler is available, open heuristic fallback when it is not
-- Sequence diagrams both ways: `diagrams_generate_sequence` drafts them from call-graph edges, and the checker compares message ordering (callbacks deferred, never sequenced)
-- Diagram diffing (`diagrams_diff`), starter skeletons (`diagrams_template`), and self-contained HTML export (`diagrams_export`)
-
-Unreleased after 0.8.0, partially delivering code-from-diagram scaffolding:
-
-- `diagrams_scaffold` drafts exported TypeScript classes from heuristic entity-name candidates (aliases, namespaces, components, participants, and call names). Optional `include_members` adds unknown fields and throwing method stubs; `include_types` also retains supported primitive/class field labels and one-dimensional arrays. Named-arrow fields require `include_relations`; class kinds and runtime behavior are not recovered.
-
-Still open:
-
-- Code-from-diagram follow-ups: broader member syntax, richer field and method types, broader relationship syntax and semantics, and languages beyond TypeScript
-- AST-backed precision for more languages, as demand dictates
-- Export hardening follow-up: introduced in 0.8.0, image isolation replaces live-SVG export; the historical allowlist-sanitizer proposal in `docs/next-features.md` is not implemented (tracked there)
-
-Introduced in 0.8.0: AST-backed TS sequence calls (`tsCalls.ts` via `includeCalls`), project-local custom templates (`template="custom"`), and SVG-as-image export with wrapper CSP. See [Template limits](#template-limits), [Export limits](#export-limits), and `docs/next-features.md` current-status notes.
-
-Contributions and issues welcome.
-
-## License
-
-MIT — see [LICENSE](./LICENSE).
+Other stdio MCP clients can launch diagrams-mcp-server directly or use npx
+with arguments -y diagrams-mcp-server
+The server command accepts no tool requests through ordinary CLI arguments
+Tool calls travel through the MCP connection
+
+For available startup and setup options:
+
+    diagrams-mcp-server --help
+    diagrams-mcp-server setup --help
+
+
+CONFIGURATION AND RENDERING
+===========================
+
+PROJECT_ROOT selects the codebase used for analysis
+Its default is the server process working directory
+
+DIAGRAMS_DIR selects the diagrams root
+Its default is the diagrams directory beneath PROJECT_ROOT
+A relative value is resolved beneath PROJECT_ROOT
+An absolute value selects a separate storage location
+Restart the server after changing either root
+
+Rendering requires a working external renderer on PATH
+PlantUML uses the plantuml command
+Mermaid uses the mmdc command from the Mermaid CLI package
+The server package does not install either renderer for you
+
+To install the Mermaid command:
+
+    npm install -g @mermaid-js/mermaid-cli
+
+PlantUML rendering prefers the local command
+When that command is missing remote fallback remains disabled unless
+ALLOW_REMOTE_PLANTUML is exactly true
+DISABLE_REMOTE_PLANTUML set to exactly true overrides that permission
+PLANTUML_SERVER_URL selects the remote endpoint when fallback is enabled
+The default endpoint is the public PlantUML rendering service
+
+Remote fallback sends diagram source to the configured server
+Mermaid rendering always uses the local command
+A local renderer execution failure is an error rather than a reason to
+retry remotely
+Rendering uses temporary files that are cleaned up after the operation
+
+
+WORKING WITH DIAGRAMS
+=====================
+
+Start by discovering existing diagrams with diagrams_list
+Read the selected source with diagrams_get before proposing a change
+Use diagrams_diff to compare the existing source with a proposed revision
+Then apply the reviewed revision through diagrams_update
+Use diagrams_create for a new diagram and diagrams_delete for explicit
+removal
+
+Create refuses an existing target
+Update operates on an existing diagram
+Storage validates recognized diagram extensions and source structure
+These checks establish basic dialect shape rather than full language
+correctness
+Use rendering and human review to inspect the resulting diagram
+
+For a new architecture draft use diagrams_generate on a narrow code scope
+For a call flow draft use diagrams_generate_sequence
+For a blank design use diagrams_template
+These tools return source for review without saving a diagram
+Pass reviewed source to diagrams_create when you decide to persist it
+
+Run diagrams_check_consistency after a code change to inspect declaration
+evidence for diagram entities
+Treat unmatched names as review prompts
+An unmatched name can reflect unsupported syntax or incomplete scanning
+rather than an architectural defect
+
+
+TOOL CONTRACTS
+==============
+
+Inventory and source access
+---------------------------
+
+diagrams_list supports type_filter and zero based offset pagination
+An explicit limit accepts 1 through 500
+Omitting limit returns all remaining matches
+The response distinguishes the page count from the total and reports
+has_more so callers can continue without guessing
+
+diagrams_get returns complete source unless max_chars requests a window
+An explicit window accepts 1 through 100000 UTF-16 code units
+The response reports offset and returned_chars and total_chars together
+with is_partial and has_more
+An offset beyond the source is an error
+
+diagrams_create and diagrams_update and diagrams_delete are the explicit
+diagram mutation tools
+All fifteen tools in the current checkout reject unknown input arguments
+Clients should use the tool schemas exposed by MCP discovery as the exact
+argument reference
+
+Analysis and comparison
+-----------------------
+
+diagrams_check_consistency compares extracted diagram names with source
+declaration evidence and reports matched files and analyzer tiers
+Its extractors include language specific declaration patterns and a generic
+whole word fallback
+The optional TypeScript compiler improves selected analysis paths
+The result remains heuristic and does not establish runtime correctness
+
+diagrams_diff accepts two sides
+Each side must provide exactly one stored path or inline source
+Inline source must identify a recognized diagram dialect
+Input shape is checked before either stored side is read
+
+The default comparison reports added and removed names with heuristic
+rename pairing
+It does not compare layout or member signatures or resolved types
+Setting compare_call_order to true additionally compares recognized call
+names in source order while preserving repetitions
+That mode accepts at most 10000 recognized calls per side and fails above
+the ceiling rather than returning a partial comparison
+It does not establish runtime execution order
+
+Diagram generation and templates
+--------------------------------
+
+diagrams_generate returns a class diagram draft from source declarations
+It can include evidenced TypeScript inheritance and implementation edges
+when the optional compiler is available
+Without that support it returns declaration based output with an explicit
+note about unavailable relations
+It does not perform full type resolution
+
+diagrams_generate_sequence returns a static call flow draft
+It reports unresolved callees rather than inventing participants
+Calls inside callbacks are conservatively treated as deferred and excluded
+from the ordered messages
+This policy is not a claim that every callback executes asynchronously
+include_call_parentheses changes message labels only
+
+diagrams_template emits class or sequence or c4_context starter source in
+puml or mermaid format
+It accepts 1 through 20 unique ASCII identifier names of at most 60
+characters each and an optional nonblank title of at most 200 characters
+
+For project templates use template set to custom with a custom_template
+identifier
+Definitions are JSON files in the project root hidden directory named
+diagrams-templates with a leading dot
+Each filename is the identifier followed by the JSON extension
+The identifier accepts ASCII letters and digits and underscores and hyphens
+with a length from 1 through 64
+
+A definition supports optional puml and mermaid sections
+Each supplied section requires source and entity strings
+The supported placeholders are {{title}} and {{entities}} and {{name}}
+Expansion is a single pass and does not evaluate code
+Definitions must be regular files rather than symbolic links
+The read ceiling is 65536 bytes and the expanded source ceiling is 1000000
+UTF-16 code units
+
+diagrams_list_templates discovers built in kinds and custom filename
+candidates without reading custom definition contents
+Discovery examines at most 1000 directory entries plus a lookahead entry
+Custom content is validated when diagrams_template instantiates it
+Discovery does not create a missing template directory
+
+Rendering and sharing
+---------------------
+
+diagrams_render returns SVG or PNG through the configured renderer
+diagrams_export returns a standalone HTML document without persisting the
+export target
+Both operations share the renderer selection policy described above
+
+HTML exports embed SVG as a base64 image rather than inline SVG markup
+This isolates the image from the surrounding document but is not an SVG
+sanitizer
+Text within the rendered image is not selectable
+A restrictive content security policy limits the wrapper document
+
+include_source defaults to true and embeds the escaped source in a
+collapsible section
+Setting it to false omits the source section entirely
+The finished HTML document must fit within 5000000 UTF-8 bytes
+Oversized exports fail instead of returning a partial document
+
+The unreleased diagrams_save_export tool saves the same HTML bundle beneath
+the diagrams root through an explicit output_path
+The target must use the HTML extension and must not already exist
+The size check runs before output directories or the output file are created
+The response contains acknowledgement and metadata rather than the HTML
+Saved HTML files do not become diagrams in the inventory or CRUD tools
+
+TypeScript scaffolding from diagrams
+------------------------------------
+
+The unreleased diagrams_scaffold tool returns TypeScript source for review
+It reads one stored diagram and does not save or execute the proposed code
+The default output consists of empty exported classes derived from heuristic
+name candidates
+Invalid names and reserved names are skipped and reported
+An empty candidate set produces empty source
+
+include_members enables a limited parser for plain top level multiline class
+blocks
+It emits fields as unknown and methods as throwing stubs
+Arguments and implementation behavior are not recovered
+
+include_types implies include_members
+It preserves only string or number or boolean or bigint or an exactly
+emitted class name with an optional single array suffix
+Unsupported field labels remain unknown
+Accepted fields use definite assignment without supplying runtime values
+
+include_relations implies both earlier modes
+It accepts labeled --> associations between explicitly declared plain
+classes that are also emitted
+The role label becomes a proposed field
+Supported target multiplicity can produce an array field
+Existing body members win over relation fields and accepted names keep
+their first occurrence
+The result does not recover ownership or enforce cardinality
+
+Scaffolding defaults to 30 classes and permits at most 60
+Each class accepts at most 30 emitted members
+Relation mode appends at most 300 relationship fields across the result
+Metadata distinguishes skipped candidates from cap related omissions
+Source above 1000000 UTF-8 bytes is refused after the stored file is read
+This ceiling limits processed input rather than the memory needed to read
+the original file
+
+
+OPERATIONAL LIMITS AND FAILURE RECOVERY
+======================================
+
+Consistency and code generation scans examine at most 5000 source files
+Directory traversal skips hidden directories and known dependency and build
+directories such as node_modules and dist and build and out and target
+Only files with recognized code extensions are collected
+An unmatched name in an excluded file is outside that scan result
+Files above 1000000 bytes are skipped
+The scanners limit concurrent file reads to 32
+Consistency evidence retains at most 10 matched file references per entity
+while reporting the full match count
+
+Class generation defaults to 30 entities with a ceiling of 60
+It emits at most 60 relations and omits edges whose endpoints were capped
+Sequence generation defaults to 8 participants and 20 messages
+Its ceilings are 20 participants and 50 messages
+Inspect truncated and scan_warning and the tool specific cap metadata
+before treating any result as complete
+
+Local renderer commands have a default timeout of 20000 milliseconds
+Captured renderer streams are bounded at 1000000 characters each
+Remote PlantUML requests also have a 20000 millisecond timeout and a
+5000000 byte response ceiling
+These bounds do not turn external renderers into an application sandbox
+
+Tool execution failures are marked with isError set to true
+Schema rejection can occur before the handler runs
+A missing diagram should lead to a fresh inventory check
+An existing create target requires a new path or an intentional update
+An existing export target requires a different output path or explicit
+removal outside the export tool
+A missing renderer requires installing the command and checking PATH in
+the environment that launches the MCP client
+A capped scan should lead to a narrower scope before drawing conclusions
+
+The storage and scope services reject paths that escape their configured
+roots and apply symbolic link checks at filesystem boundaries
+The server still runs with the operating system permissions of its process
+Treat diagram source and external renderer configuration as trusted inputs
+appropriate to that execution environment
+
+
+SOURCE ORGANIZATION AND DEVELOPMENT
+===================================
+
+The src directory contains runtime source and colocated tests
+The tools directory beneath src holds one adapter per tool
+The services directory beneath src holds storage and analysis and rendering
+and export and scaffold modules
+The setup directory beneath src owns client configuration workflows
+The integration directory beneath src exercises MCP transport contracts
+
+The scripts directory owns clean builds and compiled test discovery
+The dist directory is generated build output
+The docs directory holds detailed architecture and project handoff records
+The architecture document describes module ownership and request paths
+CONTRIBUTING describes the contribution workflow
+RELEASE_NOTES records versioned changes
+The cleanup handoff and next features documents preserve historical context
+and should be read with their recorded scope and date
+
+To work on the current source checkout run these commands from the repository
+root in order:
+
+    npm ci
+    npm run lint
+    npm run format:check
+    npm run build
+    npm test
+
+Tests run from compiled output so build before running them
+The build removes stale output before compiling
+For a local MCP client configure node as the server command and supply the
+absolute path to the compiled index JavaScript file under dist as its argument
+Set PROJECT_ROOT to the codebase that this local server should analyze
+This local entry exercises the unreleased tools
+The published setup command otherwise installs the published package through
+npx for its generated server entry
+
+Running npm ci in the checkout also supplies the development TypeScript
+compiler for compiler backed analysis
+Published installs normally use the fallback extractors
+Installing TypeScript only in the analyzed project does not guarantee that
+the server package can resolve it
+
+Continuous integration runs lint and formatting checks and a build and an
+entry point help check before the test suite
+Renderer behavior is covered through controlled dependencies without requiring
+global renderer installations or network rendering in the test jobs
+External renderer installation still needs validation in the intended runtime
+environment
+
+When extending the project keep tool schemas and response metadata explicit
+Place reusable behavior in the owning service and preserve filesystem scope
+checks at every new storage boundary
+Cover observable behavior through focused tests and update the relevant
+engineering documentation in the same change
+
+
+LICENSE
+--------
+
+Released under the MIT license
+See LICENSE for the full terms
