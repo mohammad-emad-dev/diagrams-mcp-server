@@ -23,6 +23,18 @@ The scaffold member and field type and named relationship modes described
 below belong to the current source checkout
 Installing the published package does not enable these unreleased additions
 
+The chart shows tool availability on main rather than project completion
+The two source only tools require a local checkout until a new release
+
+```mermaid
+pie showData
+    accTitle: Tool availability on main
+    accDescr: Thirteen published tools and two unreleased tools
+    title Tool availability on main
+    "Published tools" : 13
+    "Unreleased tools" : 2
+```
+
 The package declares Node 18 or newer as its runtime requirement
 Continuous integration checks Node 20 and Node 22 on Ubuntu and Windows
 The TypeScript compiler is a development dependency rather than a required
@@ -44,15 +56,24 @@ These roots are resolved once when the server starts
 Diagram paths supplied to tools are relative to the diagrams root
 Code scopes supplied to analysis tools are relative to the project root
 
-The request flow is:
+The architecture separates protocol handling from services and external
+resources
+Responses return through the tool adapter to the connected client
 
-    MCP client over stdio
-        -> CLI startup and shared context
-        -> MCP server and tool registration
-        -> strict argument validation
-        -> tool adapter
-        -> storage or analysis or rendering service
-        -> MCP response with content and structured metadata
+```mermaid
+flowchart TB
+    accTitle: System architecture
+    accDescr: MCP requests pass through strict schemas and adapters to storage and analysis and rendering services
+    client["MCP client"] <-->|stdio| server["CLI and MCP server"]
+    server --> schemas["Strict input schemas"]
+    schemas --> adapters["Tool adapters"]
+    adapters --> store["Diagram storage"]
+    adapters --> analysis["Analysis and generation"]
+    adapters --> rendering["Rendering service"]
+    store --> diagrams[("Diagrams root")]
+    analysis --> code[("Project root")]
+    rendering --> external["Local commands or opt in PlantUML endpoint"]
+```
 
 Tool adapters own protocol contracts and response formatting
 Services own filesystem operations and analysis and source generation
@@ -144,6 +165,23 @@ A local renderer execution failure is an error rather than a reason to
 retry remotely
 Rendering uses temporary files that are cleaned up after the operation
 
+Renderer selection follows the decision chart below
+Remote permission means ALLOW_REMOTE_PLANTUML is exactly true while
+DISABLE_REMOTE_PLANTUML is not true
+Only a missing local PlantUML command reaches that decision
+
+```mermaid
+flowchart TB
+    accTitle: Renderer selection
+    accDescr: Mermaid uses mmdc while PlantUML uses a local CLI or an explicitly permitted remote endpoint
+    dialect{"Dialect"} -->|Mermaid| mermaid["Run local mmdc"]
+    dialect -->|PlantUML| local{"Local plantuml command"}
+    local -->|Available| plantuml["Run local plantuml"]
+    local -->|Missing| permission{"Remote fallback allowed"}
+    permission -->|No| failure["Return a render error"]
+    permission -->|Yes| remote["Send source to configured endpoint"]
+```
+
 
 WORKING WITH DIAGRAMS
 =====================
@@ -173,6 +211,24 @@ evidence for diagram entities
 Treat unmatched names as review prompts
 An unmatched name can reflect unsupported syntax or incomplete scanning
 rather than an architectural defect
+
+This workflow connects the tools through explicit review steps
+The arrows describe a suggested user workflow rather than an automatic
+pipeline
+Generation and comparison do not save files on your behalf
+
+```mermaid
+flowchart TB
+    accTitle: Diagram review workflow
+    accDescr: Read or draft source then review and compare before explicitly saving and rendering and checking consistency
+    stored["Read existing diagram source"] --> review["Review source"]
+    draft["Generate or template a draft"] --> review
+    review --> compare["Compare revisions when needed"]
+    compare --> save["Explicit create or update"]
+    save --> render["Render and inspect"]
+    render --> check["Check consistency against code"]
+    check -->|Revise when needed| review
+```
 
 
 TOOL CONTRACTS
