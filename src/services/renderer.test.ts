@@ -22,6 +22,7 @@ import {
 } from "./renderer.js";
 import {
   MAX_REMOTE_BODY_BYTES,
+  MAX_LOCAL_IMAGE_BYTES,
   MAX_RENDER_ERROR_CHARS,
   MAX_RENDER_OUTPUT_CHARS,
   REMOTE_FETCH_TIMEOUT_MS,
@@ -744,6 +745,70 @@ describe("runCommand spaced argv through a real .cmd shim", () => {
     // Assert: every argv element arrives exactly as passed.
     const received = JSON.parse(await fs.readFile(dumpPath, "utf-8")) as string[];
     assert.deepEqual(received, ["-i", inputPath, "-o", outputPath, "-b", "100%"]);
+  });
+});
+
+describe("local renderer image byte limits", () => {
+  // Regression boundaries: empty / exact limit / one byte over the limit.
+  const variants = [
+    {
+      type: "plantuml",
+      format: "png",
+      dependencies: (image: Buffer) => localPlantUmlDeps(image).deps,
+    },
+    { type: "mermaid", format: "svg", dependencies: localMermaidDeps },
+  ] as const;
+  for (const variant of variants) {
+    for (const size of [0, MAX_LOCAL_IMAGE_BYTES, MAX_LOCAL_IMAGE_BYTES + 1]) {
+      it(`${variant.type} ${variant.format} ${size > MAX_LOCAL_IMAGE_BYTES ? "refuses" : "preserves"} a ${size} byte image and removes temporary files`, async () => {
+        const before = await snapshotRenderDirs();
+        const image = Buffer.alloc(size, 0x61);
+        const rendering = renderDiagram(
+          SECRET_SOURCE,
+          variant.type,
+          variant.format,
+          variant.dependencies(image),
+        );
+        if (size > MAX_LOCAL_IMAGE_BYTES) {
+          await assert.rejects(rendering, (error: unknown) => {
+            assert.ok(error instanceof RenderError);
+            assert.match(error.message, /image exceeded the 5000000-byte limit/);
+            assert.ok(!error.message.includes(SECRET_SOURCE));
+            assert.ok(!error.message.includes(os.tmpdir()));
+            return true;
+          });
+        } else {
+          assert.deepEqual(await rendering, image);
+        }
+        assert.deepEqual(await leakedRenderDirs(before), []);
+      });
+    }
+  }
+
+  it("refuses an image that grows past the limit after stat and still cleans up", async (context) => {
+    const before = await snapshotRenderDirs();
+    const originalOpen = fs.open;
+    context.mock.method(fs, "open", async (...args: Parameters<typeof fs.open>) => {
+      const handle = await originalOpen(...args);
+      const originalStat = handle.stat.bind(handle);
+      // Grow the real output at the filesystem boundary after its size snapshot.
+      context.mock.method(handle, "stat", async () => {
+        const snapshot = await originalStat();
+        await fs.appendFile(args[0], "x");
+        return snapshot;
+      });
+      return handle;
+    });
+    await assert.rejects(
+      renderDiagram(
+        "graph TD\n  A-->B\n",
+        "mermaid",
+        "svg",
+        localMermaidDeps(Buffer.alloc(MAX_LOCAL_IMAGE_BYTES, 0x61)),
+      ),
+      { name: "RenderError", message: /image exceeded the 5000000-byte limit/ },
+    );
+    assert.deepEqual(await leakedRenderDirs(before), []);
   });
 });
 

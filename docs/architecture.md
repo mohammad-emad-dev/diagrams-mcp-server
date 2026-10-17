@@ -159,7 +159,12 @@ keep their source and response shapes when this flag is false or omitted.
   re-exports `RenderError`, `runCommand`, `resolveSpawnTarget`, and the
   `SpawnTarget` type so existing callers keep their imports.
 - `renderer/local.ts` — local Mermaid and PlantUML execution, input/output
-  files, and temporary-directory cleanup. The renderer entry retains backend
+  files, and temporary-directory cleanup. Unreleased after 0.8.0, both backends
+  share a private bounded image reader using `MAX_LOCAL_IMAGE_BYTES` (5,000,000).
+  It stats and reads one open handle and bounds the read to the cap plus one byte
+  even if the output grows after stat. The handle closes before directory cleanup
+  on both success and refusal. This bounds image buffering rather than disk usage
+  while the external command runs. The renderer entry retains backend
   selection, remote-fallback policy, and provenance reporting.
 - `renderer/plantumlRemote.ts` — PlantUML URL encoding, remote requests,
   timeouts, and response-size checks. Unreleased after 0.8.0, the production

@@ -8,7 +8,7 @@ import type { ServerContext } from "../context.js";
 import { DiagramStore } from "../services/diagramStore.js";
 import type { RendererDeps } from "../services/renderer.js";
 import { buildExportBundle } from "../services/export/htmlBundle.js";
-import { MAX_EXPORT_HTML_BYTES } from "../constants.js";
+import { MAX_EXPORT_HTML_BYTES, MAX_LOCAL_IMAGE_BYTES } from "../constants.js";
 import { diagramsExportInputSchema, registerDiagramsExport } from "./diagramsExport.js";
 
 const PUML_PATH = "models/order.puml";
@@ -296,9 +296,10 @@ describe("diagrams_export", () => {
   });
 
   it("refuses an over-cap bundle rather than returning a cut file", async () => {
-    // One byte past the whole-document ceiling: the wrapper itself is what
-    // pushes it over, so this is the smallest honest over-cap input.
-    const huge = `<svg xmlns="http://www.w3.org/2000/svg">${"A".repeat(MAX_EXPORT_HTML_BYTES)}</svg>`;
+    // Base64 expansion must exceed the HTML ceiling without hitting the image cap first.
+    const payloadBytes = Math.floor((MAX_EXPORT_HTML_BYTES * 3) / 4);
+    const huge = `<svg xmlns="http://www.w3.org/2000/svg">${"A".repeat(payloadBytes)}</svg>`;
+    assert.ok(Buffer.byteLength(huge) <= MAX_LOCAL_IMAGE_BYTES);
     ctx.rendererDeps = localPlantUmlDeps(huge);
     await ctx.diagramStore.write(PUML_PATH, PUML_SOURCE, { overwrite: false });
     const tool = captureTool(ctx);

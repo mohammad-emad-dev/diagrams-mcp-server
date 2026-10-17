@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
-import { MAX_EXPORT_HTML_BYTES, toPosixPath } from "../constants.js";
+import { MAX_EXPORT_HTML_BYTES, MAX_LOCAL_IMAGE_BYTES, toPosixPath } from "../constants.js";
 import type { DiagramType } from "../types.js";
 import { buildSizedExportBundle } from "../services/export/htmlBundle.js";
 import { renderDiagramWithProvenance } from "../services/renderer.js";
@@ -116,6 +116,7 @@ Examples:
   - Don't use when: You want to edit the diagram (use diagrams_get and diagrams_update)
 
 Error Handling:
+  - Returns "Error: Local renderer image exceeded the ${MAX_LOCAL_IMAGE_BYTES}-byte limit..." for oversized local SVG output before HTML bundling
   - Returns "Error: No diagram found at '<path>'" if the diagram does not exist, before any render is attempted
   - Returns "Error: Mermaid rendering requires the 'mmdc' CLI..." when rendering a Mermaid diagram without mmdc installed (no fallback exists)
   - Returns "Error: PlantUML rendering requires a local 'plantuml' CLI..." when no local CLI is installed and remote rendering is not explicitly enabled (set ALLOW_REMOTE_PLANTUML=true to opt in)
