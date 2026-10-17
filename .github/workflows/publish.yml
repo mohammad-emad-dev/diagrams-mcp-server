@@ -128,6 +128,8 @@ jobs:
         env:
           PUPPETEER_SKIP_DOWNLOAD: "true"
         run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends graphviz
           RENDERERS="$RUNNER_TEMP/diagrams-release-renderers"
           mkdir -p "$RENDERERS/bin"
           npm install --prefix "$RENDERERS" @mermaid-js/mermaid-cli@12.0.0 --ignore-scripts --no-audit --no-fund
