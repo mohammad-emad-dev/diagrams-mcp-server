@@ -35,6 +35,9 @@ export const PLANTUML_SERVER_URL =
 // so runaway output cannot grow memory without bound.
 export const MAX_RENDER_OUTPUT_CHARS = 1_000_000;
 
+// Local image files are capped independently from captured renderer streams.
+export const MAX_LOCAL_IMAGE_BYTES = 5_000_000;
+
 // Accepted decoded PlantUML response bytes. Production enforces this while
 // streaming; injected fetch seams are checked after their buffer resolves.
 export const MAX_REMOTE_BODY_BYTES = 5_000_000;

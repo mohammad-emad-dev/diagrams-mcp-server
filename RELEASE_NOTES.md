@@ -2,6 +2,13 @@
 
 Fifteen tools (thirteen released in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, unreleased after 0.8.0).
 
+Local PlantUML and Mermaid SVG or PNG output is now limited to 5,000,000 bytes
+before base64 encoding or HTML bundling. The reader stats and reads the same
+open handle and reads at most one byte beyond the cap to detect observed file
+growth. Images exactly at the limit remain valid. Oversized output raises an
+actionable `RenderError` and the handle closes before temporary directory cleanup.
+The file-size limit is separate from captured renderer stdout and stderr limits.
+
 Remote PlantUML requests now retain their timeout through response body download
 and reject decoded streams as soon as they exceed 5,000,000 bytes. Oversized
 declared lengths are refused before payload buffering. Failed downloads and

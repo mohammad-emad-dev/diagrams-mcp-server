@@ -1,9 +1,41 @@
 import { promises as fs } from "node:fs";
+import type { FileHandle } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { MAX_LOCAL_IMAGE_BYTES } from "../../constants.js";
 import { runLocalCommand } from "./command.js";
 import { RenderError } from "./error.js";
 import type { RenderFormat, RendererDeps } from "./types.js";
+
+function localImageLimitError(): RenderError {
+  return new RenderError(
+    `Local renderer image exceeded the ${MAX_LOCAL_IMAGE_BYTES}-byte limit and was discarded. ` +
+      "Split or simplify the diagram, then render it again.",
+  );
+}
+
+async function readImageBytes(handle: FileHandle): Promise<Buffer> {
+  const buffer = Buffer.alloc(MAX_LOCAL_IMAGE_BYTES + 1);
+  let length = 0;
+  while (length < buffer.length) {
+    const { bytesRead } = await handle.read(buffer, length, buffer.length - length, length);
+    if (bytesRead === 0) break;
+    length += bytesRead;
+  }
+  if (length > MAX_LOCAL_IMAGE_BYTES) throw localImageLimitError();
+  return Buffer.from(buffer.subarray(0, length));
+}
+
+async function readLocalImage(outputPath: string): Promise<Buffer> {
+  const handle = await fs.open(outputPath, "r");
+  try {
+    if ((await handle.stat()).size > MAX_LOCAL_IMAGE_BYTES) throw localImageLimitError();
+    // A file can grow after stat so the read ceiling must not depend on that size.
+    return await readImageBytes(handle);
+  } finally {
+    await handle.close();
+  }
+}
 
 export async function renderMermaid(
   source: string,
@@ -35,7 +67,7 @@ export async function renderMermaid(
           "and ensure the npm global bin directory is on PATH.",
       );
     }
-    return await fs.readFile(outputPath);
+    return await readLocalImage(outputPath);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }
@@ -61,7 +93,7 @@ export async function renderPlantUmlLocal(
       );
     }
     const outputPath = path.join(tmpDir, `input.${format}`);
-    return await fs.readFile(outputPath);
+    return await readLocalImage(outputPath);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }

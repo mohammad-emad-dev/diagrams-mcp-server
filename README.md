@@ -411,6 +411,10 @@ before treating any result as complete
 
 Local renderer commands have a default timeout of 20000 milliseconds
 Captured renderer streams are bounded at 1000000 characters each
+In the unreleased source checkout local SVG and PNG image files are limited
+to 5000000 bytes before base64 encoding or HTML bundling
+Oversized image files are refused and the temporary render directory is removed
+Split or simplify the diagram before trying again
 Remote PlantUML requests also have a 20000 millisecond timeout and a
 5000000 byte response ceiling
 In the unreleased source checkout the timeout covers headers and the full
