@@ -29,6 +29,11 @@ only after the release workflow succeeds.
 
 ## Further development candidates
 
+Unreleased after 0.9.0: sequence senders are anchored to the call-site file so
+duplicate caller names cannot redirect them. Callee lookup remains heuristic
+with first-declaring-participant precedence. Receiver and declaration analysis
+remain separate future work.
+
 Unreleased after 0.9.0: the first scaffolding syntax extension supports nullable
 scalar and emitted-class field labels with an optional single array suffix.
 It uses the existing typed mode and emits one canonical `Type | null` form.

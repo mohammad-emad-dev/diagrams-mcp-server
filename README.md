@@ -296,6 +296,9 @@ It does not perform full type resolution
 
 diagrams_generate_sequence returns a static call flow draft
 It reports unresolved callees rather than inventing participants
+On main an unreleased correction keeps each sender tied to the file containing
+the call site even when another file declares the same caller name
+Callee lookup still uses the first case insensitive declaring participant
 Calls inside callbacks are conservatively treated as deferred and excluded
 from the ordered messages
 This policy is not a claim that every callback executes asynchronously

@@ -304,6 +304,36 @@ describe("sequence goldens", () => {
     ]);
   });
 
+  it("keeps a real self-call when the participant cap drops the external target", async () => {
+    const scope = path.join(tmpRoot, "self-cap");
+    await writeFiles(scope, {
+      "a_first.ts": "export function checkout() {}\n",
+      "payment.ts": "export function charge() {}\n",
+      "z_second.ts":
+        "export function checkout() {\n  charge();\n  helper();\n  absent();\n}\nexport function helper() {}\n",
+    });
+    for (const format of ["puml", "mermaid"] as const) {
+      for (const deps of [undefined, { loadTsModule: async () => null }]) {
+        const result = await collectSequence(scope, {
+          format,
+          deps,
+          maxParticipants: 1,
+          maxMessages: 1,
+        });
+        assert.deepEqual(result.participants, ["z_second"]);
+        assert.deepEqual(result.messages, [
+          { from: "z_second", to: "z_second", message: "helper", line: 3, via_callback: false },
+        ]);
+        assert.equal(result.participantsAvailable, 2);
+        assert.equal(result.participantsDropped, 1);
+        assert.equal(result.messagesAvailable, 2);
+        assert.equal(result.messagesDropped, 1);
+        assert.deepEqual(result.unresolvedCallees, ["absent"]);
+        validateDiagramSource(result.source, format === "puml" ? "plantuml" : "mermaid");
+      }
+    }
+  });
+
   const resolutionCases: Array<{
     name: string;
     files: Record<string, string>;
@@ -351,33 +381,66 @@ describe("sequence goldens", () => {
       ],
       unresolved: ["absent"],
     },
+    {
+      // The sender ownership fix: checkout is declared in an earlier file,
+      // and the later file's inner call to charge() must be sent by the
+      // later file, not by the participant that first declared checkout.
+      name: "a later duplicate caller sends from its own file",
+      files: {
+        "a_first.ts": "export function checkout() {}\n",
+        "payment.ts": "export function charge() {}\n",
+        "z_second.ts": "export function checkout() {\n  charge();\n}\n",
+      },
+      participants: ["z_second", "payment"],
+      messages: [
+        { from: "z_second", to: "payment", message: "charge", line: 2, via_callback: false },
+      ],
+      unresolved: [],
+    },
+    {
+      // Case-folded collision: CHECKOUT folds to checkout, so the earlier
+      // exact-case declarer must not become the sender of the later call.
+      name: "a same-fold caller name still sends from its own file",
+      files: {
+        "a_first.ts": "export function checkout() {}\n",
+        "payment.ts": "export function charge() {}\n",
+        "z_second.ts": "export function CHECKOUT() {\n  charge();\n}\n",
+      },
+      participants: ["z_second", "payment"],
+      messages: [
+        { from: "z_second", to: "payment", message: "charge", line: 2, via_callback: false },
+      ],
+      unresolved: [],
+    },
   ];
 
   for (const scenario of resolutionCases) {
     for (const format of ["puml", "mermaid"] as const) {
-      it(`${scenario.name} (${format})`, async () => {
-        const scope = path.join(tmpRoot, "resolution");
-        await writeFiles(scope, scenario.files);
-        const result = await collectSequence(scope, { format });
+      for (const deps of [undefined, { loadTsModule: async () => null }]) {
+        it(`${scenario.name} (${format} ${deps ? "fallback" : "compiler"})`, async () => {
+          const scope = path.join(tmpRoot, "resolution");
+          await writeFiles(scope, scenario.files);
+          const result = await collectSequence(scope, { format, deps });
 
-        assert.deepEqual(result.participants, scenario.participants);
-        assert.deepEqual(result.messages, scenario.messages);
-        assert.deepEqual(result.unresolvedCallees, scenario.unresolved);
-        assert.equal(result.messagesAvailable, scenario.messages.length);
-        assert.equal(result.messagesDropped, 0);
-        assert.equal(result.filesScanned, Object.keys(scenario.files).length);
-        const declarations = scenario.participants.map((name) => `participant ${name}`);
-        const messages = scenario.messages.map(({ from, to, message }) =>
-          format === "puml" ? `${from} -> ${to} : ${message}` : `${from}->>${to}: ${message}`,
-        );
-        assert.equal(
-          result.source,
-          (format === "puml"
-            ? ["@startuml", ...declarations, ...messages, "@enduml", ""]
-            : ["sequenceDiagram", ...declarations, ...messages, ""]
-          ).join("\n"),
-        );
-      });
+          assert.deepEqual(result.participants, scenario.participants);
+          assert.deepEqual(result.messages, scenario.messages);
+          assert.deepEqual(result.unresolvedCallees, scenario.unresolved);
+          assert.equal(result.messagesAvailable, scenario.messages.length);
+          assert.equal(result.messagesDropped, 0);
+          assert.equal(result.filesScanned, Object.keys(scenario.files).length);
+          const declarations = scenario.participants.map((name) => `participant ${name}`);
+          const messages = scenario.messages.map(({ from, to, message }) =>
+            format === "puml" ? `${from} -> ${to} : ${message}` : `${from}->>${to}: ${message}`,
+          );
+          assert.equal(
+            result.source,
+            (format === "puml"
+              ? ["@startuml", ...declarations, ...messages, "@enduml", ""]
+              : ["sequenceDiagram", ...declarations, ...messages, ""]
+            ).join("\n"),
+          );
+        });
+      }
     }
   }
 });
