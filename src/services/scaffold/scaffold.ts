@@ -113,8 +113,9 @@ export const SCAFFOLD_MEMBERS_HEURISTIC_WARNING =
 export const SCAFFOLD_TYPES_HEURISTIC_WARNING =
   "Scaffold field types are a heuristic strict subset from plain class NAME { ... } blocks only " +
   "(bare ASCII names; no quotes, aliases, generics, or stereotypes). Field name and type labels are heuristics; " +
-  "only string, number, boolean, bigint, or exactly an emitted class name, optionally with one [] suffix, is emitted " +
-  "as `name!: Type;`, and every other label falls back to `name: unknown;`. Class references are labels only with no " +
+  "only string, number, boolean, bigint, or exactly an emitted class name, optionally with one [] suffix, is emitted as `Atom`; " +
+  "one optional null arm in either order canonicalizes to `Atom | null`. Whitespace around arms and the separator is " +
+  "allowed but not inside an atom. Every other label falls back to `name: unknown;`. Class references are labels only with no " +
   "supplied runtime value or relations. Methods remain throwing stubs " +
   "`name(..._args: unknown[]): unknown`, so argument and return labels are ignored, and visibility/static/readonly/abstract " +
   "modifiers are lost. Unsupported lines, note bodies, comments, constructors, initializers, relations, and runtime behavior " +
@@ -126,7 +127,8 @@ export const SCAFFOLD_RELATIONS_HEURISTIC_WARNING =
   '(bare ASCII names; optional right-target multiplicity "*", "0..*", or "1..*" for Target[]; no other arrows, ' +
   "multiplicities, labels, aliases, generics, or unlabeled relations). Role fields emit as `role!: Target;` or " +
   "`role!: Target[];` with no initializers, constructors, runtime values, or supplied relations; methods remain throwing stubs " +
-  "`name(..._args: unknown[]): unknown`. Existing members win name conflicts, and undeclared or non-emitted endpoints are skipped. " +
+  "`name(..._args: unknown[]): unknown`. Body field types use the same scalar/emitted-class subset, optionally with one [] " +
+  "suffix, and may include one null arm in either order, canonicalized as `Atom | null`. Existing members win name conflicts, and undeclared or non-emitted endpoints are skipped. " +
   "No inheritance, composition, or semantic inference is performed. Unsupported lines, note bodies, comments, and runtime behavior " +
   "are skipped, never executed or emitted. Review every name, member, type, and relation before saving; remove or rename anything you do " +
   "not intend to implement, then save it as TypeScript yourself.";

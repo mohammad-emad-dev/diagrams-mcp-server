@@ -21,6 +21,9 @@ The scaffold member and field type and named relationship modes described
 below are included in that version
 Check the installed package version when comparing its tool surface with main
 
+Main also includes an unreleased extension for nullable scaffold field types
+The nullable syntax described below is not included in version zero nine zero
+
 The chart groups the fifteen tools by their primary purpose
 It describes the tool surface rather than project completion
 
@@ -370,6 +373,12 @@ Arguments and implementation behavior are not recovered
 include_types implies include_members
 It preserves only string or number or boolean or bigint or an exactly
 emitted class name with an optional single array suffix
+On main an unreleased extension also accepts exactly one null arm on either
+side of that type and emits the type followed by | null
+For example a field labeled string | null remains nullable in the draft
+Nullable labels require colon field notation and fit within 69 characters
+Whitespace around the separator counts toward that limit
+Other unions and bare null remain unsupported
 Unsupported field labels remain unknown
 Accepted fields use definite assignment without supplying runtime values
 

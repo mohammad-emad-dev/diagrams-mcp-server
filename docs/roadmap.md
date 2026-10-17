@@ -29,6 +29,11 @@ only after the release workflow succeeds.
 
 ## Further development candidates
 
+Unreleased after 0.9.0: the first scaffolding syntax extension supports nullable
+scalar and emitted-class field labels with an optional single array suffix.
+It uses the existing typed mode and emits one canonical `Type | null` form.
+Other union types and inheritance remain outside this bounded extension.
+
 These are product extensions rather than missing cleanup or release checks.
 Each needs a bounded design and acceptance criteria before implementation.
 

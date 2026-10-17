@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import { MAX_ENTITY_NAME_CHARS } from "../../constants.js";
 import { buildScaffold, buildScaffoldWithMembers, buildScaffoldWithTypes } from "./scaffold.js";
+import { resolveTypedFieldType } from "./fieldTypes.js";
 
 const primitivesDiagram =
   "@startuml\nclass Order {\n+id: string\n-total: number\n~paid: boolean\n+bigint version\n+customer: Customer\n+items: Item[]\n+tags: string[]\n+plain\n-Money amount\n+describe(id): string\n}\nclass Customer {}\nclass Item {}\n@enduml\n";
@@ -13,7 +15,47 @@ const fallbackDiagram =
   '@startuml\nclass Packet {\nname: string\nbyte: string\nbytes: string\nalias: String\ncount: integer\nflag: booleanish\nmaybe: any\nnothing: null\nundef: undefined\nblank: void\nboxed: List<string>\neither: string|number\nqualified: meta.Tag\nnested: Token[][]\nhandler: Function\npadded :  string\nspaced: str ing\nquoted: "secret"\nassigned = source\nrun();\nrecord: { id: string }\n}\nclass Token {}\n@enduml\n';
 
 const ledgerDiagram =
-  "@startuml\nclass Ledger {\nself: Ledger\npeer: Entry\nfar: Batch\n}\nclass Entry {\nback: Ledger\n}\nclass Batch {\npeer: Entry\n}\n@enduml\n";
+  "@startuml\nclass Ledger {\nself: Ledger\npeer: Entry\nfar: Batch\nfarNullable: null | Batch\n}\nclass Entry {\nback: Ledger\n}\nclass Batch {\npeer: Entry\n}\n@enduml\n";
+
+const invalidNullableFields = `bareNull: null
+duplicateBareNull: null | null
+bareUndefined: undefined
+undefinedArm: undefined | null
+extraArms: string | null | number
+duplicateArms: string | string
+duplicateNull: string | null | null
+parenthesized: (string) | null
+generic: List<string> | null
+nestedArray: string[][] | null
+missingClass: Missing | null
+innerWhitespace: str ing | null
+arrayWhitespace: string [] | null
+unknownArm: unknown | null`;
+
+const nullablePlantUmlDiagram = `@startuml
+class Purchase {
+title:  string   |   null
+buyer: null|BuyerRecord
+pieces: ProductPiece[] | null
+tags: null | string[]
+${invalidNullableFields}
+}
+class BuyerRecord {}
+class ProductPiece {}
+@enduml
+`;
+
+const nullableMermaidDiagram = `classDiagram
+class BasketRecord {
+title:  string   |   null
+owner: null|MemberRecord
+lines: CartPiece[] | null
+labels: null | string[]
+${invalidNullableFields}
+}
+class MemberRecord {}
+class CartPiece {}
+`;
 
 const archiveFields = Array.from({ length: 29 }, (_, index) => `f${index}: string`);
 
@@ -105,14 +147,111 @@ describe("typed scaffold field types", () => {
     );
     const longestName = "A".repeat(60);
     const boundary = buildScaffoldWithTypes(
-      `@startuml\nclass Boundaries {\nvalid: ${longestName}[]\ntooLong: ${longestName}[]x\nhuge: ${"A".repeat(100_000)}\n}\nclass ${longestName} {}\n@enduml`,
+      `@startuml\nclass Boundaries {\nvalid: ${longestName}[]\nvalidNullable: ${longestName}[] | null\nvalidNullableReverse: null | ${longestName}[]\ntooLong: ${longestName}[]x\ntooLongIdentifier: ${"A".repeat(61)}\nhuge: ${"A".repeat(100_000)}\n}\nclass ${longestName} {}\n@enduml`,
       "plantuml",
       30,
     );
-    assert.equal(boundary.typedFields, 1);
-    assert.equal(boundary.unresolvedFields, 2);
+    assert.equal(boundary.typedFields, 3);
+    assert.equal(boundary.unresolvedFields, 3);
     assert.ok(boundary.source.includes(`valid!: ${longestName}[];`));
-    assert.match(boundary.source, /tooLong: unknown;\n  huge: unknown;/);
+    assert.ok(boundary.source.includes(`validNullable!: ${longestName}[] | null;`));
+    assert.ok(boundary.source.includes(`validNullableReverse!: ${longestName}[] | null;`));
+    assert.match(
+      boundary.source,
+      /tooLong: unknown;\n  tooLongIdentifier: unknown;\n  huge: unknown;/,
+    );
+    const overlongIdentifier = "B".repeat(MAX_ENTITY_NAME_CHARS + 1);
+    assert.equal(
+      resolveTypedFieldType(overlongIdentifier, new Set([overlongIdentifier])),
+      undefined,
+    );
+  });
+
+  it("canonicalizes one null arm and rejects other unions in both dialects", () => {
+    const expectedSources = [
+      "export class Purchase {\n" +
+        "  title!: string | null;\n" +
+        "  buyer!: BuyerRecord | null;\n" +
+        "  pieces!: ProductPiece[] | null;\n" +
+        "  tags!: string[] | null;\n" +
+        "  bareNull: unknown;\n" +
+        "  duplicateBareNull: unknown;\n" +
+        "  bareUndefined: unknown;\n" +
+        "  undefinedArm: unknown;\n" +
+        "  extraArms: unknown;\n" +
+        "  duplicateArms: unknown;\n" +
+        "  duplicateNull: unknown;\n" +
+        "  generic: unknown;\n" +
+        "  nestedArray: unknown;\n" +
+        "  missingClass: unknown;\n" +
+        "  innerWhitespace: unknown;\n" +
+        "  arrayWhitespace: unknown;\n" +
+        "  unknownArm: unknown;\n" +
+        "}\n\nexport class BuyerRecord {}\n\nexport class ProductPiece {}\n",
+      "export class BasketRecord {\n" +
+        "  title!: string | null;\n" +
+        "  owner!: MemberRecord | null;\n" +
+        "  lines!: CartPiece[] | null;\n" +
+        "  labels!: string[] | null;\n" +
+        "  bareNull: unknown;\n" +
+        "  duplicateBareNull: unknown;\n" +
+        "  bareUndefined: unknown;\n" +
+        "  undefinedArm: unknown;\n" +
+        "  extraArms: unknown;\n" +
+        "  duplicateArms: unknown;\n" +
+        "  duplicateNull: unknown;\n" +
+        "  generic: unknown;\n" +
+        "  nestedArray: unknown;\n" +
+        "  missingClass: unknown;\n" +
+        "  innerWhitespace: unknown;\n" +
+        "  arrayWhitespace: unknown;\n" +
+        "  unknownArm: unknown;\n" +
+        "}\n\nexport class MemberRecord {}\n\nexport class CartPiece {}\n",
+    ];
+    const expectedDefaultSources = [
+      "export class Purchase {}\n\nexport class BuyerRecord {}\n\nexport class ProductPiece {}\n",
+      "export class BasketRecord {}\n\nexport class MemberRecord {}\n\nexport class CartPiece {}\n",
+    ];
+    const diagrams = [
+      { source: nullablePlantUmlDiagram, type: "plantuml" as const },
+      { source: nullableMermaidDiagram, type: "mermaid" as const },
+    ];
+
+    for (const [index, diagram] of diagrams.entries()) {
+      const typed = buildScaffoldWithTypes(diagram.source, diagram.type, 30);
+      assert.equal(typed.source, expectedSources[index]);
+      assert.equal(typed.typedFields, 4);
+      assert.equal(typed.unresolvedFields, 13);
+      assert.equal(typed.membersIncluded, 17);
+
+      const defaultDraft = buildScaffold(diagram.source, diagram.type, 30);
+      assert.equal(defaultDraft.source, expectedDefaultSources[index]);
+      const memberDraft = buildScaffoldWithMembers(diagram.source, diagram.type, 30);
+      assert.equal(memberDraft.membersIncluded, 17);
+      assert.equal(memberDraft.source.match(/: unknown;/g)?.length, 17);
+      assert.doesNotMatch(memberDraft.source, /!:|\| null|Missing|List</);
+    }
+  });
+
+  it("rejects empty nullable arms and enforces the raw label ceiling", () => {
+    const longestName = "A".repeat(60);
+    const emitted = new Set([longestName]);
+    const cases: Array<[string, string | undefined]> = [
+      ["string |", undefined],
+      ["| string", undefined],
+      ["string || null", undefined],
+      ["|", undefined],
+      ["null[] | string", undefined],
+      ["string | null[]", undefined],
+      ["(string) | null", undefined],
+      ["string[] | null", "string[] | null"],
+      [`${longestName}[] | null`, `${longestName}[] | null`],
+      [`${longestName}[]  | null`, undefined],
+      [`${"B".repeat(61)} | null`, undefined],
+    ];
+    for (const [label, expected] of cases) {
+      assert.equal(resolveTypedFieldType(label, emitted), expected, label);
+    }
   });
 
   it("resolves references only to emitted classes, so cap-dropped ones fall back", () => {
@@ -122,11 +261,12 @@ describe("typed scaffold field types", () => {
     assert.equal(ledger.entitiesCapped, true);
     assert.equal(
       ledger.source,
-      "export class Ledger {\n  self!: Ledger;\n  peer!: Entry;\n  far: unknown;\n}\n\nexport class Entry {\n  back!: Ledger;\n}\n",
+      "export class Ledger {\n  self!: Ledger;\n  peer!: Entry;\n  far: unknown;\n  farNullable: unknown;\n}\n\nexport class Entry {\n  back!: Ledger;\n}\n",
     );
     assert.equal(ledger.typedFields, 3);
-    assert.equal(ledger.unresolvedFields, 1);
-    assert.equal(ledger.membersIncluded, 4);
+    assert.equal(ledger.unresolvedFields, 2);
+    assert.equal(ledger.membersIncluded, 5);
+    assert.doesNotMatch(ledger.source, /Batch/);
   });
 
   it("counts typed and unresolved fields under the member cap with first duplicate winning", () => {
@@ -162,6 +302,8 @@ describe("typed scaffold field types", () => {
       buildScaffoldWithTypes(archiveDiagram, "plantuml", 1),
       buildScaffoldWithTypes(soloDiagram, "plantuml", 30),
       buildScaffoldWithTypes(builtInsDiagram, "plantuml", 30),
+      buildScaffoldWithTypes(nullablePlantUmlDiagram, "plantuml", 30),
+      buildScaffoldWithTypes(nullableMermaidDiagram, "mermaid", 30),
     ]
       .map((draft) => draft.source)
       .join("\n");
