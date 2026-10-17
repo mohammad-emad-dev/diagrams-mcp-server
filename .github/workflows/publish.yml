@@ -63,7 +63,7 @@ jobs:
         run: |
           PKG_NAME="$(node -p "require('./package.json').name")"
           PKG_VERSION="$(node -p "require('./package.json').version")"
-          if npm view "$PKG_NAME@$PKG_VERSION" version 2>/dev/null; then
+          if npm view "$PKG_NAME@$PKG_VERSION" version --prefer-online 2>/dev/null; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "Version $PKG_VERSION is already on npm — npm publish will skip; MCP registration is checked separately."
           else
@@ -168,6 +168,25 @@ jobs:
         run: npm publish "$RELEASE_TARBALL"
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Wait for npm version visibility before MCP registration
+        if: steps.mcp_published.outputs.exists != 'true'
+        timeout-minutes: 12
+        run: |
+          PKG_NAME="$(node -p "require('./package.json').name")"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          for attempt in $(seq 1 30); do
+            if VISIBLE_VERSION="$(npm view "$PKG_NAME@$PKG_VERSION" version --prefer-online 2>/dev/null)" && [ "$VISIBLE_VERSION" = "$PKG_VERSION" ]; then
+              echo "npm $PKG_NAME@$PKG_VERSION is visible."
+              exit 0
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "npm $PKG_NAME@$PKG_VERSION is still unavailable after 30 checks. Recover this tag after npm processing completes."
+              exit 1
+            fi
+            echo "Waiting for npm processing: visibility check $attempt of 30."
+            sleep 20
+          done
 
       - name: Download mcp-publisher
         if: steps.mcp_published.outputs.exists != 'true'
