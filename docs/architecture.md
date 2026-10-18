@@ -211,6 +211,13 @@ keep their source and response shapes when this flag is false or omitted.
   collection. Invalid root shapes return no edges; unexpected visitor
   failures propagate through `analyzeTsFile`.
   Introduced in 0.8.0: `ts/tsCalls.ts` collects ordered AST call edges plus callable operations via optional `includeCalls` in `tsIndex.ts` (methods/accessors/property-held functions; `f()`, `obj.m()`, `obj["m"]()`; enclosing-caller reset; multiline callback deferral). Missing compiler, non-TS extensions, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner matching with no semantic type resolution.
+  Unreleased after 0.10.0: the fallback `sequence/callGraph.ts` reader suppresses
+  only the detected declaration name occurrence. Recursive invocations later
+  on that line remain ordered call edges with their original line number.
+  This affects both sequence generation and call-order consistency evidence
+  while preserving the existing callback heuristic and caller tracking.
+  Same-name invocations after an assigned arrow are recorded as deferred
+  edges rather than discarded and do not become sequential messages.
   Participant mapping uses case-insensitive operation names and the first
   declaring participant in file order. Its lookup is rebuilt per call,
   so changes to the declaration set are visible to the next call.

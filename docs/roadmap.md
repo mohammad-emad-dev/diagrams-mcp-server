@@ -49,6 +49,14 @@ dropped by caps do not contribute. Competing declarations still count when their
 participant is not emitted. First-declaring-participant selection stays stable
 and runtime receiver resolution remains future work.
 
+Unreleased after 0.10.0: the fallback call reader excludes the detected function
+declaration by source position rather than suppressing every matching name on
+that line. Real recursive invocations retain their source order and line number
+in sequence drafts and call-order evidence. Existing callback heuristics remain
+unchanged and this does not add multiline scope tracking or runtime analysis.
+Same-name invocations inside assigned arrow expressions are counted as deferred
+rather than discarded and remain excluded from sequential messages.
+
 These are product extensions rather than missing cleanup or release checks.
 Each needs a bounded design and acceptance criteria before implementation.
 
