@@ -76,6 +76,14 @@ const CALLBACK_OBJECT_CALLEE =
   "export function after() {\n  return 3;\n}\n" +
   "export function register(input: unknown) {\n  return input;\n}\n";
 
+const CAP_EXCLUSION_FILES = {
+  "a_charge.ts": "export function charge() {}\n",
+  "b_charge.ts": "export function CHARGE() {}\n",
+  "c_ping.ts": "export function ping() {}\n",
+  "z_caller.ts":
+    "export function checkout() {\n  ping();\n  charge();\n  setTimeout(() => { CHARGE(); }, 0);\n}\n",
+};
+
 describe("sequence goldens", () => {
   let tmpRoot: string;
   let callbackRoot: string;
@@ -91,6 +99,21 @@ describe("sequence goldens", () => {
     await fs.rm(tmpRoot, { recursive: true, force: true });
     await fs.rm(callbackRoot, { recursive: true, force: true });
   });
+
+  for (const format of ["puml", "mermaid"] as const) {
+    it(`returns an empty ambiguity list for an empty scope (${format})`, async () => {
+      const emptyScope = path.join(tmpRoot, "empty");
+      await fs.mkdir(emptyScope);
+      const result = await collectSequence(emptyScope, { format });
+
+      assert.deepEqual(result.ambiguousCallees, []);
+      assert.deepEqual(result.participants, []);
+      assert.deepEqual(result.messages, []);
+      assert.equal(result.filesScanned, 0);
+      assert.equal(result.tsAstAvailable, false);
+      validateDiagramSource(result.source, format === "puml" ? "plantuml" : "mermaid");
+    });
+  }
 
   it("sequences a caller-to-callee pair into an exact message and source", async () => {
     const result = await collectSequence(tmpRoot, { format: "puml" });
@@ -340,19 +363,30 @@ describe("sequence goldens", () => {
     participants: string[];
     messages: SequenceMessage[];
     unresolved: string[];
+    ambiguous: string[];
+    maxParticipants?: number;
+    maxMessages?: number;
+    messagesAvailable?: number;
+    messagesDropped?: number;
+    participantsAvailable?: number;
+    participantsDropped?: number;
+    deferredCount?: number;
   }> = [
     {
       name: "an earlier folded declaration wins over a later exact-case declaration",
       files: {
         "a_first.ts": "export function CHARGE() {}\n",
         "b_second.ts": "export function charge() {}\n",
-        "z_caller.ts": "export function checkout() {\n  charge();\n}\n",
+        "z_caller.ts": "export function checkout() {\n  charge();\n  CHARGE();\n  charge();\n}\n",
       },
       participants: ["z_caller", "a_first"],
       messages: [
         { from: "z_caller", to: "a_first", message: "charge", line: 2, via_callback: false },
+        { from: "z_caller", to: "a_first", message: "CHARGE", line: 3, via_callback: false },
+        { from: "z_caller", to: "a_first", message: "charge", line: 4, via_callback: false },
       ],
       unresolved: [],
+      ambiguous: ["charge", "CHARGE"],
     },
     {
       name: "same-basename files merge before competing operation declarations resolve",
@@ -360,6 +394,7 @@ describe("sequence goldens", () => {
         "a/payment.ts": "export function CHARGE() {}\n",
         "b/other.ts": "export function late() {}\n",
         "c/payment.ts": "export function LATE() {}\n",
+        "e/payment.ts": "export function charge() {}\n",
         "z/caller.ts": "export function checkout() {\n  charge();\n  late();\n}\n",
       },
       participants: ["caller", "payment"],
@@ -368,6 +403,7 @@ describe("sequence goldens", () => {
         { from: "caller", to: "payment", message: "late", line: 3, via_callback: false },
       ],
       unresolved: [],
+      ambiguous: ["late"],
     },
     {
       name: "a top-level caller uses its file while unresolved callees stay excluded",
@@ -380,6 +416,7 @@ describe("sequence goldens", () => {
         { from: "z_entry", to: "a_payment", message: "charge", line: 1, via_callback: false },
       ],
       unresolved: ["absent"],
+      ambiguous: [],
     },
     {
       // The sender ownership fix: checkout is declared in an earlier file,
@@ -396,6 +433,7 @@ describe("sequence goldens", () => {
         { from: "z_second", to: "payment", message: "charge", line: 2, via_callback: false },
       ],
       unresolved: [],
+      ambiguous: [],
     },
     {
       // Case-folded collision: CHECKOUT folds to checkout, so the earlier
@@ -411,6 +449,35 @@ describe("sequence goldens", () => {
         { from: "z_second", to: "payment", message: "charge", line: 2, via_callback: false },
       ],
       unresolved: [],
+      ambiguous: [],
+    },
+    {
+      name: "participant-capped calls and deferred calls do not report ambiguity",
+      files: CAP_EXCLUSION_FILES,
+      participants: ["z_caller", "c_ping"],
+      messages: [{ from: "z_caller", to: "c_ping", message: "ping", line: 2, via_callback: false }],
+      unresolved: [],
+      ambiguous: [],
+      maxParticipants: 2,
+      messagesAvailable: 2,
+      messagesDropped: 1,
+      participantsAvailable: 3,
+      participantsDropped: 1,
+      deferredCount: 2,
+    },
+    {
+      name: "message-capped calls and deferred calls do not report ambiguity",
+      files: CAP_EXCLUSION_FILES,
+      participants: ["z_caller", "c_ping", "a_charge"],
+      messages: [{ from: "z_caller", to: "c_ping", message: "ping", line: 2, via_callback: false }],
+      unresolved: [],
+      ambiguous: [],
+      maxMessages: 1,
+      messagesAvailable: 2,
+      messagesDropped: 1,
+      participantsAvailable: 3,
+      participantsDropped: 0,
+      deferredCount: 2,
     },
   ];
 
@@ -420,13 +487,28 @@ describe("sequence goldens", () => {
         it(`${scenario.name} (${format} ${deps ? "fallback" : "compiler"})`, async () => {
           const scope = path.join(tmpRoot, "resolution");
           await writeFiles(scope, scenario.files);
-          const result = await collectSequence(scope, { format, deps });
+          const result = await collectSequence(scope, {
+            format,
+            deps,
+            maxParticipants: scenario.maxParticipants,
+            maxMessages: scenario.maxMessages,
+          });
 
           assert.deepEqual(result.participants, scenario.participants);
           assert.deepEqual(result.messages, scenario.messages);
           assert.deepEqual(result.unresolvedCallees, scenario.unresolved);
-          assert.equal(result.messagesAvailable, scenario.messages.length);
-          assert.equal(result.messagesDropped, 0);
+          assert.deepEqual(result.ambiguousCallees, scenario.ambiguous);
+          assert.equal(
+            result.participantsAvailable,
+            scenario.participantsAvailable ?? scenario.participants.length,
+          );
+          assert.equal(result.participantsDropped, scenario.participantsDropped ?? 0);
+          assert.equal(
+            result.messagesAvailable,
+            scenario.messagesAvailable ?? scenario.messages.length,
+          );
+          assert.equal(result.messagesDropped, scenario.messagesDropped ?? 0);
+          assert.equal(result.deferredCount, scenario.deferredCount ?? 0);
           assert.equal(result.filesScanned, Object.keys(scenario.files).length);
           const declarations = scenario.participants.map((name) => `participant ${name}`);
           const messages = scenario.messages.map(({ from, to, message }) =>

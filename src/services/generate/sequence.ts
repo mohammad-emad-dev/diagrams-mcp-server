@@ -77,6 +77,7 @@ function emptyResult(format: "puml" | "mermaid"): SequenceCollectionResult {
     messagesDropped: 0,
     deferredCount: 0,
     unresolvedCallees: [],
+    ambiguousCallees: [],
     filesScanned: 0,
     truncated: false,
     scanLimit: MAX_SCAN_FILES,
@@ -155,7 +156,12 @@ function buildParticipantRegistry(scanned: ScannedSequenceFile[]): ParticipantRe
   return registry;
 }
 
-type OperationIndex = Map<string, string>;
+interface IndexedOperation {
+  firstParticipant: string;
+  ambiguous: boolean;
+}
+
+type OperationIndex = Map<string, IndexedOperation>;
 
 // Build after merging same-basename files. An earlier folded match must keep
 // precedence even when a later participant declares the exact-case name.
@@ -164,14 +170,38 @@ function buildOperationIndex(registry: ParticipantRegistryEntry[]): OperationInd
   for (const entry of registry) {
     for (const name of entry.operations) {
       const key = name.toLowerCase();
-      if (!index.has(key)) index.set(key, entry.name);
+      const indexed = index.get(key);
+      if (!indexed) {
+        index.set(key, { firstParticipant: entry.name, ambiguous: false });
+      } else if (indexed.firstParticipant !== entry.name) {
+        indexed.ambiguous = true;
+      }
     }
   }
   return index;
 }
 
 function resolveParticipant(index: OperationIndex, name: string): string | null {
-  return index.get(name.toLowerCase()) ?? null;
+  return index.get(name.toLowerCase())?.firstParticipant ?? null;
+}
+
+function collectAmbiguousCallees(
+  messages: SequenceMessage[],
+  operationIndex: OperationIndex,
+): string[] {
+  const ambiguousCallees: string[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    if (
+      !operationIndex.get(message.message.toLowerCase())?.ambiguous ||
+      seen.has(message.message)
+    ) {
+      continue;
+    }
+    seen.add(message.message);
+    ambiguousCallees.push(message.message);
+  }
+  return ambiguousCallees;
 }
 
 /** Distinct participant names in candidate order (a sender comes first). */
@@ -306,6 +336,7 @@ export async function collectSequence(
     (candidate) => included.has(candidate.from) && included.has(candidate.to),
   );
   const messages = emittable.slice(0, maxMessages);
+  const ambiguousCallees = collectAmbiguousCallees(messages, operationIndex);
 
   const named = applyDialectNames(format, participants, messages);
   const type: DiagramType = format === "puml" ? "plantuml" : "mermaid";
@@ -319,6 +350,7 @@ export async function collectSequence(
     messagesDropped: candidates.length - messages.length,
     deferredCount,
     unresolvedCallees,
+    ambiguousCallees,
     filesScanned: scanned.length,
     truncated,
     scanLimit: MAX_SCAN_FILES,

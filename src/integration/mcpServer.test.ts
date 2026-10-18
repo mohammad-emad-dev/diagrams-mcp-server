@@ -609,6 +609,39 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal((stored.structuredContent as { count: number }).count, 1);
   });
 
+  it("reports ambiguous emitted callees over stdio while preserving the selected target", async () => {
+    const scope = path.join(projectRoot, "ambiguous-sequence");
+    await fs.mkdir(scope, { recursive: true });
+    await fs.writeFile(path.join(scope, "a_payment.ts"), SEQUENCE_CALLEE);
+    await fs.writeFile(path.join(scope, "b_payment.ts"), "export function CHARGE() {}\n");
+    await fs.writeFile(path.join(scope, "checkout.ts"), "charge();\ncharge();\n");
+
+    for (const format of ["puml", "mermaid"]) {
+      const result = await callTool("diagrams_generate_sequence", {
+        scope: "ambiguous-sequence",
+        format,
+        max_messages: 1,
+        include_call_parentheses: true,
+      });
+      assert.equal(result.isError, undefined);
+      const structured = result.structuredContent as {
+        ambiguous_callees: string[];
+        messages: Array<{ from: string; to: string; message: string }>;
+        messages_capped: boolean;
+        source: string;
+        written: boolean;
+      };
+      assert.deepEqual(structured.ambiguous_callees, ["charge"]);
+      assert.equal(structured.messages.length, 1);
+      assert.equal(structured.messages[0].from, "checkout");
+      assert.equal(structured.messages[0].to, "a_payment");
+      assert.equal(structured.messages[0].message, "charge");
+      assert.equal(structured.messages_capped, true);
+      assert.ok(structured.source.includes("charge()"));
+      assert.equal(structured.written, false);
+    }
+  });
+
   it("generates a sequence diagram from the two-file call flow", async () => {
     // Snapshot the diagram count first: generation is read-only, so the
     // sequence tool must not add anything to the diagrams directory.
@@ -640,6 +673,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
       message_limit: number;
       deferred_count: number;
       unresolved_callees: string[];
+      ambiguous_callees: string[];
       files_scanned: number;
       truncated: boolean;
       scan_limit: number;
@@ -654,6 +688,7 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal(structured.files_scanned, 2);
     assert.equal(structured.deferred_count, 0);
     assert.deepEqual(structured.unresolved_callees, []);
+    assert.deepEqual(structured.ambiguous_callees, []);
     assert.equal(structured.confidence, "heuristic");
     assert.equal(structured.written, false);
     assert.ok(structured.heuristic_warning.length > 0);

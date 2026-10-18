@@ -240,6 +240,13 @@ keep their source and response shapes when this flag is false or omitted.
   share a participant name. The first participant declaring a lowercase
   operation name wins, including when a later participant has an exact-case
   match. Introduced in 0.10.0: only callee lookup uses that index and the sender is always the file containing the call site. Duplicate or case-colliding caller names in earlier files cannot redirect a later file's sender. Same-basename participant merging is unchanged. Introduced in 0.8.0: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
+  Unreleased after 0.10.0: `SequenceCollectionResult.ambiguousCallees` (wire:
+  `ambiguous_callees`) identifies emitted operation names with declarations in
+  several distinct merged participants across the scanned scope. The existing
+  target remains selected even when another declaration exists. Diagnostics
+  preserve exact bare spellings in first emitted order after both caps and
+  exclude deferred and unresolved and dropped-only calls. This keeps the list
+  bounded by emitted messages without claiming receiver type resolution.
   Introduced in 0.8.0: `SequenceOptions.includeCallParentheses` (wire: `include_call_parentheses`, default false) reaches only the sequence emitter. When enabled, labels append `()`; structured messages retain their operation names, and collection/capping behavior is unchanged.
 - `templates/skeletons.ts` — six pure built-in emitters (class, sequence, C4-context
   × PlantUML, Mermaid). Fixed tables in source; identical inputs yield
