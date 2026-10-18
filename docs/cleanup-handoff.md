@@ -31,8 +31,8 @@ Node v20.20.2 and v22.23.3:
 - Package dry run: 66 shipped files, with compiled tests excluded.
 - Git whitespace/error checks.
 
-The Ubuntu/Windows CI matrix on Node 20 and 22 is defined in
-`.github/workflows/ci.yml`; its remote results are separate from this local
+The cleanup baseline used an Ubuntu/Windows CI matrix on Node 20 and 22 in
+`.github/workflows/ci.yml`; its remote results were separate from this local
 validation record. Local Linux validation was unavailable because the Docker
 Linux engine did not start. Earlier refactor checks also compared outputs and
 emitted JavaScript against pre-change snapshots; those checks supplement the

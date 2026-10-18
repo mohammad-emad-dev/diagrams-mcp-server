@@ -9,7 +9,10 @@ Two Node versions matter here, and they are different.
 - Running the server takes Node 18 or newer (`engines: >=18` in `package.json`). The compiled `dist/` output, `npm test`, and `npm start` all work on Node 18.
 - Developing takes Node 20.19 or newer. `npm ci`, `npm run lint`, `npm run format:check`, and `npm run build` need the newer toolchain because ESLint 10 does not run on older Node.
 
-CI builds and tests on Node 20.x and 22.x (see `.github/workflows/ci.yml`).
+CI builds and tests on Node 20.x and 22.x and 24.x across Ubuntu and Windows
+(see `.github/workflows/ci.yml`). The pinned checkout and setup actions run on
+Node 24 independently of the project version selected for each job. The publish
+job continues to select Node 22 for its package and renderer checks.
 
 ## Local setup
 
