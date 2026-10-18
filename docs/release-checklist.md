@@ -68,7 +68,7 @@ passed from a production only tarball install.
 ## Publication boundary
 
 Merge the verified release candidate after the Ubuntu and Windows Node 20 and
-22 CI matrix passes. Create a new annotated version tag with the maintainer's
+22 and 24 CI matrix passes. Create a new annotated version tag with the maintainer's
 commit identity and push that tag. Never move a pre-existing version tag.
 
 The publish workflow runs the repository gates on the selected tag. For a new
@@ -77,6 +77,11 @@ artifact digest. It packs once and installs that tarball without development
 dependencies and audits that install and runs the real renderer probe on Linux
 with Node 22. The npm
 publish step uploads that exact verified tarball rather than rebuilding it.
+
+The checkout and setup actions in both workflows use full commit pins and a
+Node 24 action runtime. That action runtime does not change the Node 22 selected
+for the publish job. Updating these pins does not itself publish a package or
+validate a future publication run.
 
 Existing npm versions skip fresh artifact acceptance and npm publication during
 recovery. MCP registration is checked separately. See

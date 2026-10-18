@@ -40,7 +40,7 @@ pie showData
 ```
 
 The package declares Node 18 or newer as its runtime requirement
-Continuous integration checks Node 20 and Node 22 on Ubuntu and Windows
+Continuous integration checks Node 20 and Node 22 and Node 24 on Ubuntu and Windows
 The TypeScript compiler is a development dependency rather than a required
 production dependency
 

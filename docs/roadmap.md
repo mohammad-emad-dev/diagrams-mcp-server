@@ -21,6 +21,9 @@ association fields. Remote downloads now enforce timeout and decoded byte
 limits through body completion. Local renderer image reads are bounded too.
 
 The README provides engineering documentation and four Mermaid visuals.
+Unreleased infrastructure work expands the Ubuntu and Windows CI matrix to
+Node 20 and 22 and 24 and updates checkout and setup actions to full commit
+pins with Node 24 action runtimes. The publish job still selects Node 22.
 The [release checklist](release-checklist.md) separates packaged acceptance from
 publication. The package smoke probe exercises all fifteen tools over real
 stdio from a production install without TypeScript and with actual local

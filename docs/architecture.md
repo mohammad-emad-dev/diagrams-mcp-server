@@ -281,6 +281,11 @@ list to `node --test`. An empty suite or a failing test returns a nonzero
 exit code. New tests need no package-script edits. Build before testing.
 Lint and formatting checks cover both `src/` and `scripts/`.
 
+CI runs these gates on Ubuntu and Windows with Node 20 and 22 and 24.
+Checkout and setup actions are pinned to full commits with Node 24 action
+runtimes. Each test job still selects its own matrix Node version and the
+publish job selects Node 22. These are separate runtime choices.
+
 `src/integration/mcpServer.test.ts` drives the compiled `dist/index.js`
 over real stdio with the SDK client and asserts the fifteen names in
 `EXPECTED_TOOLS` (thirteen in 0.8.0 plus `diagrams_save_export` and `diagrams_scaffold`, introduced in 0.9.0); rendering stays stubbed or discovery-only there.
