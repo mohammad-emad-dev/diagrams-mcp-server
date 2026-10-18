@@ -33,6 +33,15 @@ describe("ordering goldens (contract pin, Phase 2)", () => {
     assert.equal(findings[0].kind, "match");
   });
 
+  it("detects reversed order when recursion shares the declaration line", () => {
+    const edges = extractCallEdges("function retry() { retry(); done(); }\n");
+    const findings = compareMessageOrder(["done", "retry"], edges, MAPPED);
+
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].kind, "divergence");
+    assert.match(findings[0].detail, /retry/);
+  });
+
   it("true divergence: same calls in a different order", () => {
     const findings = compareMessageOrder(
       ["login", "checkout"],

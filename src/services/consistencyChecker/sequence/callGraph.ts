@@ -47,18 +47,25 @@ const CALL_SITE_REGEX = /\b([A-Za-z_$][\w$]*)\s*\(/g;
 const CALLBACK_WRAPPER_REGEX =
   /\b(setTimeout|setInterval|setImmediate|process\.nextTick|then|catch|finally|on|once|addEventListener|addListener|subscribe|emit)\s*\(/;
 
+interface DefinitionMatch {
+  name: string;
+  declarationIndex: number;
+}
+
 /** Definition patterns that set the enclosing caller for following lines. */
 const DEF_PATTERNS = [
-  /(?:function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\()/,
-  /(?:def\s+([A-Za-z_]\w*)\s*\()/,
-  /([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/,
+  /(?:function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\()/d,
+  /(?:def\s+([A-Za-z_]\w*)\s*\()/d,
+  /([A-Za-z_$][\w$]*)\s*=\s*(?:async\s+)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/d,
 ];
 
-/** Def name declared on this line, if any. */
-function matchDefName(line: string): string | null {
+/** Definition name and source position declared on this line, if any. */
+function matchDefName(line: string): DefinitionMatch | null {
   for (const pattern of DEF_PATTERNS) {
     const match = pattern.exec(line);
-    if (match) return match[1];
+    if (match) {
+      return { name: match[1], declarationIndex: match.indices![1]![0] };
+    }
   }
   return null;
 }
@@ -74,7 +81,7 @@ function extractLineCalls(
   line: string,
   lineNumber: number,
   caller: string,
-  defName: string | null,
+  definition: DefinitionMatch | null,
 ): CallEdge[] {
   const edges: CallEdge[] = [];
   const hasCallbackWrapper = CALLBACK_WRAPPER_REGEX.test(line);
@@ -82,7 +89,10 @@ function extractLineCalls(
   let match: RegExpExecArray | null;
   while ((match = CALL_SITE_REGEX.exec(line)) !== null) {
     const name = match[1];
-    if (name === defName || isSkippedCall(line, name, match.index)) continue;
+    const isDeclarationName = match.index === definition?.declarationIndex;
+    if (isDeclarationName || isSkippedCall(line, name, match.index)) {
+      continue;
+    }
     edges.push({
       caller,
       callee: name,
@@ -100,9 +110,9 @@ export function extractCallEdges(stripped: string): CallEdge[] {
   const lines = stripped.split("\n");
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const defName = matchDefName(line);
-    if (defName) caller = defName;
-    edges.push(...extractLineCalls(line, index + 1, caller, defName));
+    const definition = matchDefName(line);
+    if (definition) caller = definition.name;
+    edges.push(...extractLineCalls(line, index + 1, caller, definition));
   }
   return edges;
 }

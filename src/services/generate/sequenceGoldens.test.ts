@@ -373,6 +373,22 @@ describe("sequence goldens", () => {
     deferredCount?: number;
   }> = [
     {
+      name: "same-line recursive calls survive declaration filtering in source order",
+      files: {
+        "worker.ts":
+          "export function retry() { retry(); other(); retry(); }\nexport function other() {}\n",
+      },
+      participants: ["worker"],
+      messages: [
+        { from: "worker", to: "worker", message: "retry", line: 1, via_callback: false },
+        { from: "worker", to: "worker", message: "other", line: 1, via_callback: false },
+        { from: "worker", to: "worker", message: "retry", line: 1, via_callback: false },
+      ],
+      unresolved: [],
+      ambiguous: [],
+      maxParticipants: 1,
+    },
+    {
       name: "an earlier folded declaration wins over a later exact-case declaration",
       files: {
         "a_first.ts": "export function CHARGE() {}\n",

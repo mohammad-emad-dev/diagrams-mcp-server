@@ -309,6 +309,11 @@ Calls inside callbacks are conservatively treated as deferred and excluded
 from the ordered messages
 This policy is not a claim that every callback executes asynchronously
 include_call_parentheses changes message labels only
+Unreleased development also preserves real recursive calls on the same line
+as a function declaration when the fallback call reader is used
+The declaration itself remains excluded from the message list
+Same name calls inside assigned arrow expressions follow the existing
+deferred call rule and contribute to deferred_count instead of messages
 
 diagrams_template emits class or sequence or c4_context starter source in
 puml or mermaid format

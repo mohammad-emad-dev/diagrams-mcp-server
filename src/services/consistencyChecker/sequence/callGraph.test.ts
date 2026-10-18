@@ -18,9 +18,43 @@ const CASES: CallGraphCase[] = [
     ],
   },
   {
-    name: "same-name calls on the declaration line are skipped",
+    name: "recursive same-name call on the declaration line is retained",
     stripped: "function login() { login(); }\n",
-    expected: [],
+    expected: [{ caller: "login", callee: "login", viaCallback: false, line: 1 }],
+  },
+  {
+    name: "recursive calls around another call retain source order",
+    stripped: "function login() { login(); audit(); login(); }\n",
+    expected: [
+      { caller: "login", callee: "login", viaCallback: false, line: 1 },
+      { caller: "login", callee: "audit", viaCallback: false, line: 1 },
+      { caller: "login", callee: "login", viaCallback: false, line: 1 },
+    ],
+  },
+  {
+    name: "generator declaration token is skipped while its recursive call is retained",
+    stripped: "function* login() { login(); }\n",
+    expected: [{ caller: "login", callee: "login", viaCallback: false, line: 1 }],
+  },
+  {
+    name: "one-line python recursive call is retained",
+    stripped: "def login(): login()\n",
+    expected: [{ caller: "login", callee: "login", viaCallback: false, line: 1 }],
+  },
+  {
+    name: "assigned-arrow recursive call is retained when its parameter has a different name",
+    stripped: "const login = (request) => login();\n",
+    expected: [{ caller: "login", callee: "login", viaCallback: true, line: 1 }],
+  },
+  {
+    name: "assigned-arrow call matching its parameter remains deferred",
+    stripped: "const login = (login) => login();\n",
+    expected: [{ caller: "login", callee: "login", viaCallback: true, line: 1 }],
+  },
+  {
+    name: "bare assigned-arrow recursive call is retained as a deferred callback",
+    stripped: "const login = () => login();\n",
+    expected: [{ caller: "login", callee: "login", viaCallback: true, line: 1 }],
   },
   {
     name: "python declaration sets the caller for following lines",

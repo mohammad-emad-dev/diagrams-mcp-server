@@ -609,6 +609,40 @@ describe("MCP stdio integration (dist/index.js)", () => {
     assert.equal((stored.structuredContent as { count: number }).count, 1);
   });
 
+  it("retains same-line Python recursion through the fallback reader over stdio", async () => {
+    const scope = path.join(projectRoot, "recursive-sequence");
+    await fs.mkdir(scope, { recursive: true });
+    await fs.writeFile(path.join(scope, "worker.py"), "def retry(): retry()\n");
+
+    for (const format of ["puml", "mermaid"]) {
+      const result = await callTool("diagrams_generate_sequence", {
+        scope: "recursive-sequence",
+        format,
+        max_participants: 1,
+        include_call_parentheses: true,
+      });
+      assert.equal(result.isError, undefined);
+      const structured = result.structuredContent as {
+        participants: string[];
+        messages: Array<{
+          from: string;
+          to: string;
+          message: string;
+          line: number;
+          via_callback: boolean;
+        }>;
+        source: string;
+        written: boolean;
+      };
+      assert.deepEqual(structured.participants, ["worker"]);
+      assert.deepEqual(structured.messages, [
+        { from: "worker", to: "worker", message: "retry", line: 1, via_callback: false },
+      ]);
+      assert.ok(structured.source.includes("retry()"));
+      assert.equal(structured.written, false);
+    }
+  });
+
   it("reports ambiguous emitted callees over stdio while preserving the selected target", async () => {
     const scope = path.join(projectRoot, "ambiguous-sequence");
     await fs.mkdir(scope, { recursive: true });
