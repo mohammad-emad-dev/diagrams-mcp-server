@@ -96,6 +96,7 @@ interface SequenceOutput {
   message_limit: number;
   deferred_count: number;
   unresolved_callees: string[];
+  ambiguous_callees: string[];
   files_scanned: number;
   truncated: boolean;
   scan_limit: number;
@@ -190,6 +191,7 @@ describe("diagrams_generate_sequence", () => {
     assert.equal(structured.message_limit, 20);
     assert.equal(structured.deferred_count, 0);
     assert.deepEqual(structured.unresolved_callees, []);
+    assert.deepEqual(structured.ambiguous_callees, []);
     assert.equal(structured.files_scanned, 3);
     assert.equal(structured.truncated, false);
     assert.equal(structured.scan_limit, 5000);

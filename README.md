@@ -299,6 +299,12 @@ It reports unresolved callees rather than inventing participants
 Since version zero ten zero each sender stays tied to the file containing
 the call site even when another file declares the same caller name
 Callee lookup still uses the first case insensitive declaring participant
+Unreleased development adds ambiguous_callees for emitted operation names
+declared by several distinct participants in the scanned scope
+Same basename files merge before this check and the selected target stays stable
+The list keeps exact spellings in first emitted order after both output caps
+Deferred calls and unresolved calls and calls dropped by caps do not contribute
+This diagnostic supplies declaration evidence without resolving runtime receivers
 Calls inside callbacks are conservatively treated as deferred and excluded
 from the ordered messages
 This policy is not a claim that every callback executes asynchronously

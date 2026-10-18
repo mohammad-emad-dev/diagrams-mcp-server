@@ -87,6 +87,8 @@ export interface SequenceCollectionResult {
   deferredCount: number;
   /** Callee names with no declaring participant in the scope. */
   unresolvedCallees: string[];
+  /** Emitted callee names declared by multiple distinct participants, in first-use order. */
+  ambiguousCallees: string[];
   filesScanned: number;
   truncated: boolean;
   scanLimit: number;

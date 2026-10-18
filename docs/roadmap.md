@@ -41,6 +41,14 @@ these bounded extensions.
 
 ## Further development candidates
 
+Unreleased after 0.10.0: sequence results expose ambiguous_callees for emitted
+operation names declared by several distinct participants in the scanned scope
+after same-basename merging. The list preserves exact spellings in first emitted
+order after participant and message caps. Deferred and unresolved calls and calls
+dropped by caps do not contribute. Competing declarations still count when their
+participant is not emitted. First-declaring-participant selection stays stable
+and runtime receiver resolution remains future work.
+
 These are product extensions rather than missing cleanup or release checks.
 Each needs a bounded design and acceptance criteria before implementation.
 

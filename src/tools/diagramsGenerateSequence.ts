@@ -69,7 +69,8 @@ const HEURISTIC_WARNING =
   "or listener is unknowable from source and is counted in deferred_count instead of being sequenced. " +
   "TypeScript uses AST call sites when its compiler is available, otherwise heuristic extraction. " +
   "Each sender is the file containing the call site. Callee mapping uses case-insensitive operation names and the first declaring file — " +
-  "there is no type resolution, so a callee " +
+  "ambiguous_callees lists emitted names declared by several participants without changing that choice. " +
+  "There is no type resolution, so a callee " +
   "no file in the scope declares is listed in unresolved_callees rather than attached to a guessed " +
   "participant. Message arguments, cross-language calls, and dynamic dispatch are out of scope. Treat " +
   "the result as a draft to review, then save it with diagrams_create.";
@@ -110,6 +111,7 @@ function formatSequenceResult({
     message_limit: messageLimit,
     deferred_count: collected.deferredCount,
     unresolved_callees: collected.unresolvedCallees,
+    ambiguous_callees: collected.ambiguousCallees,
     files_scanned: collected.filesScanned,
     truncated: collected.truncated,
     scan_limit: collected.scanLimit,
@@ -142,6 +144,8 @@ It is the generative flip side of the consistency checker's ordered call graph: 
 
 Each sender is the file containing the call site even when another file declares the same caller name. Callee mapping uses case-insensitive declared-identifier equality and the first declaring participant in file order. A callee that no file in the scope declares is reported in unresolved_callees, never attached to an invented participant. Which class owns a method is a type question, and out of scope.
 
+ambiguous_callees lists bare names from emitted messages whose case-insensitive declaration occurs in several distinct participants after same-basename merging. Exact spellings are deduplicated in first emitted order after both caps. Deferred and unresolved calls and calls dropped by caps do not contribute. Competing declarations anywhere in the scanned scope count even when their participant is not emitted. The existing first-declaring-participant choice remains unchanged.
+
 Args:
   - scope (string, default "."): Relative path under the project root pointing at a file or a directory. Absolute paths and anything resolving outside the project root are refused
   - format ('puml' | 'mermaid', default 'puml'): Output dialect
@@ -169,6 +173,7 @@ Returns:
     "message_limit": number,         // the applied cap (max_messages, at most ${MAX_SEQUENCE_MESSAGES})
     "deferred_count": number,        // call sites inside callbacks/promises: counted, never sequenced
     "unresolved_callees": string[],  // callees no participant in the scope declares
+    "ambiguous_callees": string[],   // emitted bare names with multiple declaring participants; exact spelling and first emitted order
     "files_scanned": number,
     "truncated": boolean,            // true when the ${MAX_SCAN_FILES.toLocaleString()}-file scan cap was reached
     "scan_limit": number,            // ${MAX_SCAN_FILES.toLocaleString()}
