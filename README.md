@@ -10,11 +10,27 @@ It also produces reviewable diagram drafts and rendered exports
 Source files remain the editable record of the architecture
 
 
+READING PATHS
+=============
+
+Start with [installation](#installation-and-client-connection) and the
+[diagram workflow](#working-with-diagrams) to connect a client and review changes
+Read the [system model](#system-model) and [configuration](#configuration-and-rendering)
+to understand process boundaries and renderer requirements
+Use [tool contracts](#tool-contracts) and [operational limits](#operational-limits-and-failure-recovery)
+when integrating or troubleshooting
+For contribution work follow [source organization](#source-organization-and-development)
+and the [engineering documentation index](docs/README%2Emd)
+The index separates current guidance from historical design and handoff records
+
+
 PROJECT STATUS
 ==============
 
 The project is a technical preview
-This document describes version zero ten zero with fifteen tools
+The published package is version zero ten zero with fifteen tools
+Sections marked Unreleased development describe changes on main that are
+not included in that published package
 
 Version zero nine zero introduced diagrams_save_export and diagrams_scaffold
 The scaffold member and field type and named relationship modes described
@@ -24,68 +40,10 @@ Check the installed package version when comparing its tool surface with main
 Version zero ten zero adds nullable and array scaffold labels and corrects
 sequence sender ownership when caller names collide across files
 
-The chart groups the fifteen tools by their primary purpose
-It describes the tool surface rather than project completion
-
-```mermaid
-pie showData
-    accTitle: Tool categories
-    accDescr: Five storage tools and three rendering tools and two analysis tools and four diagram drafting and template tools and one code drafting tool
-    title Tool categories
-    "Diagram storage" : 5
-    "Rendering and sharing" : 3
-    "Analysis and comparison" : 2
-    "Diagram drafting and templates" : 4
-    "Code drafting" : 1
-```
-
 The package declares Node 18 or newer as its runtime requirement
-Continuous integration checks Node 20 and Node 22 and Node 24 on Ubuntu and Windows
+Current main continuous integration checks Node 20 and Node 22 and Node 24 on Ubuntu and Windows
 The TypeScript compiler is a development dependency rather than a required
 production dependency
-
-
-SYSTEM MODEL
-============
-
-An MCP client starts the server as a child process and exchanges protocol
-messages over standard input and standard output
-Startup diagnostics use standard error so they do not occupy the protocol
-stream
-
-The project root defines the code analysis boundary
-The diagrams root defines the diagram storage boundary
-Custom template definitions are read separately beneath the project root
-These roots are resolved once when the server starts
-Diagram paths supplied to tools are relative to the diagrams root
-Code scopes supplied to analysis tools are relative to the project root
-
-The architecture separates protocol handling from services and external
-resources
-Responses return through the tool adapter to the connected client
-
-```mermaid
-flowchart TB
-    accTitle: System architecture
-    accDescr: MCP requests pass through strict schemas and adapters to storage and analysis and rendering services
-    client["MCP client"] <-->|stdio| server["CLI and MCP server"]
-    server --> schemas["Strict input schemas"]
-    schemas --> adapters["Tool adapters"]
-    adapters --> store["Diagram storage"]
-    adapters --> analysis["Analysis and generation"]
-    adapters --> rendering["Rendering service"]
-    store --> diagrams[("Diagrams root")]
-    analysis --> code[("Project root")]
-    rendering --> external["Local commands or opt in PlantUML endpoint"]
-```
-
-Tool adapters own protocol contracts and response formatting
-Services own filesystem operations and analysis and source generation
-Renderers invoke external command line tools through a separate command
-boundary
-Expected domain failures become tool errors
-Unexpected failures return a generic error and are logged through the
-shared error handling layer
 
 
 INSTALLATION AND CLIENT CONNECTION
@@ -133,6 +91,97 @@ For available startup and setup options:
 
     diagrams-mcp-server --help
     diagrams-mcp-server setup --help
+
+
+WORKING WITH DIAGRAMS
+=====================
+
+Start by discovering existing diagrams with diagrams_list
+Read the selected source with diagrams_get before proposing a change
+Use diagrams_diff to compare the existing source with a proposed revision
+Then apply the reviewed revision through diagrams_update
+Use diagrams_create for a new diagram and diagrams_delete for explicit
+removal
+
+Create refuses an existing target
+Update operates on an existing diagram
+Storage validates recognized diagram extensions and source structure
+These checks establish basic dialect shape rather than full language
+correctness
+Use rendering and human review to inspect the resulting diagram
+
+For a new architecture draft use diagrams_generate on a narrow code scope
+For a call flow draft use diagrams_generate_sequence
+For a blank design use diagrams_template
+These tools return source for review without saving a diagram
+Pass reviewed source to diagrams_create when you decide to persist it
+
+Run diagrams_check_consistency after a code change to inspect declaration
+evidence for diagram entities
+Treat unmatched names as review prompts
+An unmatched name can reflect unsupported syntax or incomplete scanning
+rather than an architectural defect
+
+This workflow connects the tools through explicit review steps
+The arrows describe a suggested user workflow rather than an automatic
+pipeline
+Generation and comparison do not save files on your behalf
+
+```mermaid
+flowchart TB
+    accTitle: Diagram review workflow
+    accDescr: Read or draft source then review and compare before explicitly saving and rendering and checking consistency
+    stored["Read existing diagram source"] --> review["Review source"]
+    draft["Generate or template a draft"] --> review
+    review --> compare["Compare revisions when needed"]
+    compare --> save["Explicit create or update"]
+    save --> render["Render and inspect"]
+    render --> check["Check consistency against code"]
+    check -->|Revise when needed| review
+```
+
+
+SYSTEM MODEL
+============
+
+An MCP client starts the server as a child process and exchanges protocol
+messages over standard input and standard output
+Startup diagnostics use standard error so they do not occupy the protocol
+stream
+
+The project root defines the code analysis boundary
+The diagrams root defines the diagram storage boundary
+Custom template definitions are read separately beneath the project root
+These roots are resolved once when the server starts
+Diagram paths supplied to tools are relative to the diagrams root
+Code scopes supplied to analysis tools are relative to the project root
+
+The architecture separates protocol handling from services and external
+resources
+Responses return through the tool adapter to the connected client
+
+```mermaid
+flowchart TB
+    accTitle: System architecture
+    accDescr: MCP requests pass through strict schemas and adapters to storage and analysis and rendering services
+    client["MCP client"] <-->|stdio| server["CLI and MCP server"]
+    server --> schemas["Strict input schemas"]
+    schemas --> adapters["Tool adapters"]
+    adapters --> store["Diagram storage"]
+    adapters --> analysis["Analysis and generation"]
+    adapters --> rendering["Rendering service"]
+    store --> diagrams[("Diagrams root")]
+    analysis --> code[("Project root")]
+    rendering --> external["Local commands or opt in PlantUML endpoint"]
+```
+
+Tool adapters own protocol contracts and response formatting
+Services own filesystem operations and analysis and source generation
+Renderers invoke external command line tools through a separate command
+boundary
+Expected domain failures become tool errors
+Unexpected failures return a generic error and are logged through the
+shared error handling layer
 
 
 CONFIGURATION AND RENDERING
@@ -188,56 +237,23 @@ flowchart TB
 ```
 
 
-WORKING WITH DIAGRAMS
-=====================
-
-Start by discovering existing diagrams with diagrams_list
-Read the selected source with diagrams_get before proposing a change
-Use diagrams_diff to compare the existing source with a proposed revision
-Then apply the reviewed revision through diagrams_update
-Use diagrams_create for a new diagram and diagrams_delete for explicit
-removal
-
-Create refuses an existing target
-Update operates on an existing diagram
-Storage validates recognized diagram extensions and source structure
-These checks establish basic dialect shape rather than full language
-correctness
-Use rendering and human review to inspect the resulting diagram
-
-For a new architecture draft use diagrams_generate on a narrow code scope
-For a call flow draft use diagrams_generate_sequence
-For a blank design use diagrams_template
-These tools return source for review without saving a diagram
-Pass reviewed source to diagrams_create when you decide to persist it
-
-Run diagrams_check_consistency after a code change to inspect declaration
-evidence for diagram entities
-Treat unmatched names as review prompts
-An unmatched name can reflect unsupported syntax or incomplete scanning
-rather than an architectural defect
-
-This workflow connects the tools through explicit review steps
-The arrows describe a suggested user workflow rather than an automatic
-pipeline
-Generation and comparison do not save files on your behalf
-
-```mermaid
-flowchart TB
-    accTitle: Diagram review workflow
-    accDescr: Read or draft source then review and compare before explicitly saving and rendering and checking consistency
-    stored["Read existing diagram source"] --> review["Review source"]
-    draft["Generate or template a draft"] --> review
-    review --> compare["Compare revisions when needed"]
-    compare --> save["Explicit create or update"]
-    save --> render["Render and inspect"]
-    render --> check["Check consistency against code"]
-    check -->|Revise when needed| review
-```
-
-
 TOOL CONTRACTS
 ==============
+
+The chart groups the fifteen tools by their primary purpose
+It describes the tool surface rather than project completion
+
+```mermaid
+pie showData
+    accTitle: Tool categories
+    accDescr: Five storage tools and three rendering tools and two analysis tools and four diagram drafting and template tools and one code drafting tool
+    title Tool categories
+    "Diagram storage" : 5
+    "Rendering and sharing" : 3
+    "Analysis and comparison" : 2
+    "Diagram drafting and templates" : 4
+    "Code drafting" : 1
+```
 
 Inventory and source access
 ---------------------------

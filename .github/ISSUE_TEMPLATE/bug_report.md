@@ -7,9 +7,8 @@ labels: bug
 
 ## What happened
 
-A short description of the wrong behavior, and which tool it involves
-(`diagrams_list`, `diagrams_get`, `diagrams_create`, `diagrams_update`,
-`diagrams_delete`, `diagrams_render`, or `diagrams_check_consistency`).
+Describe the wrong behavior and name the affected MCP tool
+Include the installed diagrams-mcp-server version
 
 ## Steps to reproduce
 
@@ -31,7 +30,7 @@ What happened instead. Paste the MCP error text (`Error: ...`) if there is one.
 
 - `node --version`:
 - OS:
-- Install method (source checkout or local tarball):
+- Install method (npm registry or source checkout or local tarball):
 - `PROJECT_ROOT` / `DIAGRAMS_DIR` settings (values only, no secrets):
 
 ## Logs
