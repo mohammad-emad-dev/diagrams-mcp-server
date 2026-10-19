@@ -29,9 +29,8 @@ PROJECT STATUS
 ==============
 
 The project is a technical preview
-The published package is version zero ten zero with fifteen tools
-Sections marked Unreleased development describe changes on main that are
-not included in that published package
+Version zero eleven zero contains fifteen tools
+Check the installed package version when comparing its behavior with this guide
 
 Version zero ten zero adds nullable and array scaffold labels and corrects
 sequence sender ownership when caller names collide across files
@@ -307,6 +306,15 @@ That mode accepts at most 10000 recognized calls per side and fails above
 the ceiling rather than returning a partial comparison
 It does not establish runtime execution order
 
+Since version zero eleven zero include_rename_evidence adds exact call-label
+counts for paired rename names on each diagram side
+Repeated recognized calls count separately and matching remains case sensitive
+Evidence contains at most 100 pairs with pairs_available and pairs_capped
+Each side accepts at most 10000 recognized calls when this option is enabled
+The result refuses excess calls and does not return partial counts
+This evidence does not scan code or prove identity or change rename matching
+It does not change is_same or enable call_order output
+
 Diagram generation and templates
 --------------------------------
 
@@ -322,17 +330,24 @@ It reports unresolved callees rather than inventing participants
 Since version zero ten zero each sender stays tied to the file containing
 the call site even when another file declares the same caller name
 Callee lookup still uses the first case insensitive declaring participant
-Unreleased development adds ambiguous_callees for emitted operation names
+Since version zero eleven zero ambiguous_callees identifies for emitted operation names
 declared by several distinct participants in the scanned scope
 Same basename files merge before this check and the selected target stays stable
 The list keeps exact spellings in first emitted order after both output caps
 Deferred calls and unresolved calls and calls dropped by caps do not contribute
-This diagnostic supplies declaration evidence without resolving runtime receivers
+The callee_evidence list explains the declaration match for each distinct emitted
+callee in first emitted order
+Each entry reports selected_participant and candidate_participants together
+with candidates_available and candidates_capped and candidate_limit set to 20
+Candidate names are logical file basenames before Mermaid identifier conversion
+Candidates include scanned participants outside the output participant cap
+The resolution_basis is case-insensitive-declaration
+These diagnostics supply declaration evidence without resolving runtime receivers
 Calls inside callbacks are conservatively treated as deferred and excluded
 from the ordered messages
 This policy is not a claim that every callback executes asynchronously
 include_call_parentheses changes message labels only
-Unreleased development also preserves real recursive calls on the same line
+Version zero eleven zero also preserves real recursive calls on the same line
 as a function declaration when the fallback call reader is used
 The declaration itself remains excluded from the message list
 Same name calls inside assigned arrow expressions follow the existing
@@ -392,10 +407,15 @@ The size check runs before output directories or the output file are created
 The response contains acknowledgement and metadata rather than the HTML
 Saved HTML files do not become diagrams in the inventory or CRUD tools
 
-TypeScript scaffolding from diagrams
-------------------------------------
+Code scaffolding from diagrams
+-------------------------------
 
-diagrams_scaffold returns TypeScript source for review
+diagrams_scaffold returns source for review
+The language option defaults to typescript
+Since version zero eleven zero javascript selects empty exported class shells
+JavaScript uses the same safe name filtering and source and entity limits
+It rejects include_members and include_types and include_relations before reading
+No member signatures or field types or relationships are emitted for JavaScript
 It reads one stored diagram and does not save or execute the proposed code
 The default output consists of empty exported classes derived from heuristic
 name candidates
@@ -417,6 +437,9 @@ The same mode accepts `Array<T>` and `ReadonlyArray<T>` labels
 T must be a supported primitive or an emitted class name
 The first form emits T[] and the second emits readonly T[]
 Both can have one null arm and neither accepts nested arrays or other generics
+Since version zero eleven zero literal readonly T[] labels use the same base
+rules with exactly one space after readonly and an optional single null arm
+Readonly scalars and nested readonly arrays remain unsupported
 Wrapper and nullable labels require colon field notation and fit within 82 characters
 Whitespace around the separator counts toward that limit
 Other unions and bare null remain unsupported

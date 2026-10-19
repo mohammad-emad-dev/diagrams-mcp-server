@@ -19,6 +19,8 @@ import {
 import { normalizeForMatch } from "../nameNormalize.js";
 import { compareCallOrder } from "./callOrder.js";
 import type { CallOrderComparison } from "./callOrder.js";
+import { renameCallEvidence } from "./renameEvidence.js";
+import type { RenameEvidence } from "./renameEvidence.js";
 
 /** One side of a comparison: source text and its dialect. */
 export interface DiffSide {
@@ -56,6 +58,7 @@ export interface DiffResult {
   calls_removed: string[];
   /** Ordered recognized calls, present only when call-order comparison runs. */
   call_order?: CallOrderComparison;
+  rename_evidence?: RenameEvidence;
   /** Entity names unchanged, plus unchanged call order when comparison is enabled. */
   is_same: boolean;
 }
@@ -63,6 +66,7 @@ export interface DiffResult {
 /** Optional recognized-message-call order comparison for diffDiagrams. */
 export interface DiffOptions {
   compareCallOrder?: boolean;
+  includeRenameEvidence?: boolean;
 }
 
 /** Entity names for one side, distinct and in extraction order. */
@@ -149,9 +153,11 @@ function pairRenames(
  * recognized-call comparison, and a changed order alone makes is_same false.
  */
 export function diffDiagrams(sideA: DiffSide, sideB: DiffSide, options?: DiffOptions): DiffResult {
-  const order = options?.compareCallOrder
-    ? compareCallOrder(sideA.source, sideB.source)
-    : undefined;
+  const calls =
+    options?.compareCallOrder || options?.includeRenameEvidence
+      ? compareCallOrder(sideA.source, sideB.source)
+      : undefined;
+  const order = options?.compareCallOrder ? calls : undefined;
   const namesA = entitiesOf(sideA);
   const namesB = entitiesOf(sideB);
   const setA = new Set(namesA);
@@ -186,5 +192,8 @@ export function diffDiagrams(sideA: DiffSide, sideB: DiffSide, options?: DiffOpt
     calls_removed: difference(callsA, new Set(callsB)),
     is_same: entitiesSame && !order?.changed,
     ...(order ? { call_order: order } : {}),
+    ...(options?.includeRenameEvidence && calls
+      ? { rename_evidence: renameCallEvidence(renamed, calls) }
+      : {}),
   };
 }

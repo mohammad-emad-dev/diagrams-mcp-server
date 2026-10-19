@@ -30,6 +30,13 @@ function resolveNullableType(
 }
 
 function resolveTypedAtom(label: string, emitted: ReadonlySet<string>): string | undefined {
+  const readonlyArrayMatch = /^readonly ([A-Za-z_][A-Za-z0-9_]*)\[\]$/.exec(label);
+  if (readonlyArrayMatch) {
+    const [, element] = readonlyArrayMatch;
+    const base = resolveSupportedBaseType(element, emitted);
+    return base ? `readonly ${base}[]` : undefined;
+  }
+
   const arrayMatch = /^(Array|ReadonlyArray)<([A-Za-z_][A-Za-z0-9_]*)>$/.exec(label);
   if (arrayMatch) {
     const [, wrapper, element] = arrayMatch;

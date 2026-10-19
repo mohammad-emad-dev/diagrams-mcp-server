@@ -8,6 +8,12 @@ const INLINE_LABEL = "<inline>";
 
 export const InputSchema = z
   .object({
+    include_rename_evidence: z
+      .boolean()
+      .default(false)
+      .describe(
+        "Include exact recognized diagram message-call counts for paired rename names (default: false). Limited to 100 pairs and 10000 calls per side. This is label evidence only and does not scan code or prove identity.",
+      ),
     compare_call_order: z
       .boolean()
       .default(false)

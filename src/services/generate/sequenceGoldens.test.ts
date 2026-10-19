@@ -9,7 +9,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { collectSequence } from "./sequence.js";
-import type { SequenceMessage } from "./sequence.js";
+import type { SequenceCalleeEvidence, SequenceMessage } from "./sequence.js";
+import { MAX_SEQUENCE_EVIDENCE_CANDIDATES } from "./sequence.js";
 import { validateDiagramSource } from "../diagramValidator.js";
 
 async function writeFiles(root: string, files: Record<string, string>): Promise<void> {
@@ -84,6 +85,27 @@ const CAP_EXCLUSION_FILES = {
     "export function checkout() {\n  ping();\n  charge();\n  setTimeout(() => { CHARGE(); }, 0);\n}\n",
 };
 
+/**
+ * Build one expected evidence entry: the trailing fields are the same for
+ * every entry, so only the interesting part lives in the scenario table.
+ */
+function evidenceEntry(
+  callee: string,
+  selected_participant: string,
+  candidate_participants: string[],
+  overrides?: { candidates_available?: number; candidates_capped?: boolean },
+): SequenceCalleeEvidence {
+  return {
+    callee,
+    selected_participant,
+    candidate_participants,
+    candidates_available: overrides?.candidates_available ?? candidate_participants.length,
+    candidates_capped: overrides?.candidates_capped ?? false,
+    candidate_limit: MAX_SEQUENCE_EVIDENCE_CANDIDATES,
+    resolution_basis: "case-insensitive-declaration",
+  };
+}
+
 describe("sequence goldens", () => {
   let tmpRoot: string;
   let callbackRoot: string;
@@ -107,6 +129,7 @@ describe("sequence goldens", () => {
       const result = await collectSequence(emptyScope, { format });
 
       assert.deepEqual(result.ambiguousCallees, []);
+      assert.deepEqual(result.calleeEvidence, []);
       assert.deepEqual(result.participants, []);
       assert.deepEqual(result.messages, []);
       assert.equal(result.filesScanned, 0);
@@ -364,6 +387,7 @@ describe("sequence goldens", () => {
     messages: SequenceMessage[];
     unresolved: string[];
     ambiguous: string[];
+    evidence: SequenceCalleeEvidence[];
     maxParticipants?: number;
     maxMessages?: number;
     messagesAvailable?: number;
@@ -386,6 +410,10 @@ describe("sequence goldens", () => {
       ],
       unresolved: [],
       ambiguous: [],
+      evidence: [
+        evidenceEntry("retry", "worker", ["worker"]),
+        evidenceEntry("other", "worker", ["worker"]),
+      ],
       maxParticipants: 1,
     },
     {
@@ -403,6 +431,12 @@ describe("sequence goldens", () => {
       ],
       unresolved: [],
       ambiguous: ["charge", "CHARGE"],
+      // One entry per exact spelling; both fold to the same two declarers,
+      // and b_second is a candidate although it never becomes a participant.
+      evidence: [
+        evidenceEntry("charge", "a_first", ["a_first", "b_second"], { candidates_available: 2 }),
+        evidenceEntry("CHARGE", "a_first", ["a_first", "b_second"], { candidates_available: 2 }),
+      ],
     },
     {
       name: "same-basename files merge before competing operation declarations resolve",
@@ -420,6 +454,12 @@ describe("sequence goldens", () => {
       ],
       unresolved: [],
       ambiguous: ["late"],
+      // The three payment basenames merged into one candidate, so "charge"
+      // has a single declarer while "late" has two, registry order first.
+      evidence: [
+        evidenceEntry("charge", "payment", ["payment"]),
+        evidenceEntry("late", "payment", ["payment", "other"], { candidates_available: 2 }),
+      ],
     },
     {
       name: "a top-level caller uses its file while unresolved callees stay excluded",
@@ -433,6 +473,8 @@ describe("sequence goldens", () => {
       ],
       unresolved: ["absent"],
       ambiguous: [],
+      // The unresolved "absent" call contributes no evidence entry.
+      evidence: [evidenceEntry("charge", "a_payment", ["a_payment"])],
     },
     {
       // The sender ownership fix: checkout is declared in an earlier file,
@@ -450,6 +492,7 @@ describe("sequence goldens", () => {
       ],
       unresolved: [],
       ambiguous: [],
+      evidence: [evidenceEntry("charge", "payment", ["payment"])],
     },
     {
       // Case-folded collision: CHECKOUT folds to checkout, so the earlier
@@ -466,6 +509,7 @@ describe("sequence goldens", () => {
       ],
       unresolved: [],
       ambiguous: [],
+      evidence: [evidenceEntry("charge", "payment", ["payment"])],
     },
     {
       name: "participant-capped calls and deferred calls do not report ambiguity",
@@ -474,6 +518,9 @@ describe("sequence goldens", () => {
       messages: [{ from: "z_caller", to: "c_ping", message: "ping", line: 2, via_callback: false }],
       unresolved: [],
       ambiguous: [],
+      // The charge message died with the a_charge participant cap, and the
+      // deferred CHARGE call was never a candidate: neither leaves evidence.
+      evidence: [evidenceEntry("ping", "c_ping", ["c_ping"])],
       maxParticipants: 2,
       messagesAvailable: 2,
       messagesDropped: 1,
@@ -488,11 +535,32 @@ describe("sequence goldens", () => {
       messages: [{ from: "z_caller", to: "c_ping", message: "ping", line: 2, via_callback: false }],
       unresolved: [],
       ambiguous: [],
+      // The charge message died with the message cap; evidence stays bounded
+      // to what was actually emitted.
+      evidence: [evidenceEntry("ping", "c_ping", ["c_ping"])],
       maxMessages: 1,
       messagesAvailable: 2,
       messagesDropped: 1,
       participantsAvailable: 3,
       participantsDropped: 0,
+      deferredCount: 2,
+    },
+    {
+      name: "participant and message caps together leave evidence only for emitted messages",
+      files: CAP_EXCLUSION_FILES,
+      participants: ["z_caller", "c_ping"],
+      messages: [{ from: "z_caller", to: "c_ping", message: "ping", line: 2, via_callback: false }],
+      unresolved: [],
+      ambiguous: [],
+      // Both caps fired: a_charge lost its participant box and the message
+      // cap would have cut the second message anyway. Only ping has evidence.
+      evidence: [evidenceEntry("ping", "c_ping", ["c_ping"])],
+      maxParticipants: 2,
+      maxMessages: 1,
+      messagesAvailable: 2,
+      messagesDropped: 1,
+      participantsAvailable: 3,
+      participantsDropped: 1,
       deferredCount: 2,
     },
   ];
@@ -514,6 +582,7 @@ describe("sequence goldens", () => {
           assert.deepEqual(result.messages, scenario.messages);
           assert.deepEqual(result.unresolvedCallees, scenario.unresolved);
           assert.deepEqual(result.ambiguousCallees, scenario.ambiguous);
+          assert.deepEqual(result.calleeEvidence, scenario.evidence);
           assert.equal(
             result.participantsAvailable,
             scenario.participantsAvailable ?? scenario.participants.length,

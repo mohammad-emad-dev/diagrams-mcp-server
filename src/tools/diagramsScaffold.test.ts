@@ -6,7 +6,11 @@ import path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { DiagramStore } from "../services/diagramStore.js";
-import { MAX_GENERATE_ENTITIES, MAX_SCAFFOLD_SOURCE_BYTES } from "../constants.js";
+import {
+  MAX_ENTITY_NAME_CHARS,
+  MAX_GENERATE_ENTITIES,
+  MAX_SCAFFOLD_SOURCE_BYTES,
+} from "../constants.js";
 import { ScaffoldSourceTooLargeError } from "../services/scaffold/scaffold.js";
 import { isExpectedToolError } from "./toolError.js";
 import { diagramsScaffoldInputSchema, registerDiagramsScaffold } from "./diagramsScaffold.js";
@@ -143,6 +147,13 @@ describe("diagrams_scaffold", () => {
     const accepted = diagramsScaffoldInputSchema.safeParse({ relative_path: "models/a.puml" });
     assert.equal(accepted.success, true);
     assert.equal(accepted.success && (accepted.data as { max_entities: number }).max_entities, 30);
+    assert.equal(accepted.success && accepted.data.language, "typescript");
+
+    const invalidLanguage = diagramsScaffoldInputSchema.safeParse({
+      relative_path: "models/a.puml",
+      language: "python",
+    });
+    assert.equal(invalidLanguage.success, false);
   });
 
   it("scaffolds PlantUML without writing and reports skipped independently", async () => {
@@ -284,6 +295,123 @@ describe("diagrams_scaffold", () => {
     assert.equal(structured.source, "export class C {}\n\nexport class B {}\n");
   });
 
+  it("emits safe JavaScript shells with the shared cap and no TypeScript metadata", async () => {
+    const tooLongName = "A".repeat(MAX_ENTITY_NAME_CHARS + 1);
+    const executionProbe = "__diagramScaffoldUntrustedSourceRan";
+    Reflect.deleteProperty(globalThis, executionProbe);
+    const diagram =
+      `@startuml\nclass C\nclass B\nclass A\nclass class\nclass ${tooLongName}\n` +
+      `note top\nglobalThis.${executionProbe} = true\nend note\n@enduml\n`;
+    await ctx.diagramStore.write("models/javascript.puml", diagram, { overwrite: false });
+    const tool = captureTool(registerDiagramsScaffold, ctx);
+    const result = await callHandler(tool, {
+      relative_path: "models/javascript.puml",
+      language: "javascript",
+      max_entities: 2,
+    });
+    const structured = structuredOf(result);
+
+    assert.equal(result.isError, undefined);
+    assert.equal(structured.language, "javascript");
+    assert.deepEqual(structured.entities, ["C", "B"]);
+    assert.equal(structured.entities_available, 3);
+    assert.equal(structured.entities_capped, true);
+    assert.equal(structured.entity_limit, 2);
+    assert.deepEqual(structured.skipped_entities, ["class", tooLongName]);
+    assert.equal(structured.source, "export class C {}\n\nexport class B {}\n");
+    assert.match(
+      structured.heuristic_warning,
+      /JavaScript.*empty exported JavaScript classes only/,
+    );
+    assert.equal(structured.written, false);
+    assert.equal(result.content[0].text, structured.source);
+    for (const key of [
+      "include_members",
+      "members_included",
+      "members_capped",
+      "member_limit",
+      "include_types",
+      "typed_fields",
+      "unresolved_fields",
+      "include_relations",
+      "relations_included",
+      "relations_skipped",
+      "relations_capped",
+      "relation_limit",
+    ]) {
+      assert.equal(
+        Object.hasOwn(structured, key),
+        false,
+        `${key} must be absent in JavaScript mode`,
+      );
+    }
+
+    const generatedModule = await import(
+      `data:text/javascript;charset=utf-8,${encodeURIComponent(structured.source)}`
+    );
+    assert.deepEqual(Object.keys(generatedModule).sort(), ["B", "C"]);
+    assert.equal(typeof generatedModule.C, "function");
+    assert.equal(typeof generatedModule.B, "function");
+    assert.equal(Reflect.get(globalThis, executionProbe), undefined);
+    assert.equal(
+      await fs.readFile(path.join(projectRoot, "diagrams", "models", "javascript.puml"), "utf8"),
+      diagram,
+    );
+    const filesAfter = new Set(await listAllFiles(projectRoot));
+    assert.equal(filesAfter.size, filesBefore.size + 1);
+  });
+
+  it("returns empty JavaScript source when all candidates are absent or skipped", async () => {
+    await ctx.diagramStore.write(
+      "models/empty-javascript.puml",
+      "@startuml\nclass class\n@enduml\n",
+      {
+        overwrite: false,
+      },
+    );
+    const tool = captureTool(registerDiagramsScaffold, ctx);
+    const result = await callHandler(tool, {
+      relative_path: "models/empty-javascript.puml",
+      language: "javascript",
+    });
+    const structured = structuredOf(result);
+
+    assert.equal(structured.language, "javascript");
+    assert.equal(structured.source, "");
+    assert.equal(result.content[0].text, "");
+    assert.deepEqual(structured.entities, []);
+    assert.deepEqual(structured.skipped_entities, ["class"]);
+    assert.equal(structured.written, false);
+  });
+
+  it("rejects JavaScript member, type, and relation flags before reading the diagram", async () => {
+    let reads = 0;
+    ctx.diagramStore = {
+      read: async () => {
+        reads += 1;
+        throw new Error("diagram read must not occur");
+      },
+    } as unknown as DiagramStore;
+    const tool = captureTool(registerDiagramsScaffold, ctx);
+
+    for (const option of ["include_members", "include_types", "include_relations"] as const) {
+      const result = await callHandler(tool, {
+        relative_path: "models/missing.puml",
+        language: "javascript",
+        [option]: true,
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(
+        result.content[0].text,
+        /language "javascript" emits empty exported class shells only/,
+      );
+      assert.ok(result.content[0].text.includes(option));
+      assert.equal(result.structuredContent, undefined);
+    }
+    assert.equal(reads, 0);
+  });
+
   it("rejects over-cap UTF-8 source with the typed error and no source leak", async () => {
     const over = `@startuml\nclass A\n${"é".repeat(600_000)}\n@enduml\n`;
     assert.ok(over.length < MAX_SCAFFOLD_SOURCE_BYTES);
@@ -299,6 +427,16 @@ describe("diagrams_scaffold", () => {
     assert.ok(!result.content[0].text.includes(projectRoot));
     assert.equal(result.structuredContent, undefined);
     assert.equal(isExpectedToolError(new ScaffoldSourceTooLargeError(1_000_001, 1_000_000)), true);
+
+    const javascriptResult = await callHandler(tool, {
+      relative_path: "models/big.puml",
+      language: "javascript",
+    });
+    assert.equal(javascriptResult.isError, true);
+    assert.match(
+      javascriptResult.content[0].text,
+      new RegExp(`${MAX_SCAFFOLD_SOURCE_BYTES}-byte limit`),
+    );
   });
 
   it("reports missing, traversal, and extension errors without leaks", async () => {

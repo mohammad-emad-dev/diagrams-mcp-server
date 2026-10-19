@@ -1,75 +1,69 @@
 # Current roadmap
 
-This is the current milestone record for the 0.10.0 technical preview line.
-The older [next features document](next-features.md) preserves its original
-phase checklists and is not an active backlog.
+This is the milestone record for the 0.11.0 technical preview line.
+The [next features document](next-features.md) preserves historical proposals
+and phase checklists rather than an active backlog.
 
-## Completed development
+## Completed foundation
 
-The structural cleanup is complete. CLI startup and client setup are separate
-from MCP composition and tool adapters. Services own storage and analysis and
-rendering. Builds remove stale output and tests are discovered from compiled
-files.
+The structural cleanup separates CLI startup and client setup from MCP
+composition and tool adapters. Services own storage and analysis and rendering.
+Builds remove stale output and tests are discovered from compiled files.
+All fifteen tools are implemented with explicit write boundaries.
 
-All fifteen tools are implemented. The original five feature proposals shipped
-before this release line. Custom templates and template discovery are present.
-HTML exports use SVG image isolation rather than live SVG markup.
+The README provides client setup commands and linked reading paths and four
+editable Mermaid diagrams. The [documentation index](README.md) distinguishes
+current engineering guides from historical handoff records.
 
-The 0.9.0 additions provide explicit HTML persistence and TypeScript class
-scaffolding with optional members and supported field types and labeled
-association fields. Remote downloads now enforce timeout and decoded byte
-limits through body completion. Local renderer image reads are bounded too.
+HTML exports isolate SVG in images rather than live markup. Explicit export
+persistence and bounded TypeScript member and field and association scaffolds
+are present. Local renderer reads and remote downloads enforce size limits.
+Sequence senders are anchored to their call-site files.
 
-The README provides engineering documentation and four Mermaid visuals.
-Unreleased infrastructure work expands the Ubuntu and Windows CI matrix to
-Node 20 and 22 and 24 and updates checkout and setup actions to full commit
-pins with Node 24 action runtimes. The publish job still selects Node 22.
-The [release checklist](release-checklist.md) separates packaged acceptance from
-publication. The package smoke probe exercises all fifteen tools over real
-stdio from a production install without TypeScript and with actual local
-renderers. Publication makes this development available to registry installs
-only after the release workflow succeeds.
+## Selected extensions in 0.11.0
 
-Introduced in 0.10.0: sequence senders are anchored to the call-site file so
-duplicate caller names cannot redirect them. Callee lookup remains heuristic
-with first-declaring-participant precedence. Receiver and declaration analysis
-remain separate future work.
+Each previously open development area has a bounded first increment rather
+than an unrestricted parsing or runtime-analysis commitment.
 
-Introduced in 0.10.0: scaffolding syntax extensions support nullable scalar
-and emitted-class field labels with an optional single array suffix plus
-`Array<T>` and `ReadonlyArray<T>` wrappers for the same primitive or class bases.
-The existing typed mode emits canonical arrays and one `Type | null` form.
-Nested arrays and other generics and union types and inheritance remain outside
-these bounded extensions.
-
-## Further development candidates
-
-Unreleased after 0.10.0: sequence results expose ambiguous_callees for emitted
-operation names declared by several distinct participants in the scanned scope
-after same-basename merging. The list preserves exact spellings in first emitted
-order after participant and message caps. Deferred and unresolved calls and calls
-dropped by caps do not contribute. Competing declarations still count when their
-participant is not emitted. First-declaring-participant selection stays stable
-and runtime receiver resolution remains future work.
-
-Unreleased after 0.10.0: the fallback call reader excludes the detected function
-declaration by source position rather than suppressing every matching name on
-that line. Real recursive invocations retain their source order and line number
-in sequence drafts and call-order evidence. Existing callback heuristics remain
-unchanged and this does not add multiline scope tracking or runtime analysis.
-Same-name invocations inside assigned arrow expressions are counted as deferred
-rather than discarded and remain excluded from sequential messages.
-
-These are product extensions rather than missing cleanup or release checks.
-Each needs a bounded design and acceptance criteria before implementation.
-
-| Candidate | Current limit | Useful next result |
+| Area | Implemented increment | Deliberate boundary |
 | --- | --- | --- |
-| Sequence participant resolution | File level name ownership and unresolved callees | Stronger receiver and declaration evidence |
-| Rename evidence | Heuristic name pairing | Call site evidence that supports or rejects a proposed rename |
-| Scaffolding syntax | Plain class blocks and a strict field type subset | Selected richer type or inheritance forms with explicit limits |
-| Additional output languages | TypeScript drafts only | A separately specified language emitter with its own validation |
+| Sequence participant evidence | Selected declaration participant and bounded competing candidates per emitted callee | Stable first-match selection without receiver type resolution |
+| Rename evidence | Opt-in exact diagram message-call counts for paired old and new names | No source-code scan or semantic identity inference |
+| Scaffold syntax | Literal readonly arrays with the existing supported bases and optional null arm | No nested arrays or arbitrary unions or inheritance |
+| Additional output language | JavaScript empty exported class shells through an explicit language option | No JavaScript member or type or relation modes |
 
-An SVG allowlist sanitizer is not a prerequisite for the current HTML image
-isolation design. Selectable live SVG would require a new reviewed boundary.
-Watch mode and automatic writes are not selected work items.
+The release also includes ambiguous-callee diagnostics and the fallback reader
+fix for real recursive calls on a function declaration line. Deferred calls
+remain excluded from the emitted sequence. Ubuntu and Windows CI cover Node
+20 and 22 and 24 with pinned Node 24 action runtimes.
+
+## Contributor entry points
+
+The following issues isolate syntax work for contributors with acceptance
+criteria and files and test instructions. Both good first issue and help wanted
+labels are applied.
+
+- [Go struct and interface declarations](https://github.com/mohammad-emad-dev/diagrams-mcp-server/issues/46)
+- [Rust braced struct and enum declarations](https://github.com/mohammad-emad-dev/diagrams-mcp-server/issues/47)
+- [Explicit rectangular Mermaid flowchart IDs](https://github.com/mohammad-emad-dev/diagrams-mcp-server/issues/48)
+- [Literal readonly scaffold arrays](https://github.com/mohammad-emad-dev/diagrams-mcp-server/issues/49) is implemented in this release
+
+Go and Rust still use the experimental analyzer tier. These contributor issues
+do not promise full parsers or a tier promotion.
+
+## Release acceptance
+
+Follow the [release checklist](release-checklist.md) for source gates and clean
+package acceptance and publication. The package probe uses a production-only
+install without TypeScript and real local PlantUML and Mermaid renderers.
+It also checks the new language and evidence modes over actual MCP stdio.
+GitHub source availability does not establish npm or MCP registry publication.
+
+## Future scope decisions
+
+Runtime receiver resolution and source-code-backed semantic rename evidence
+remain separate design work. Richer scaffold inheritance and member languages
+also need their own contracts. They are outside this release milestone.
+Selectable live SVG would require a reviewed sanitizer boundary. The current
+image isolation design does not depend on that feature. Watch mode and
+automatic writes are not selected work items.

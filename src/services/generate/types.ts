@@ -70,6 +70,41 @@ export interface SequenceMessage {
   via_callback: boolean;
 }
 
+/**
+ * Evidence for one emitted callee spelling: how the first-declaring-
+ * participant rule picked its receiver. Static declaration evidence only —
+ * it never claims which receiver runs at run time. Field names are the wire
+ * names; the adapter passes entries through unchanged.
+ */
+export interface SequenceCalleeEvidence {
+  /** The exact emitted message.message spelling this entry explains. */
+  callee: string;
+  /**
+   * The participant the existing rule selected: the first distinct logical
+   * participant in registry order declaring this callee case-insensitively.
+   * A logical file basename, never the sanitized identifier Mermaid emits.
+   */
+  selected_participant: string;
+  /**
+   * Distinct logical participant names declaring this callee, in registry
+   * order after same-basename merging and before the output participant
+   * cap, cut at candidate_limit. Logical file basenames, never the
+   * sanitized identifiers Mermaid renames participants to.
+   */
+  candidate_participants: string[];
+  /** Exact count of distinct declaring participants before the candidate cap. */
+  candidates_available: number;
+  /** True when candidate_participants was cut by candidate_limit. */
+  candidates_capped: boolean;
+  /** The applied candidate cap. */
+  candidate_limit: number;
+  /**
+   * How the selection works: case-insensitive declared-identifier equality
+   * with the first declarer in registry order.
+   */
+  resolution_basis: "case-insensitive-declaration";
+}
+
 export interface SequenceCollectionResult {
   /** Participants in emission order, already capped and dialect-named. */
   participants: string[];
@@ -89,6 +124,13 @@ export interface SequenceCollectionResult {
   unresolvedCallees: string[];
   /** Emitted callee names declared by multiple distinct participants, in first-use order. */
   ambiguousCallees: string[];
+  /**
+   * One entry per distinct emitted message spelling, in first emitted order
+   * after both caps, explaining the first-declaring-participant selection.
+   * Bounded by the message cap; each candidate list is bounded by
+   * candidate_limit. Entries carry logical basenames regardless of dialect.
+   */
+  calleeEvidence: SequenceCalleeEvidence[];
   filesScanned: number;
   truncated: boolean;
   scanLimit: number;

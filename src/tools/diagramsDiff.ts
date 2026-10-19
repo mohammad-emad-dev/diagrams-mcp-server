@@ -12,7 +12,7 @@ const HEURISTIC_WARNING =
   "added one only when they are identical once lowercased and stripped of separators, so a " +
   "genuine rename with a different spelling stays an add plus a remove, and a paired rename " +
   "is a candidate, not a verdict. Member lists, layout, and style are never compared, and no " +
-  "call-site analysis is done. Treat the result as a review aid, then edit the diagram " +
+  "source-code call-site analysis is done. Optional rename evidence counts recognized diagram call labels only. Treat the result as a review aid, then edit the diagram " +
   "yourself — this tool reports, it does not patch.";
 
 export function registerDiagramsDiff(server: McpServer, ctx: ServerContext): void {
@@ -26,7 +26,10 @@ This is the review-time companion to diagrams_check_consistency: that tool asks 
 
 Each side supplies exactly one of a path or inline content, so unstaged edits can be diffed without a round trip. Rename detection pairs a removed name with an added one only when they are identical once lowercased and stripped of separators, and every rename carries confidence: "heuristic" — similarity is not semantic identity.
 
+With include_rename_evidence=true the existing rename pairs gain exact case-sensitive recognized diagram message-call counts for each old and new name on both sides. Repeated calls count separately. This scans diagram labels only and does not inspect source code or establish semantic identity. Evidence reports the first 100 pairs in rename order with pairs_available and pairs_capped. Either side above ${MAX_DIFF_ORDER_CALLS} recognized calls refuses the entire enabled comparison. The evidence does not change rename pairing or is_same or enable call-order output.
+
 Args:
+  - include_rename_evidence (boolean, default false): Add bounded diagram call-label counts for paired rename names without changing matching or equality
   - compare_call_order (boolean, default false): Also compare recognized message-call names in order, preserving repetitions. Each side is capped at ${MAX_DIFF_ORDER_CALLS} calls; over-limit comparison is refused. Plain labels, endpoints, arguments and control flow are excluded.
   - a_relative_path (string, optional): Side a as a path relative to the diagrams root
   - a_content (string, optional): Side a as inline source text (dialect detected from the source)
@@ -52,6 +55,11 @@ Returns:
     "calls_removed": string[],
     "is_same": boolean,                            // entity names unchanged, and call order unchanged when comparison is enabled
     "call_order": { "a": string[], "b": string[], "changed": boolean }, // present only when compare_call_order=true
+    "rename_evidence": {                          // present only when include_rename_evidence=true
+      "pairs": [{ "from": string, "to": string, "a_from_calls": number, "a_to_calls": number, "b_from_calls": number, "b_to_calls": number, "confidence": "heuristic" }],
+      "pairs_available": number, "pairs_capped": boolean, "pair_limit": 100,
+      "call_limit": ${MAX_DIFF_ORDER_CALLS}, "basis": "diagram-message-call-labels"
+    },
     "confidence": "heuristic",
     "heuristic_warning": string
   }
@@ -97,6 +105,7 @@ Error Handling:
         const b = await readSide(ctx, "b", params);
         const diff = diffDiagrams(a.sideInput, b.sideInput, {
           compareCallOrder: params.compare_call_order,
+          includeRenameEvidence: params.include_rename_evidence,
         });
         const summary = diff.is_same
           ? summaryIdentical(a.report, b.report, diff.unchanged_count)
@@ -128,6 +137,7 @@ Error Handling:
                 " Call-order comparison uses recognized call-name order and repetitions only; it ignores arguments, endpoints, plain labels, and control flow. It does not prove runtime order."
               : HEURISTIC_WARNING,
             ...(diff.call_order ? { call_order: diff.call_order } : {}),
+            ...(diff.rename_evidence ? { rename_evidence: diff.rename_evidence } : {}),
           },
         };
       } catch (err: unknown) {

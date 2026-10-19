@@ -80,6 +80,16 @@ interface SequenceMessage {
   via_callback: boolean;
 }
 
+interface SequenceEvidenceEntry {
+  callee: string;
+  selected_participant: string;
+  candidate_participants: string[];
+  candidates_available: number;
+  candidates_capped: boolean;
+  candidate_limit: number;
+  resolution_basis: string;
+}
+
 interface SequenceOutput {
   scope: string;
   format: string;
@@ -97,6 +107,7 @@ interface SequenceOutput {
   deferred_count: number;
   unresolved_callees: string[];
   ambiguous_callees: string[];
+  callee_evidence: SequenceEvidenceEntry[];
   files_scanned: number;
   truncated: boolean;
   scan_limit: number;
@@ -192,6 +203,27 @@ describe("diagrams_generate_sequence", () => {
     assert.equal(structured.deferred_count, 0);
     assert.deepEqual(structured.unresolved_callees, []);
     assert.deepEqual(structured.ambiguous_callees, []);
+    // One entry per emitted spelling, pass-through from the collector.
+    assert.deepEqual(structured.callee_evidence, [
+      {
+        callee: "charge",
+        selected_participant: "payment",
+        candidate_participants: ["payment"],
+        candidates_available: 1,
+        candidates_capped: false,
+        candidate_limit: 20,
+        resolution_basis: "case-insensitive-declaration",
+      },
+      {
+        callee: "ship",
+        selected_participant: "shipping",
+        candidate_participants: ["shipping"],
+        candidates_available: 1,
+        candidates_capped: false,
+        candidate_limit: 20,
+        resolution_basis: "case-insensitive-declaration",
+      },
+    ]);
     assert.equal(structured.files_scanned, 3);
     assert.equal(structured.truncated, false);
     assert.equal(structured.scan_limit, 5000);
@@ -368,6 +400,43 @@ describe("diagrams_generate_sequence", () => {
       assert.ok(mmdStructured.source.includes("my_checkout->>payment: charge"));
     } finally {
       await fs.rm(dashedRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports callee_evidence with logical basenames while Mermaid sanitizes participants", async () => {
+    const evidenceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "seq-evidence-"));
+    try {
+      await writeFiles(evidenceRoot, {
+        "checkout.ts": CALLER,
+        "my-payment.ts": PAYMENT,
+      });
+      const evidenceCtx: ServerContext = {
+        diagramStore: new DiagramStore(path.join(evidenceRoot, "diagrams")),
+        codeRootDir: evidenceRoot,
+      };
+      const tool = captureTool(registerDiagramsGenerateSequence, evidenceCtx);
+
+      const mmd = await callHandler(tool, { scope: ".", format: "mermaid" });
+      const mmdStructured = structuredOf(mmd);
+      assert.equal(mmd.isError, undefined);
+      // The emitted lists carry the sanitized identifier...
+      assert.deepEqual(mmdStructured.participants, ["checkout", "my_payment"]);
+      assert.equal(mmdStructured.messages[0].to, "my_payment");
+      // ...while the evidence keeps the logical basename the registry
+      // resolved, so it stays comparable across dialects.
+      assert.deepEqual(mmdStructured.callee_evidence, [
+        {
+          callee: "charge",
+          selected_participant: "my-payment",
+          candidate_participants: ["my-payment"],
+          candidates_available: 1,
+          candidates_capped: false,
+          candidate_limit: 20,
+          resolution_basis: "case-insensitive-declaration",
+        },
+      ]);
+    } finally {
+      await fs.rm(evidenceRoot, { recursive: true, force: true });
     }
   });
 

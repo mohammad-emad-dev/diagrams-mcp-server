@@ -115,7 +115,9 @@ export const SCAFFOLD_TYPES_HEURISTIC_WARNING =
   "(bare ASCII names; no quotes, aliases, generics, or stereotypes). Field name and type labels are heuristics; " +
   "only string, number, boolean, bigint, or exactly an emitted class name, optionally with one [] suffix, is emitted as `Atom`; " +
   "one optional null arm in either order canonicalizes to `Atom | null`. Whitespace around arms and the separator is " +
-  "allowed but not inside an atom. Array<T> and ReadonlyArray<T> accept one supported base and emit T[] or readonly T[]; no nested arrays or other generic forms are recovered. Every other label falls back to `name: unknown;`. Class references are labels only with no " +
+  "allowed but not inside an atom. Array<T> and ReadonlyArray<T> accept one supported base and emit T[] or readonly T[]; " +
+  "literal `readonly T[]` is also accepted in colon notation for one supported base. Readonly scalars, nested arrays, " +
+  "and other generic forms are not recovered. Every other label falls back to `name: unknown;`. Class references are labels only with no " +
   "supplied runtime value or relations. Methods remain throwing stubs " +
   "`name(..._args: unknown[]): unknown`, so argument and return labels are ignored, and visibility/static/readonly/abstract " +
   "modifiers are lost. Unsupported lines, note bodies, comments, constructors, initializers, relations, and runtime behavior " +
@@ -129,6 +131,7 @@ export const SCAFFOLD_RELATIONS_HEURISTIC_WARNING =
   "`role!: Target[];` with no initializers, constructors, runtime values, or supplied relations; methods remain throwing stubs " +
   "`name(..._args: unknown[]): unknown`. Body field types use the same scalar/emitted-class subset, optionally with one [] " +
   "suffix, and may include one null arm in either order, canonicalized as `Atom | null`. Body fields also accept Array<T> and ReadonlyArray<T> for a supported base, emitted as T[] and readonly T[]. Existing members win name conflicts, and undeclared or non-emitted endpoints are skipped. " +
+  "Body field types also accept literal `readonly T[]` in colon notation for one supported base; readonly scalars and nested arrays are unsupported. " +
   "No inheritance, composition, or semantic inference is performed. Unsupported lines, note bodies, comments, and runtime behavior " +
   "are skipped, never executed or emitted. Review every name, member, type, and relation before saving; remove or rename anything you do " +
   "not intend to implement, then save it as TypeScript yourself.";

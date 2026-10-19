@@ -40,6 +40,22 @@ const arrayWrapperCases = [
     label: "null | ReadonlyArray<WrapperUser>",
     expected: "readonly WrapperUser[] | null",
   },
+  { name: "literalReadonlyStrings", label: "readonly string[]", expected: "readonly string[]" },
+  {
+    name: "literalReadonlyUsers",
+    label: "readonly WrapperUser[]",
+    expected: "readonly WrapperUser[]",
+  },
+  {
+    name: "literalNullableReadonlyUsers",
+    label: "readonly WrapperUser[] | null",
+    expected: "readonly WrapperUser[] | null",
+  },
+  {
+    name: "literalNullableReadonlyNumbersReverse",
+    label: "null | readonly number[]",
+    expected: "readonly number[] | null",
+  },
 ] as const;
 
 const arrayWrapperFields = arrayWrapperCases
@@ -364,6 +380,15 @@ describe("typed scaffold field types", () => {
       ["extraWhitespaceAt82", `${longestName}[]${" ".repeat(14)}| null`, `${longestName}[] | null`],
       ["readonlyAt82", `ReadonlyArray<${longestName}> | null`, `readonly ${longestName}[] | null`],
       ["readonlyAt83", `ReadonlyArray<${longestName}>  | null`, undefined],
+      [
+        "literalReadonlyAt82",
+        `readonly ${longestName}[]${" ".repeat(5)}| null`,
+        `readonly ${longestName}[] | null`,
+      ],
+      ["literalReadonlyAt83", `readonly ${longestName}[]${" ".repeat(6)}| null`, undefined],
+      ["literalReadonlyBase60", `readonly ${longestName}[]`, `readonly ${longestName}[]`],
+      ["literalReadonlyBase61", `readonly ${tooLongName}[]`, undefined],
+      ["literalReadonlyMissing", "readonly Missing[]", undefined],
       ["base60", longestName, longestName],
       ["base61", tooLongName, undefined],
       ["atom62", `${longestName}[]`, `${longestName}[]`],
@@ -391,6 +416,27 @@ describe("typed scaffold field types", () => {
     assert.equal(limits.entitiesAvailable, 2);
     assert.deepEqual(limits.entities, ["Limits", longestName]);
     assert.deepEqual(limits.skippedEntities, [tooLongName]);
+  });
+
+  it("accepts literal readonly arrays only in colon notation and rejects scalars or nesting", () => {
+    const draft = buildScaffoldWithTypes(
+      "@startuml\nclass Owner {\nlabels: readonly string[]\nscalar: readonly string\nnested: readonly string[][]\nlegacy readonly string[]\n}\n@enduml\n",
+      "plantuml",
+      30,
+    );
+
+    assert.equal(
+      draft.source,
+      "export class Owner {\n" +
+        "  labels!: readonly string[];\n" +
+        "  scalar: unknown;\n" +
+        "  nested: unknown;\n" +
+        "}\n",
+    );
+    assert.equal(draft.membersIncluded, 3);
+    assert.equal(draft.typedFields, 1);
+    assert.equal(draft.unresolvedFields, 2);
+    assert.doesNotMatch(draft.source, /legacy/);
   });
 
   it("resolves references only to emitted classes, so cap-dropped ones fall back", () => {

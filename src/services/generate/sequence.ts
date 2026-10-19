@@ -39,10 +39,23 @@ import {
 import type { CallEdge } from "../consistencyChecker/sequence/callGraph.js";
 import { extractCallEdges } from "../consistencyChecker/sequence/callGraph.js";
 import { listScopeFiles } from "./scopeFiles.js";
-import type { SequenceCollectionResult, SequenceMessage, SequenceOptions } from "./types.js";
+import type {
+  SequenceCalleeEvidence,
+  SequenceCollectionResult,
+  SequenceMessage,
+  SequenceOptions,
+} from "./types.js";
 import { emitSequenceDiagram, mermaidParticipantName } from "./sequenceEmitters.js";
 
-export type { SequenceCollectionResult, SequenceMessage, SequenceOptions };
+export type { SequenceCalleeEvidence, SequenceCollectionResult, SequenceMessage, SequenceOptions };
+
+/**
+ * Largest candidate list one callee_evidence entry reports. Candidates are
+ * the declaring participants across the whole scanned scope, so the list is
+ * cut at the same ceiling the participant cap uses and the exact count is
+ * kept in candidates_available.
+ */
+export const MAX_SEQUENCE_EVIDENCE_CANDIDATES = MAX_SEQUENCE_PARTICIPANTS;
 
 interface ScannedSequenceFile {
   /** Absolute path; only used for emission ordering. */
@@ -78,6 +91,7 @@ function emptyResult(format: "puml" | "mermaid"): SequenceCollectionResult {
     deferredCount: 0,
     unresolvedCallees: [],
     ambiguousCallees: [],
+    calleeEvidence: [],
     filesScanned: 0,
     truncated: false,
     scanLimit: MAX_SCAN_FILES,
@@ -159,6 +173,8 @@ function buildParticipantRegistry(scanned: ScannedSequenceFile[]): ParticipantRe
 interface IndexedOperation {
   firstParticipant: string;
   ambiguous: boolean;
+  /** Every declaring participant in registry order; firstParticipant is [0]. */
+  declarers: string[];
 }
 
 type OperationIndex = Map<string, IndexedOperation>;
@@ -168,13 +184,18 @@ type OperationIndex = Map<string, IndexedOperation>;
 function buildOperationIndex(registry: ParticipantRegistryEntry[]): OperationIndex {
   const index: OperationIndex = new Map();
   for (const entry of registry) {
-    for (const name of entry.operations) {
-      const key = name.toLowerCase();
+    const keys = new Set(Array.from(entry.operations, (name) => name.toLowerCase()));
+    for (const key of keys) {
       const indexed = index.get(key);
       if (!indexed) {
-        index.set(key, { firstParticipant: entry.name, ambiguous: false });
+        index.set(key, {
+          firstParticipant: entry.name,
+          ambiguous: false,
+          declarers: [entry.name],
+        });
       } else if (indexed.firstParticipant !== entry.name) {
         indexed.ambiguous = true;
+        indexed.declarers.push(entry.name);
       }
     }
   }
@@ -202,6 +223,39 @@ function collectAmbiguousCallees(
     ambiguousCallees.push(message.message);
   }
   return ambiguousCallees;
+}
+
+/**
+ * One entry per distinct emitted message spelling, in first emitted order
+ * after both caps, explaining how the existing first-declaration rule picked
+ * each receiver. Candidates come from the whole registry — after same-basename
+ * merging and before the output participant cap — so a competing declarer
+ * shows up even when the cap never emits it. Names are logical file
+ * basenames, never the dialect-renamed identifiers the emitted lists carry.
+ */
+function collectCalleeEvidence(
+  messages: SequenceMessage[],
+  operationIndex: OperationIndex,
+): SequenceCalleeEvidence[] {
+  const evidence: SequenceCalleeEvidence[] = [];
+  const seen = new Set<string>();
+  for (const message of messages) {
+    if (seen.has(message.message)) continue;
+    seen.add(message.message);
+    // Only resolved messages reach this collector; missing index entries are not evidence.
+    const indexed = operationIndex.get(message.message.toLowerCase())!;
+    const declarers = indexed.declarers;
+    evidence.push({
+      callee: message.message,
+      selected_participant: indexed.firstParticipant,
+      candidate_participants: declarers.slice(0, MAX_SEQUENCE_EVIDENCE_CANDIDATES),
+      candidates_available: declarers.length,
+      candidates_capped: declarers.length > MAX_SEQUENCE_EVIDENCE_CANDIDATES,
+      candidate_limit: MAX_SEQUENCE_EVIDENCE_CANDIDATES,
+      resolution_basis: "case-insensitive-declaration",
+    });
+  }
+  return evidence;
 }
 
 /** Distinct participant names in candidate order (a sender comes first). */
@@ -337,6 +391,9 @@ export async function collectSequence(
   );
   const messages = emittable.slice(0, maxMessages);
   const ambiguousCallees = collectAmbiguousCallees(messages, operationIndex);
+  // Evidence reads the pre-dialect messages, so its names stay logical
+  // basenames even when the Mermaid dialect renames the emitted lists.
+  const calleeEvidence = collectCalleeEvidence(messages, operationIndex);
 
   const named = applyDialectNames(format, participants, messages);
   const type: DiagramType = format === "puml" ? "plantuml" : "mermaid";
@@ -351,6 +408,7 @@ export async function collectSequence(
     deferredCount,
     unresolvedCallees,
     ambiguousCallees,
+    calleeEvidence,
     filesScanned: scanned.length,
     truncated,
     scanLimit: MAX_SCAN_FILES,

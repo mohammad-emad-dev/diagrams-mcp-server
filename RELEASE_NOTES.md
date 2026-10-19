@@ -1,3 +1,34 @@
+# Release notes — 0.11.0
+
+Sequence generation adds bounded `callee_evidence` for each distinct emitted
+callee spelling after both output caps. Entries report the selected logical
+participant and at most twenty candidate logical participants with exact totals
+and explicit capping metadata. Candidates reflect case-insensitive declarations
+after same-basename merging and are logical names before Mermaid conversion.
+Existing selection remains stable and runtime receiver resolution is not claimed.
+The previously unreleased `ambiguous_callees` diagnostic and same-line recursive
+call fix are included in this release.
+
+Diagram diff adds optional `include_rename_evidence` defaulting to false. It
+counts exact recognized diagram message-call labels for each old and new rename
+name on both sides with repetitions retained. Output is capped at one hundred
+pairs with exact totals and capping metadata. Either side above ten thousand
+recognized calls rejects the enabled comparison. This is label evidence rather
+than source-code call analysis and does not alter rename pairing or equality.
+
+Typed scaffolding accepts literal `readonly T[]` labels with exactly one space
+after readonly for the existing supported primitive or emitted-class bases and
+one optional null arm. Existing label and identifier limits remain unchanged.
+Scaffolding also adds `language` with `typescript` as the default and `javascript`
+for empty exported class shells only. JavaScript rejects member and type and
+relation options before reading the stored source. It reuses safe candidate
+filtering and cap metadata and never writes or executes generated code.
+
+The README now provides a client setup table and linked reading paths and a
+separate engineering documentation index. Contributor issues cover bounded
+language and flowchart syntax gaps. CI checks Ubuntu and Windows on Node
+20 and 22 and 24 with pinned Node 24 action runtimes.
+
 # Release notes — 0.10.0
 
 Typed scaffolding accepts strict `Array<T>` and `ReadonlyArray<T>` labels for

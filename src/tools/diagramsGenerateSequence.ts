@@ -3,7 +3,10 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerContext } from "../context.js";
 import { MAX_SEQUENCE_MESSAGES, MAX_SEQUENCE_PARTICIPANTS, toPosixPath } from "../constants.js";
 import type { GenerateDeps, SequenceCollectionResult } from "../services/generate/types.js";
-import { collectSequence } from "../services/generate/sequence.js";
+import {
+  collectSequence,
+  MAX_SEQUENCE_EVIDENCE_CANDIDATES,
+} from "../services/generate/sequence.js";
 import { MAX_SCAN_FILES } from "../services/consistencyChecker/scanning.js";
 import { validateDiagramSource } from "../services/diagramValidator.js";
 import { resolveScope } from "../services/scopeResolve.js";
@@ -70,6 +73,9 @@ const HEURISTIC_WARNING =
   "TypeScript uses AST call sites when its compiler is available, otherwise heuristic extraction. " +
   "Each sender is the file containing the call site. Callee mapping uses case-insensitive operation names and the first declaring file — " +
   "ambiguous_callees lists emitted names declared by several participants without changing that choice. " +
+  "callee_evidence explains each emitted callee's selection from the participants that declare it; its names are logical file " +
+  "basenames, not the sanitized identifiers Mermaid emits, and it is static declaration evidence only, never a claim about " +
+  "which receiver runs at run time. " +
   "There is no type resolution, so a callee " +
   "no file in the scope declares is listed in unresolved_callees rather than attached to a guessed " +
   "participant. Message arguments, cross-language calls, and dynamic dispatch are out of scope. Treat " +
@@ -112,6 +118,7 @@ function formatSequenceResult({
     deferred_count: collected.deferredCount,
     unresolved_callees: collected.unresolvedCallees,
     ambiguous_callees: collected.ambiguousCallees,
+    callee_evidence: collected.calleeEvidence,
     files_scanned: collected.filesScanned,
     truncated: collected.truncated,
     scan_limit: collected.scanLimit,
@@ -146,6 +153,8 @@ Each sender is the file containing the call site even when another file declares
 
 ambiguous_callees lists bare names from emitted messages whose case-insensitive declaration occurs in several distinct participants after same-basename merging. Exact spellings are deduplicated in first emitted order after both caps. Deferred and unresolved calls and calls dropped by caps do not contribute. Competing declarations anywhere in the scanned scope count even when their participant is not emitted. The existing first-declaring-participant choice remains unchanged.
 
+callee_evidence carries one entry per distinct emitted message spelling, in first emitted order after both caps, explaining how that choice was made: candidate_participants lists the distinct logical participants declaring the callee case-insensitively, in registry order after same-basename merging and before the participant cap, cut at candidate_limit (${MAX_SEQUENCE_EVIDENCE_CANDIDATES}) with the exact count in candidates_available and candidates_capped flagging the cut. selected_participant is the existing first match, every emitted spelling gets an entry even when only one participant declares it, and deferred, unresolved, and capped calls contribute none. Entry names are logical file basenames, never the sanitized identifiers Mermaid renames participants to. This is static declaration evidence only: it never claims which receiver runs at runtime.
+
 Args:
   - scope (string, default "."): Relative path under the project root pointing at a file or a directory. Absolute paths and anything resolving outside the project root are refused
   - format ('puml' | 'mermaid', default 'puml'): Output dialect
@@ -174,6 +183,9 @@ Returns:
     "deferred_count": number,        // call sites inside callbacks/promises: counted, never sequenced
     "unresolved_callees": string[],  // callees no participant in the scope declares
     "ambiguous_callees": string[],   // emitted bare names with multiple declaring participants; exact spelling and first emitted order
+    "callee_evidence": [             // one entry per distinct emitted message spelling, first emitted order after both caps
+      { "callee": string, "selected_participant": string, "candidate_participants": string[], "candidates_available": number, "candidates_capped": boolean, "candidate_limit": number, "resolution_basis": "case-insensitive-declaration" }
+    ],
     "files_scanned": number,
     "truncated": boolean,            // true when the ${MAX_SCAN_FILES.toLocaleString()}-file scan cap was reached
     "scan_limit": number,            // ${MAX_SCAN_FILES.toLocaleString()}

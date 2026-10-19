@@ -1,6 +1,6 @@
 # Architecture
 
-Describes version 0.10.0 with all fifteen tools including `diagrams_save_export` and `diagrams_scaffold`. CLI dispatch lives in
+Describes version 0.11.0 with all fifteen tools including `diagrams_save_export` and `diagrams_scaffold`. CLI dispatch lives in
 `src/index.ts`; MCP construction lives in `src/server.ts`
 (`createDiagramServer`).
 
@@ -111,7 +111,7 @@ SVG to a private formatter that builds the HTML and enforces the UTF-8 byte cap.
 Formatting stays inside each adapter's existing error boundary.
 `diagramsCheckConsistency.ts` also keeps report formatting private to the
 adapter, including evidence field names, summary branches, and scan warnings.
-Introduced in 0.9.0, `diagramsScaffold.ts` reads one stored diagram, builds
+Introduced in 0.9.0, `diagramsScaffold.ts` reads one stored diagram, defaults to
 TypeScript class shells through `services/scaffold/scaffold.ts`, and reports
 candidate counts with a heuristic warning; the text block is the emitted
 source itself. `include_members` defaults to false. Opt-in results also report
@@ -119,7 +119,9 @@ source itself. `include_members` defaults to false. Opt-in results also report
 default results retain their existing shape. `include_types` implies member
 generation and additionally reports `include_types`, `typed_fields`, and
 `unresolved_fields`. It preserves only explicit supported field labels;
-method signatures and runtime behavior remain unrecovered.
+method signatures and runtime behavior remain unrecovered. Since 0.11.0 an
+explicit JavaScript language selection uses `services/scaffold/javascript.ts`
+for empty class shells and rejects TypeScript-only options before the read.
 
 `include_relations` additionally enables typed members and reports
 `include_relations`, `relations_included`, `relations_skipped`,
@@ -211,7 +213,7 @@ keep their source and response shapes when this flag is false or omitted.
   collection. Invalid root shapes return no edges; unexpected visitor
   failures propagate through `analyzeTsFile`.
   Introduced in 0.8.0: `ts/tsCalls.ts` collects ordered AST call edges plus callable operations via optional `includeCalls` in `tsIndex.ts` (methods/accessors/property-held functions; `f()`, `obj.m()`, `obj["m"]()`; enclosing-caller reset; multiline callback deferral). Missing compiler, non-TS extensions, or parse failure keep the heuristic fallback. Mapping stays file-level first-owner matching with no semantic type resolution.
-  Unreleased after 0.10.0: the fallback `sequence/callGraph.ts` reader suppresses
+  Introduced in 0.11.0: the fallback `sequence/callGraph.ts` reader suppresses
   only the detected declaration name occurrence. Recursive invocations later
   on that line remain ordered call edges with their original line number.
   This affects both sequence generation and call-order consistency evidence
@@ -247,7 +249,7 @@ keep their source and response shapes when this flag is false or omitted.
   share a participant name. The first participant declaring a lowercase
   operation name wins, including when a later participant has an exact-case
   match. Introduced in 0.10.0: only callee lookup uses that index and the sender is always the file containing the call site. Duplicate or case-colliding caller names in earlier files cannot redirect a later file's sender. Same-basename participant merging is unchanged. Introduced in 0.8.0: `sequence.ts` prefers AST edges/operations (`includeCalls: true`) when the compiler resolves, else the heuristic `extractCallEdges` fallback.
-  Unreleased after 0.10.0: `SequenceCollectionResult.ambiguousCallees` (wire:
+  Introduced in 0.11.0: `SequenceCollectionResult.ambiguousCallees` (wire:
   `ambiguous_callees`) identifies emitted operation names with declarations in
   several distinct merged participants across the scanned scope. The existing
   target remains selected even when another declaration exists. Diagnostics
@@ -265,7 +267,7 @@ keep their source and response shapes when this flag is false or omitted.
 - `scaffold/relations.ts` adds bounded named-arrow fields through `appendScaffoldRelations`: first collect explicit plain class declarations among emitted names, then scan labeled `Owner --> Target : role` links. Supported quoted target multiplicities (`*`, `0..*`, `1..*`) yield arrays. It copies member arrays, preserves body members, and appends the first eligible field per role. Limits are 30 total members per class and 300 appended relationship fields; counts continue after caps without retaining an edge list. Unsupported syntax and non-top-level lines do not count as candidates.
 - `buildScaffoldWithRelations` checks the existing source cap, parses members once, appends the relationship fields, and shares typed finalization with `buildScaffoldWithTypes`. Role names use the same member-name validation. It provides no runtime values, inheritance, ownership or cardinality enforcement; warnings identify these limits.
 
-Introduced in 0.8.0, `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it only through `compareCallOrder`; the wire option is `compare_call_order`. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
+Introduced in 0.8.0, `diff/callOrder.ts` compares recognized call-name arrays in order, keeping repetitions. `diffDiagrams` requests it through `compareCallOrder` or `includeRenameEvidence`; the wire options are `compare_call_order` and `include_rename_evidence`. Only the former enables ordered comparison output and contributes to equality. `entities.ts` supplies the bounded ordered extractor using the existing call grammar. Both sides are capped by `MAX_DIFF_ORDER_CALLS` (10,000); `CallOrderLimitError` rejects over-limit comparisons and is an expected error in `toolError.ts`. The default diff result shape remains unchanged. Enabled responses include `call_order`, contribute to `is_same`, and append a call-order summary; no arguments, endpoints, labels, control flow, or runtime behavior are compared.
 
 Introduced in 0.8.0, message-call extraction shares one lazy line scanner between deduplicated and ordered collectors. Whole-line apostrophe/`%%` comments and PlantUML blocks starting with `/'` at the first non-whitespace character are skipped; scanning resumes after `'/`. Unclosed blocks consume the remaining source. Regex and block state belong to each invocation, so a bounded early return cannot affect later calls. Inline blocks after content, nested blocks, note bodies, declaration comments, and participant comments remain outside this scanner's scope.
 
@@ -324,3 +326,26 @@ directory so parallel test workers cannot interfere with cleanup assertions.
    README table row when a tool ships.
 
 Introduced in 0.9.0: `diagrams_save_export` (`diagramsSaveExport.ts`) saves a self-contained HTML bundle through the dedicated `DiagramStore.writeHtmlExport` method. This path accepts only `.html`, creates files exclusively, and leaves the normal diagram extension gates intact. Both export tools use the same bundle builder and UTF-8 byte limit; only the explicit save tool writes. Export files are excluded from normal diagram listing and CRUD.
+
+## Bounded evidence and output extensions in 0.11.0
+
+Sequence results add `callee_evidence` for distinct exact emitted callee spellings
+in first-message order after both output caps. Each entry reports the selected
+logical participant and at most twenty candidate logical participants after
+same-basename merging with exact candidate totals and truncation metadata.
+These are file basename names before Mermaid identifier conversion.
+The existing first-declaring-participant choice remains unchanged.
+
+`diff/renameEvidence.ts` counts exact recognized diagram message-call labels for
+the old and new name in each paired rename on both sides. The opt-in output
+reports at most one hundred pairs and exact pair totals. The shared call reader
+refuses either side above ten thousand calls before any partial counts escape.
+It does not scan source code or alter pairing or equality.
+
+`scaffold/fieldTypes.ts` also accepts literal `readonly T[]` with exactly one
+space after readonly and the existing supported base and single null-arm rules.
+`scaffold/javascript.ts` emits empty exported JavaScript class shells using the
+existing safe candidate and cap flow. It is a separate language emitter rather
+than TypeScript source rewriting. The adapter defaults to TypeScript and rejects
+JavaScript combined with member or type or relation flags before reading the
+stored source. Neither output language writes or executes the generated source.

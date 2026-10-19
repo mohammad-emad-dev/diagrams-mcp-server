@@ -77,6 +77,27 @@ describe("diagrams_diff", () => {
     await fs.rm(tmpRoot, { recursive: true, force: true });
   });
 
+  it("returns rename label evidence over MCP without writes or enabling order output", async () => {
+    const params = {
+      a_content: "@startuml\nA -> B: process_order()\n@enduml",
+      b_content: "sequenceDiagram\nA->>B: ProcessOrder()\n",
+      include_rename_evidence: true,
+    };
+    const response = await tool.handler(InputSchema.parse(params));
+    assert.equal(response.isError, undefined);
+    const evidence = response.structuredContent?.rename_evidence as {
+      pairs: Array<{ a_from_calls: number; b_to_calls: number }>;
+    };
+    assert.equal(evidence.pairs[0].a_from_calls, 1);
+    assert.equal(evidence.pairs[0].b_to_calls, 1);
+    assert.equal(Object.hasOwn(response.structuredContent ?? {}, "call_order"), false);
+    assert.deepEqual(new Set(await listAllFiles(tmpRoot)), filesBefore);
+    const omitted = await tool.handler(
+      InputSchema.parse({ ...params, include_rename_evidence: false }),
+    );
+    assert.equal(Object.hasOwn(omitted.structuredContent ?? {}, "rename_evidence"), false);
+  });
+
   it("compares repeated recognized calls when enabled and preserves the default result", async () => {
     const a = "@startuml\nAlice -> Bob: charge()\nAlice -> Bob: charge()\n@enduml";
     const b = "sequenceDiagram\nAlice->>Bob: charge()\n";

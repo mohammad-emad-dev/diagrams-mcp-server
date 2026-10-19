@@ -25,7 +25,7 @@ const EXPECTED_TOOLS = [
 const DIAGRAM_PATH = "models/release.puml";
 const MERMAID_PATH = "models/release.mmd";
 const SOURCE =
-  "@startuml\n!pragma layout smetana\nclass User {\nname: string\naliases: Array<string>\nhistory: null | ReadonlyArray<Order>\n}\nclass Order\nUser --> Order : orders\n@enduml\n";
+  "@startuml\n!pragma layout smetana\nclass User {\nname: string\naliases: Array<string>\nhistory: null | ReadonlyArray<Order>\nreadonlyOrders: readonly Order[]\n}\nclass Order\nUser --> Order : orders\n@enduml\n";
 const MERMAID = "classDiagram\nclass User\nclass Order\nUser --> Order : orders\n";
 
 async function readJson(filename) {
@@ -135,6 +135,8 @@ async function verifyDrafts(context) {
     [{ from: "user", to: "order", message: "charge" }],
   );
   assert.equal(sequence.structuredContent.written, false);
+  assert.equal(sequence.structuredContent.callee_evidence[0].callee, "charge");
+  assert.equal(sequence.structuredContent.callee_evidence[0].selected_participant, "order");
 }
 
 async function verifyStoredDiagrams(context) {
@@ -159,8 +161,31 @@ async function verifyStoredDiagrams(context) {
   assert.match(scaffold.structuredContent.source, /orders!: Order;/);
   assert.match(scaffold.structuredContent.source, /aliases!: string\[\];/);
   assert.match(scaffold.structuredContent.source, /history!: readonly Order\[\] \| null;/);
-  assert.equal(scaffold.structuredContent.typed_fields, 4);
+  assert.match(scaffold.structuredContent.source, /readonlyOrders!: readonly Order\[\];/);
+  assert.equal(scaffold.structuredContent.typed_fields, 5);
   assert.equal(scaffold.structuredContent.unresolved_fields, 0);
+  await verifyNewDraftModes(context);
+}
+
+async function verifyNewDraftModes(context) {
+  const javascript = await call(context, "diagrams_scaffold", {
+    relative_path: DIAGRAM_PATH,
+    language: "javascript",
+  });
+  assert.equal(javascript.structuredContent.language, "javascript");
+  assert.equal(javascript.structuredContent.written, false);
+  assert.equal(
+    javascript.structuredContent.source,
+    "export class User {}\n\nexport class Order {}\n",
+  );
+  const renamed = await call(context, "diagrams_diff", {
+    a_content: "@startuml\nA -> B: process_order()\n@enduml",
+    b_content: "sequenceDiagram\nA->>B: ProcessOrder()\n",
+    include_rename_evidence: true,
+  });
+  const [evidence] = renamed.structuredContent.rename_evidence.pairs;
+  assert.equal(evidence.a_from_calls, 1);
+  assert.equal(evidence.b_to_calls, 1);
 }
 
 async function verifyImages(context) {
