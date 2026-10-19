@@ -15,6 +15,7 @@ READING PATHS
 
 Start with [installation](#installation-and-client-connection) and the
 [diagram workflow](#working-with-diagrams) to connect a client and review changes
+Choose your editor or assistant from the [supported clients](#supported-mcp-clients)
 Read the [system model](#system-model) and [configuration](#configuration-and-rendering)
 to understand process boundaries and renderer requirements
 Use [tool contracts](#tool-contracts) and [operational limits](#operational-limits-and-failure-recovery)
@@ -31,11 +32,6 @@ The project is a technical preview
 The published package is version zero ten zero with fifteen tools
 Sections marked Unreleased development describe changes on main that are
 not included in that published package
-
-Version zero nine zero introduced diagrams_save_export and diagrams_scaffold
-The scaffold member and field type and named relationship modes described
-below are included in that version
-Check the installed package version when comparing its tool surface with main
 
 Version zero ten zero adds nullable and array scaffold labels and corrects
 sequence sender ownership when caller names collide across files
@@ -57,15 +53,24 @@ Run guided setup from the project directory:
 
     diagrams-mcp-server setup
 
-The setup workflow supports Claude Code and Codex and Cursor and VS Code
-and OpenCode and Antigravity
-It checks the selected client and project path before applying its supported
-configuration method
-Some clients require a manual command that setup prints for you
+Supported MCP clients
+---------------------
 
-For a noninteractive Codex setup:
+Choose a client below for noninteractive setup
+Install the selected client before using its integration
+The table describes the setup methods implemented by this server
 
-    diagrams-mcp-server setup --client codex --yes
+| Client | Setup command | Setup behavior |
+| --- | --- | --- |
+| Claude Code | `diagrams-mcp-server setup --client claude-code --yes` | Runs `claude mcp add` or prints the command if registration cannot run |
+| Codex | `diagrams-mcp-server setup --client codex --yes` | Runs `codex mcp add` or prints the command if registration cannot run |
+| Cursor | `diagrams-mcp-server setup --client cursor --yes` | Writes the diagrams entry to Cursor configuration |
+| VS Code | `diagrams-mcp-server setup --client vscode --yes` | Writes the diagrams entry to workspace configuration |
+| OpenCode | `diagrams-mcp-server setup --client opencode --yes` | Prints instructions for `opencode mcp add` requiring a manual step |
+| Antigravity | `diagrams-mcp-server setup --client antigravity --yes` | Writes the diagrams entry to Antigravity configuration |
+
+Project scope and verification
+------------------------------
 
 For a Cursor configuration pinned to the current project:
 
@@ -77,6 +82,8 @@ Project scope places PROJECT_ROOT in the configuration so the server stays
 attached to one codebase
 An explicit --project-root also pins the root
 VS Code setup writes project configuration
+OpenCode setup prints instructions only so configure its project environment
+manually when a fixed PROJECT_ROOT is required
 
 After setup reload the client configuration and inspect its available tools
 Use diagrams_list to confirm the diagrams root before creating files
